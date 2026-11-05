@@ -1,6 +1,13 @@
 import { useEffect, useReducer, useRef } from 'react';
+import { runAlienTurn } from './game/ai';
+import { checkEnd, hitChance, living, log, shoot } from './game/combat';
 import { createMission } from './game/mission';
 import { GameView } from './render/GameView';
+
+const btn = (primary = false, off = false): React.CSSProperties => ({
+  padding: '10px 14px', border: '1px solid #556', borderRadius: 6, color: '#eef',
+  background: primary ? '#8a2a2a' : '#232a30', opacity: off ? 0.4 : 1, font: 'inherit', cursor: off ? 'default' : 'pointer',
+});
 
 export function App() {
   const host = useRef<HTMLDivElement>(null);
@@ -14,26 +21,86 @@ export function App() {
   }, []);
 
   const s = state.current;
-  const sel = s.units.find(u => u.id === s.selectedId);
+  const sel = s.units.find(u => u.id === s.selectedId && u.hp > 0);
+  const tgt = s.units.find(u => u.id === s.targetId && u.hp > 0);
+  const chance = sel && tgt ? hitChance(s, sel, tgt) : null;
+  const canAct = s.turn === 'human' && !s.busy && s.status === 'playing';
+  const canFire = canAct && !!sel && sel.ap > 0 && chance !== null;
+  const canOw = canAct && !!sel && sel.ap > 0 && sel.ammo > 0 && !sel.overwatch;
 
-  const endTurn = () => {
-    s.units.forEach(u => { if (u.team === 'human') u.ap = u.maxAp; });
-    s.turnNo += 1;
-    view.current?.syncUnits();
+  const fire = async () => {
+    if (!canFire || !sel || !tgt) return;
+    s.busy = true;
+    const r = shoot(s, sel, tgt);
+    sel.overwatch = false;
+    rerender();
+    await view.current!.shotFx(r);
+    if (tgt.hp <= 0) s.targetId = null;
+    s.busy = false;
+    view.current!.syncUnits();
     rerender();
   };
 
+  const overwatch = () => {
+    if (!canOw || !sel) return;
+    sel.overwatch = true; sel.ap = 0; s.targetId = null;
+    log(s, `${sel.name} занимает overwatch.`);
+    view.current!.syncUnits();
+    rerender();
+  };
+
+  const endTurn = async () => {
+    if (!canAct) return;
+    s.turn = 'alien'; s.busy = true; s.targetId = null;
+    view.current!.syncUnits();
+    rerender();
+    await runAlienTurn(s, {
+      moved: async () => { await view.current!.moved(); rerender(); },
+      shot: async r => { rerender(); await view.current!.shotFx(r); view.current!.syncUnits(); rerender(); },
+    });
+    checkEnd(s);
+    if (s.status === 'playing') {
+      living(s, 'human').forEach(u => { u.ap = u.maxAp; u.overwatch = false; });
+      s.turnNo += 1;
+      log(s, `— Ход ${s.turnNo} —`);
+    }
+    s.turn = 'human'; s.busy = false;
+    view.current!.syncUnits();
+    rerender();
+  };
+
+  const restart = () => location.reload();
+
+  const info = sel
+    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · патроны ${sel.ammo}/${sel.maxAmmo}${sel.overwatch ? ' · overwatch' : ''}`
+    : 'Выбери бойца';
+  const aliens = living(s, 'alien').length;
+
   return (
-    <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'absolute', top: 8, left: 8, right: 8, display: 'flex', gap: 12, alignItems: 'center', pointerEvents: 'none' }}>
-        <b>Alien Pressure</b>
-        <span>Ход {s.turnNo}</span>
-        <span style={{ flex: 1 }}>
-          {sel ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp}` : 'Выбери бойца'}
-        </span>
-        <button onClick={endTurn} style={{ pointerEvents: 'auto', padding: '8px 14px' }}>Конец хода</button>
+      <div style={{ position: 'absolute', top: 8, left: 8, right: 8, pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
+        <b>Alien Pressure</b> · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · пришельцев: {aliens}
+        <div>{info}</div>
+        {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `шанс ${chance}%`}</div>}
       </div>
+      <div style={{ position: 'absolute', left: 8, right: 8, bottom: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
+        <div style={{ flex: '1 1 200px', maxHeight: 110, overflow: 'hidden', fontSize: 12, textShadow: '0 1px 2px #000', pointerEvents: 'none' }}>
+          {s.log.slice(-5).map((l, i) => <div key={s.log.length - 5 + i}>{l}</div>)}
+        </div>
+        <button style={btn(true, !canFire)} disabled={!canFire} onClick={fire}>Огонь{chance !== null ? ` ${chance}%` : ''}</button>
+        <button style={btn(false, !canOw)} disabled={!canOw} onClick={overwatch}>Overwatch</button>
+        <button style={btn(false, !canAct)} disabled={!canAct} onClick={endTurn}>Конец хода</button>
+      </div>
+      {s.status !== 'playing' && (
+        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#000a' }}>
+          <div style={{ textAlign: 'center' }}>
+            <h1 style={{ margin: 0 }}>{s.status === 'won' ? 'Зачистка завершена' : 'Отряд уничтожен'}</h1>
+            <p>Ходов: {s.turnNo} · выжило: {living(s, 'human').length}/4</p>
+            <button style={btn(true)} onClick={restart}>Заново</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

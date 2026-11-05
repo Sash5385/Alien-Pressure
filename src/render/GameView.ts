@@ -1,9 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { GameState, Unit } from '../game/types';
-import { reachable } from '../game/pathfinding';
+import type { ShotResult } from '../game/combat';
+import { reachable, findPath } from '../game/pathfinding';
 
-const TILE = 1;
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+interface Float { sprite: THREE.Sprite; t: number }
 
 export class GameView {
   private renderer: THREE.WebGLRenderer;
@@ -13,7 +16,9 @@ export class GameView {
   private ray = new THREE.Raycaster();
   private ground: THREE.Mesh;
   private unitMeshes = new Map<number, THREE.Object3D>();
+  private goals = new Map<number, THREE.Vector3>();
   private highlight = new THREE.Group();
+  private floats: Float[] = [];
   private raf = 0;
   private down = { x: 0, y: 0 };
 
@@ -46,7 +51,7 @@ export class GameView {
     this.scene.add(sun, sun.target);
 
     this.ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(n * TILE, n * TILE),
+      new THREE.PlaneGeometry(n, n),
       new THREE.MeshStandardMaterial({ color: 0x3a3f33, roughness: 1 }),
     );
     this.ground.rotation.x = -Math.PI / 2;
@@ -56,7 +61,7 @@ export class GameView {
 
     this.buildCover();
     this.scene.add(this.highlight);
-    this.syncUnits();
+    this.syncUnits(true);
 
     const el = this.renderer.domElement;
     el.addEventListener('pointerdown', e => (this.down = { x: e.clientX, y: e.clientY }));
@@ -65,7 +70,17 @@ export class GameView {
     });
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
-    const loop = () => { this.raf = requestAnimationFrame(loop); this.controls.update(); this.renderer.render(this.scene, this.camera); };
+    const loop = () => {
+      this.raf = requestAnimationFrame(loop);
+      for (const [id, m] of this.unitMeshes) { const g = this.goals.get(id); if (g) m.position.lerp(g, 0.25); }
+      for (const f of this.floats) {
+        f.t += 0.016; f.sprite.position.y += 0.012;
+        (f.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - f.t / 1.1);
+      }
+      this.floats = this.floats.filter(f => (f.t < 1.1 ? true : (this.scene.remove(f.sprite), false)));
+      this.controls.update();
+      this.renderer.render(this.scene, this.camera);
+    };
     loop();
   }
 
@@ -95,32 +110,43 @@ export class GameView {
       const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshStandardMaterial({ color: 0x9be86a, emissive: 0x1d3a0c }));
       head.position.y = 1.15; head.castShadow = true; g.add(head);
     }
-    g.userData.id = u.id;
     return g;
   }
 
-  syncUnits() {
+  syncUnits(instant = false) {
     const alive = new Set<number>();
     for (const u of this.state.units) {
       if (u.hp <= 0) continue;
       alive.add(u.id);
       let m = this.unitMeshes.get(u.id);
-      if (!m) { m = this.makeUnit(u); this.unitMeshes.set(u.id, m); this.scene.add(m); }
-      m.position.set(u.x + 0.5, 0, u.y + 0.5);
+      const goal = new THREE.Vector3(u.x + 0.5, 0, u.y + 0.5);
+      if (!m) { m = this.makeUnit(u); m.position.copy(goal); this.unitMeshes.set(u.id, m); this.scene.add(m); }
+      this.goals.set(u.id, goal);
+      if (instant) m.position.copy(goal);
     }
-    for (const [id, m] of this.unitMeshes) if (!alive.has(id)) { this.scene.remove(m); this.unitMeshes.delete(id); }
+    for (const [id, m] of this.unitMeshes) if (!alive.has(id)) { this.scene.remove(m); this.unitMeshes.delete(id); this.goals.delete(id); }
     this.drawHighlight();
+  }
+
+  /** Перемещение с короткой паузой на анимацию. */
+  async moved() { this.syncUnits(); await sleep(170); }
+
+  private ring(x: number, y: number, color: number, r0 = 0.3, r1 = 0.42) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 24), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(x + 0.5, 0.02, y + 0.5);
+    this.highlight.add(ring);
   }
 
   private drawHighlight() {
     this.highlight.clear();
     const s = this.state;
-    const u = s.units.find(v => v.id === s.selectedId);
+    for (const o of s.units) if (o.hp > 0 && o.overwatch) this.ring(o.x, o.y, 0x35e0e0, 0.46, 0.52);
+    const t = s.units.find(v => v.id === s.targetId && v.hp > 0);
+    if (t) this.ring(t.x, t.y, 0xff3b3b);
+    const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     if (!u) return;
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.42, 24), new THREE.MeshBasicMaterial({ color: 0xffd34d, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2; ring.position.set(u.x + 0.5, 0.02, u.y + 0.5);
-    this.highlight.add(ring);
-    if (u.ap <= 0) return;
+    this.ring(u.x, u.y, 0xffd34d);
+    if (u.ap <= 0 || s.busy) return;
     const mat = new THREE.MeshBasicMaterial({ color: 0x4fa3ff, transparent: true, opacity: 0.35 });
     const geo = new THREE.PlaneGeometry(0.92, 0.92);
     for (const k of reachable(s, u.x, u.y, u.move).keys()) {
@@ -132,21 +158,57 @@ export class GameView {
     }
   }
 
-  private click(e: PointerEvent) {
+  /** Трассер, вспышка выстрела и всплывающий текст. */
+  async shotFx(r: ShotResult) {
+    const a = this.state.units.find(u => u.id === r.attackerId)!;
+    const t = this.state.units.find(u => u.id === r.targetId)!;
+    const from = new THREE.Vector3(a.x + 0.5, 0.8, a.y + 0.5);
+    const to = new THREE.Vector3(t.x + 0.5, 0.8, t.y + 0.5);
+    if (!r.hit) to.add(new THREE.Vector3((Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 1.2));
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([from, to]),
+      new THREE.LineBasicMaterial({ color: r.hit ? 0xffe066 : 0x9aa0a6 }),
+    );
+    const flash = new THREE.PointLight(0xffc060, 6, 5);
+    flash.position.copy(from);
+    this.scene.add(line, flash);
+    this.floatText(t.x + 0.5, t.y + 0.5, r.hit ? `−${r.dmg}` : 'мимо', r.hit ? '#ff6b6b' : '#c9ced3');
+    await sleep(160);
+    this.scene.remove(line, flash);
+    line.geometry.dispose();
+    await sleep(r.reaction ? 200 : 260);
+  }
+
+  private floatText(x: number, z: number, text: string, color: string) {
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 64;
+    const g = cv.getContext('2d')!;
+    g.font = 'bold 40px system-ui'; g.textAlign = 'center'; g.fillStyle = color;
+    g.strokeStyle = '#000'; g.lineWidth = 5;
+    g.strokeText(text, 64, 44); g.fillText(text, 64, 44);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
+    sprite.scale.set(1.6, 0.8, 1);
+    sprite.position.set(x, 1.6, z);
+    this.scene.add(sprite);
+    this.floats.push({ sprite, t: 0 });
+  }
+
+  private async click(e: PointerEvent) {
+    const s = this.state;
+    if (s.turn !== 'human' || s.busy || s.status !== 'playing') return;
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera);
     const hit = this.ray.intersectObject(this.ground)[0];
     if (!hit) return;
     const x = Math.floor(hit.point.x), y = Math.floor(hit.point.z);
-    const s = this.state;
-    if (s.turn !== 'human') return;
     const at = s.units.find(v => v.hp > 0 && v.x === x && v.y === y);
-    if (at?.team === 'human') s.selectedId = at.id;
-    else {
-      const sel = s.units.find(v => v.id === s.selectedId);
-      if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, sel.move).has(`${x},${y}`)) {
-        sel.x = x; sel.y = y; sel.ap -= 1;
-      }
+    const sel = s.units.find(v => v.id === s.selectedId && v.hp > 0);
+    if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; }
+    else if (at?.team === 'alien') { if (sel) s.targetId = at.id; }
+    else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, sel.move).has(`${x},${y}`)) {
+      s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false;
+      for (const [px, py] of findPath(s, sel.x, sel.y, x, y, sel.move)) { sel.x = px; sel.y = py; await this.moved(); }
+      s.busy = false;
     }
     this.syncUnits();
     this.onChange();

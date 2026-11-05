@@ -12,6 +12,12 @@ export interface Unit {
   ap: number;
   maxAp: number;
   move: number; // клеток за 1 AP
+  aim: number; // базовая меткость, %
+  ammo: number;
+  maxAmmo: number;
+  dmg: [number, number];
+  range: number;
+  overwatch: boolean;
 }
 
 export interface GameState {
@@ -19,6 +25,11 @@ export interface GameState {
   cover: Cover[][]; // cover[y][x]
   units: Unit[];
   selectedId: number | null;
+  targetId: number | null;
   turn: Team;
   turnNo: number;
+  status: 'playing' | 'won' | 'lost';
+  busy: boolean; // идёт анимация/ход ИИ — ввод заблокирован
+  log: string[];
+  rng: number; // состояние генератора (сид миссии)
 }
