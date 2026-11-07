@@ -18,6 +18,10 @@ export interface Unit {
   dmg: [number, number];
   range: number;
   overwatch: boolean;
+  bleeding: boolean; // −1 HP в начале хода, пока не перевязан
+  fracture: boolean; // −20% меткости, −2 к ходу
+  morale: number; // 0–100; <50 — штраф к меткости, <30 — паника
+  panic: boolean;
 }
 
 export interface GameState {
@@ -29,6 +33,7 @@ export interface GameState {
   turn: Team;
   turnNo: number;
   status: 'playing' | 'won' | 'lost';
+  medkits: number;
   busy: boolean; // идёт анимация/ход ИИ — ввод заблокирован
   log: string[];
   rng: number; // состояние генератора (сид миссии)

@@ -8,6 +8,7 @@ export interface ShotResult {
   chance: number;
   killed: boolean;
   reaction: boolean;
+  wound?: 'bleed' | 'fracture';
 }
 
 /** Детерминированный генератор (mulberry32) — состояние хранится в GameState.rng. */
@@ -60,9 +61,12 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false): num
   if (a.ammo <= 0 || a.hp <= 0 || t.hp <= 0 || a.team === t.team) return null;
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
-  const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - 6) * 3 - (reaction ? 10 : 0);
+  const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - 6) * 3 - (reaction ? 10 : 0)
+    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0);
   return Math.round(Math.min(95, Math.max(5, c)));
 }
+
+export const moveRange = (u: Unit) => Math.max(1, u.move - (u.fracture ? 2 : 0));
 
 export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotResult {
   const chance = hitChance(s, a, t, reaction) ?? 0;
@@ -72,9 +76,24 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotRes
   const dmg = hit ? a.dmg[0] + Math.floor(rand(s) * (a.dmg[1] - a.dmg[0] + 1)) : 0;
   t.hp = Math.max(0, t.hp - dmg);
   const killed = hit && t.hp <= 0;
-  log(s, `${reaction ? '[Overwatch] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}` : 'мимо'} (${chance}%)`);
+  let wound: ShotResult['wound'];
+  const shift = (u: Unit, d: number) => { u.morale = Math.min(100, Math.max(0, u.morale + d)); };
+  if (t.team === 'human') {
+    if (hit && !killed) {
+      shift(t, -10);
+      const roll = rand(s);
+      if (roll < 0.25 && !t.bleeding) { t.bleeding = true; wound = 'bleed'; }
+      else if (roll >= 0.25 && roll < 0.45 && !t.fracture) { t.fracture = true; wound = 'fracture'; }
+    } else if (!hit) shift(t, -4); // давление: пули свистят рядом
+    if (killed) living(s, 'human').forEach(h => shift(h, -15));
+  } else if (killed) {
+    shift(a, 8);
+    living(s, 'human').forEach(h => shift(h, 4));
+  }
+  const wtxt = wound === 'bleed' ? ', кровотечение' : wound === 'fracture' ? ', перелом' : '';
+  log(s, `${reaction ? '[Overwatch] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}${wtxt}` : 'мимо'} (${chance}%)`);
   checkEnd(s);
-  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction };
+  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound };
 }
 
 /** Реакция overwatch бойцов на движущегося пришельца. */
@@ -92,4 +111,40 @@ export function reactions(s: GameState, mover: Unit): ShotResult[] {
 export function checkEnd(s: GameState) {
   if (living(s, 'alien').length === 0) s.status = 'won';
   else if (living(s, 'human').length === 0) s.status = 'lost';
+}
+
+/** Начало хода людей: кровотечение, паника, восстановление AP. */
+export function startHumanTurn(s: GameState) {
+  for (const u of living(s, 'human')) {
+    u.ap = u.maxAp;
+    u.overwatch = false;
+    if (u.bleeding) {
+      u.hp -= 1;
+      log(s, `${u.name} истекает кровью (−1 HP).`);
+      if (u.hp <= 0) {
+        log(s, `${u.name} умер от кровопотери.`);
+        living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); });
+      }
+    }
+  }
+  checkEnd(s);
+  for (const u of living(s, 'human')) {
+    u.panic = u.morale < 30;
+    if (u.panic) { u.ap = 0; u.morale = 40; log(s, `${u.name} в панике и теряет ход.`); }
+  }
+}
+
+/** Перевязка: тратит 1 AP и бинт; стопорит кровотечение и даёт +2 HP. */
+export function bandage(s: GameState, medic: Unit): Unit | null {
+  if (medic.ap <= 0 || s.medkits <= 0) return null;
+  const t = living(s, 'human')
+    .filter(h => h.bleeding && Math.abs(h.x - medic.x) + Math.abs(h.y - medic.y) <= 1)
+    .sort((a, b) => a.hp - b.hp)[0];
+  if (!t) return null;
+  s.medkits -= 1;
+  medic.ap -= 1;
+  t.bleeding = false;
+  t.hp = Math.min(t.maxHp, t.hp + 2);
+  log(s, `${medic.name} перевязывает ${t.name}.`);
+  return t;
 }

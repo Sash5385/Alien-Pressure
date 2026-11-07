@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { GameState, Unit } from '../game/types';
-import type { ShotResult } from '../game/combat';
+import { moveRange, type ShotResult } from '../game/combat';
 import { reachable, findPath } from '../game/pathfinding';
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -141,6 +141,8 @@ export class GameView {
     this.highlight.clear();
     const s = this.state;
     for (const o of s.units) if (o.hp > 0 && o.overwatch) this.ring(o.x, o.y, 0x35e0e0, 0.46, 0.52);
+    for (const o of s.units) if (o.hp > 0 && o.bleeding) this.ring(o.x, o.y, 0xb01818, 0.54, 0.6);
+    for (const o of s.units) if (o.hp > 0 && o.panic) this.ring(o.x, o.y, 0xff9f43, 0.62, 0.68);
     const t = s.units.find(v => v.id === s.targetId && v.hp > 0);
     if (t) this.ring(t.x, t.y, 0xff3b3b);
     const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
@@ -149,7 +151,7 @@ export class GameView {
     if (u.ap <= 0 || s.busy) return;
     const mat = new THREE.MeshBasicMaterial({ color: 0x4fa3ff, transparent: true, opacity: 0.35 });
     const geo = new THREE.PlaneGeometry(0.92, 0.92);
-    for (const k of reachable(s, u.x, u.y, u.move).keys()) {
+    for (const k of reachable(s, u.x, u.y, moveRange(u)).keys()) {
       const [x, y] = k.split(',').map(Number);
       if (x === u.x && y === u.y) continue;
       const p = new THREE.Mesh(geo, mat);
@@ -173,13 +175,14 @@ export class GameView {
     flash.position.copy(from);
     this.scene.add(line, flash);
     this.floatText(t.x + 0.5, t.y + 0.5, r.hit ? `−${r.dmg}` : 'мимо', r.hit ? '#ff6b6b' : '#c9ced3');
+    if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
     await sleep(160);
     this.scene.remove(line, flash);
     line.geometry.dispose();
     await sleep(r.reaction ? 200 : 260);
   }
 
-  private floatText(x: number, z: number, text: string, color: string) {
+  private floatText(x: number, z: number, text: string, color: string, dy = 0) {
     const cv = document.createElement('canvas');
     cv.width = 128; cv.height = 64;
     const g = cv.getContext('2d')!;
@@ -188,7 +191,7 @@ export class GameView {
     g.strokeText(text, 64, 44); g.fillText(text, 64, 44);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
     sprite.scale.set(1.6, 0.8, 1);
-    sprite.position.set(x, 1.6, z);
+    sprite.position.set(x, 1.6 + dy, z);
     this.scene.add(sprite);
     this.floats.push({ sprite, t: 0 });
   }
@@ -205,9 +208,9 @@ export class GameView {
     const sel = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; }
     else if (at?.team === 'alien') { if (sel) s.targetId = at.id; }
-    else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, sel.move).has(`${x},${y}`)) {
+    else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
       s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false;
-      for (const [px, py] of findPath(s, sel.x, sel.y, x, y, sel.move)) { sel.x = px; sel.y = py; await this.moved(); }
+      for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) { sel.x = px; sel.y = py; await this.moved(); }
       s.busy = false;
     }
     this.syncUnits();

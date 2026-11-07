@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef } from 'react';
 import { runAlienTurn } from './game/ai';
-import { checkEnd, hitChance, living, log, shoot } from './game/combat';
+import { bandage, checkEnd, hitChance, living, log, shoot, startHumanTurn } from './game/combat';
 import { createMission } from './game/mission';
 import { GameView } from './render/GameView';
 
@@ -26,6 +26,8 @@ export function App() {
   const chance = sel && tgt ? hitChance(s, sel, tgt) : null;
   const canAct = s.turn === 'human' && !s.busy && s.status === 'playing';
   const canFire = canAct && !!sel && sel.ap > 0 && chance !== null;
+  const canBandage = canAct && !!sel && sel.ap > 0 && s.medkits > 0 &&
+    living(s, 'human').some(h => h.bleeding && Math.abs(h.x - sel.x) + Math.abs(h.y - sel.y) <= 1);
   const canOw = canAct && !!sel && sel.ap > 0 && sel.ammo > 0 && !sel.overwatch;
 
   const fire = async () => {
@@ -37,6 +39,13 @@ export function App() {
     await view.current!.shotFx(r);
     if (tgt.hp <= 0) s.targetId = null;
     s.busy = false;
+    view.current!.syncUnits();
+    rerender();
+  };
+
+  const heal = () => {
+    if (!canBandage || !sel) return;
+    bandage(s, sel);
     view.current!.syncUnits();
     rerender();
   };
@@ -60,9 +69,9 @@ export function App() {
     });
     checkEnd(s);
     if (s.status === 'playing') {
-      living(s, 'human').forEach(u => { u.ap = u.maxAp; u.overwatch = false; });
       s.turnNo += 1;
       log(s, `— Ход ${s.turnNo} —`);
+      startHumanTurn(s);
     }
     s.turn = 'human'; s.busy = false;
     view.current!.syncUnits();
@@ -72,7 +81,7 @@ export function App() {
   const restart = () => location.reload();
 
   const info = sel
-    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · патроны ${sel.ammo}/${sel.maxAmmo}${sel.overwatch ? ' · overwatch' : ''}`
+    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · патроны ${sel.ammo}/${sel.maxAmmo} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}`
     : 'Выбери бойца';
   const aliens = living(s, 'alien').length;
 
@@ -89,6 +98,7 @@ export function App() {
           {s.log.slice(-5).map((l, i) => <div key={s.log.length - 5 + i}>{l}</div>)}
         </div>
         <button style={btn(true, !canFire)} disabled={!canFire} onClick={fire}>Огонь{chance !== null ? ` ${chance}%` : ''}</button>
+        <button style={btn(false, !canBandage)} disabled={!canBandage} onClick={heal}>Бинт ({s.medkits})</button>
         <button style={btn(false, !canOw)} disabled={!canOw} onClick={overwatch}>Overwatch</button>
         <button style={btn(false, !canAct)} disabled={!canAct} onClick={endTurn}>Конец хода</button>
       </div>

@@ -5,10 +5,12 @@ const SIZE = 20;
 const human = (id: number, name: string, x: number, y: number): Unit => ({
   id, team: 'human', name, x, y, hp: 8, maxHp: 8, ap: 2, maxAp: 2, move: 5,
   aim: 70, ammo: 5, maxAmmo: 5, dmg: [2, 4], range: 14, overwatch: false,
+  bleeding: false, fracture: false, morale: 70, panic: false,
 });
 const alien = (id: number, name: string, x: number, y: number): Unit => ({
   id, team: 'alien', name, x, y, hp: 6, maxHp: 6, ap: 2, maxAp: 2, move: 5,
   aim: 55, ammo: 6, maxAmmo: 6, dmg: [2, 3], range: 12, overwatch: false,
+  bleeding: false, fracture: false, morale: 100, panic: false,
 });
 
 /** Миссия 1: зачистка у корабля. seed — для воспроизводимых прохождений. */
@@ -26,6 +28,6 @@ export function createMission(seed = Date.now() >>> 0): GameState {
 
   return {
     size: SIZE, cover, units: [...humans, ...aliens], selectedId: null, targetId: null,
-    turn: 'human', turnNo: 1, status: 'playing', busy: false, log: ['Миссия: зачистка у корабля.'], rng: seed,
+    turn: 'human', turnNo: 1, status: 'playing', medkits: 2, busy: false, log: ['Миссия: зачистка у корабля.'], rng: seed,
   };
 }
