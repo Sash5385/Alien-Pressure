@@ -1,5 +1,5 @@
 import { rand } from './combat';
-import type { Unit } from './types';
+import type { PerkId, Unit } from './types';
 
 export type TraitId = 'coward' | 'veteran' | 'medic' | 'marksman' | 'tough' | 'stoic' | 'runner';
 
@@ -53,3 +53,11 @@ export function applyTraits(u: Unit) {
     if (t === 'runner') u.move += 1;
   }
 }
+
+export const PERKS: Record<PerkId, string> = {
+  aim: 'Меткость +5',
+  hp: 'Выносливость +2 HP',
+  nerve: 'Стальные нервы (мораль падает на 25% слабее)',
+};
+export const RANKS = ['Рядовой', 'Ефрейтор', 'Сержант', 'Лейтенант'];
+export const XP_STEPS = [3, 8, 15];

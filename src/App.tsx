@@ -22,7 +22,7 @@ export function App() {
     setMission({
       deployed,
       state: createMission({
-        rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, tech: c0.tech,
+        rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, objective: c0.objective, tech: c0.tech,
         soldiers: c0.roster.filter(s => deployed.includes(s.id)),
       }),
     });

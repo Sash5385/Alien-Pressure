@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { GameState, Unit } from '../game/types';
-import { isVisible, moveRange, updateVision, type ShotResult } from '../game/combat';
+import { checkEnd, isVisible, moveRange, updateVision, type ShotResult } from '../game/combat';
+import { spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -19,6 +20,10 @@ export class GameView {
   private fogData!: Uint8Array;
   private fogTex!: THREE.DataTexture;
   private unitMeshes = new Map<number, THREE.Object3D>();
+  private rigs = new Map<number, Spawned>();
+  private anim = new Map<number, string>();
+  private dying = new Set<number>();
+  private clock = new THREE.Clock();
   private goals = new Map<number, THREE.Vector3>();
   private highlight = new THREE.Group();
   private floats: Float[] = [];
@@ -75,6 +80,7 @@ export class GameView {
     this.scene.add(fog);
 
     this.buildCover();
+    this.buildZone();
     this.scene.add(this.highlight);
     this.syncUnits(true);
 
@@ -87,7 +93,18 @@ export class GameView {
     this.resize();
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
-      for (const [id, m] of this.unitMeshes) { const g = this.goals.get(id); if (g) m.position.lerp(g, 0.25); }
+      const dt = this.clock.getDelta();
+      for (const [id, m] of this.unitMeshes) {
+        const g = this.goals.get(id);
+        if (g && !this.dying.has(id)) {
+          const d = g.clone().sub(m.position);
+          d.y = 0;
+          if (d.length() > 0.08 && this.rigs.has(id)) { m.rotation.y = Math.atan2(d.x, d.z); this.play(id, 'Run'); }
+          else if (this.anim.get(id) === 'Run') this.play(id, 'Idle');
+          m.position.lerp(g, 0.25);
+        }
+        this.rigs.get(id)?.mixer.update(dt);
+      }
       for (const f of this.floats) {
         f.t += 0.016; f.sprite.position.y += 0.012;
         (f.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - f.t / 1.1);
@@ -114,8 +131,44 @@ export class GameView {
     }
   }
 
-  /** Примитивная модель; позже подменяется glTF из public/models/. */
+  /** Зона эвакуации. */
+  private buildZone() {
+    const z = this.state.zone;
+    if (!z) return;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(z.w, z.h), new THREE.MeshBasicMaterial({ color: 0x35e07a, transparent: true, opacity: 0.3 }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(z.x + z.w / 2, 0.015, z.y + z.h / 2);
+    this.scene.add(m);
+  }
+
+  private play(id: number, name: string, once = false) {
+    const r = this.rigs.get(id);
+    const next = r?.actions.get(name);
+    if (!r || !next) return;
+    const prevName = this.anim.get(id);
+    if (prevName === name && !once) return;
+    const prev = prevName ? r.actions.get(prevName) : undefined;
+    next.reset().setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
+    next.clampWhenFinished = true;
+    next.play();
+    if (prev && prev !== next) prev.crossFadeTo(next, 0.15, false);
+    this.anim.set(id, name);
+    if (once && name !== 'Death') setTimeout(() => { if (this.anim.get(id) === name) this.play(id, 'Idle'); }, next.getClip().duration * 1000);
+  }
+
+  /** glTF-модель из public/models/, а если её нет — примитив. */
   private makeUnit(u: Unit): THREE.Object3D {
+    const height = { soldier: 1.05, trooper: 1.05, sniper: 1.15, psi: 1.05, heavy: 1.45 }[u.kind];
+    const tint = { soldier: undefined, trooper: 0x7fd24a, sniper: 0x3f8f6a, psi: 0xb36bff, heavy: 0x6f8a2c }[u.kind];
+    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint);
+    if (!sp) return this.makePrimitive(u);
+    this.rigs.set(u.id, sp);
+    this.play(u.id, 'Idle');
+    if (u.team === 'human') sp.obj.rotation.y = Math.PI; // модели смотрят на +Z; бойцы — на север
+    return sp.obj;
+  }
+
+  private makePrimitive(u: Unit): THREE.Object3D {
     const g = new THREE.Group();
     const look: Record<Unit['kind'], { color: number; scale: number; glow?: number }> = {
       soldier: { color: 0x4f7fb5, scale: 1 },
@@ -153,7 +206,14 @@ export class GameView {
       m.visible = isVisible(this.state, u);
       if (instant) m.position.copy(goal);
     }
-    for (const [id, m] of this.unitMeshes) if (!alive.has(id)) { this.scene.remove(m); this.unitMeshes.delete(id); this.goals.delete(id); }
+    for (const [id, m] of this.unitMeshes) {
+      if (alive.has(id) || this.dying.has(id)) continue;
+      if (this.rigs.get(id)?.actions.has('Death')) {
+        this.dying.add(id);
+        this.play(id, 'Death', true);
+        setTimeout(() => { this.scene.remove(m); this.unitMeshes.delete(id); this.goals.delete(id); this.rigs.delete(id); this.dying.delete(id); }, 1300);
+      } else { this.scene.remove(m); this.unitMeshes.delete(id); this.goals.delete(id); }
+    }
     for (const [k, m] of this.coverMeshes) {
       const [cx, cy] = k.split(',').map(Number);
       if (this.state.cover[cy][cx] === 'none') { this.scene.remove(m); this.coverMeshes.delete(k); }
@@ -221,6 +281,10 @@ export class GameView {
     this.floatText(t.x + 0.5, t.y + 0.5, r.psi ? (r.hit ? 'давление' : 'устоял') : r.hit ? `−${r.dmg}` : 'мимо', r.hit ? '#ff6b6b' : '#c9ced3');
     if (r.broken) this.floatText(t.x + 0.5, t.y + 0.5, 'укрытие', '#ffd34d', 0.5);
     if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
+    const am = this.unitMeshes.get(a.id);
+    if (am) am.rotation.y = Math.atan2(t.x - a.x, t.y - a.y);
+    this.play(a.id, 'Idle_Shoot', true);
+    if (r.hit && !r.killed) this.play(t.id, 'HitReact', true);
     await sleep(160);
     this.scene.remove(line, flash);
     line.geometry.dispose();
@@ -257,6 +321,7 @@ export class GameView {
       s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false;
       for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) { sel.x = px; sel.y = py; await this.moved(); }
       s.busy = false;
+      checkEnd(s);
     }
     this.syncUnits();
     this.onChange();

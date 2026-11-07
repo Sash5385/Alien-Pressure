@@ -1,6 +1,8 @@
 import type { TraitId } from './traits';
 
 export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy';
+export type Objective = 'clear' | 'extract' | 'hold';
+export type PerkId = 'aim' | 'hp' | 'nerve';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface Tech { armor: boolean; optics: boolean; kits: boolean }
 
@@ -14,6 +16,10 @@ export interface Soldier {
   fracture: boolean;
   kills: number;
   missions: number;
+  xp: number;
+  rank: number;
+  perks: PerkId[];
+  perkPoints: number;
 }
 
 export type Team = 'human' | 'alien';
@@ -42,6 +48,7 @@ export interface Unit {
   morale: number; // 0–100; <50 — штраф к меткости, <30 — паника
   panic: boolean;
   traits: TraitId[];
+  perks: PerkId[];
   bio: string;
   kills: number;
 }
@@ -61,6 +68,9 @@ export interface GameState {
   revealed: number[]; // пришельцы, выдавшие себя выстрелом
   missionNo: number;
   difficulty: Difficulty;
+  objective: Objective;
+  holdTurns: number;
+  zone: { x: number; y: number; w: number; h: number } | null;
   busy: boolean; // идёт анимация/ход ИИ — ввод заблокирован
   log: string[];
   rng: number; // состояние генератора (сид миссии)

@@ -71,9 +71,9 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false): num
   return Math.round(Math.min(95, Math.max(5, c)));
 }
 
-const has = (u: Unit, t: string) => (u.traits as string[]).includes(t);
+const has = (u: Unit, t: string) => (u.traits as string[]).includes(t) || (u.perks as string[]).includes(t);
 export const panicAt = (u: Unit) => (has(u, 'stoic') ? 15 : 30);
-const moraleFactor = (u: Unit) => (has(u, 'coward') ? 1.5 : 1) * (has(u, 'veteran') ? 0.7 : 1);
+const moraleFactor = (u: Unit) => (has(u, 'coward') ? 1.5 : 1) * (has(u, 'veteran') ? 0.7 : 1) * (has(u, 'nerve') ? 0.75 : 1);
 
 function shift(u: Unit, d: number) {
   u.morale = Math.min(100, Math.max(0, Math.round(u.morale + (d < 0 ? d * moraleFactor(u) : d))));
@@ -129,8 +129,12 @@ export function reactions(s: GameState, mover: Unit): ShotResult[] {
 }
 
 export function checkEnd(s: GameState) {
+  const humans = living(s, 'human');
+  if (humans.length === 0) { s.status = 'lost'; return; }
+  const z = s.zone;
+  if (s.objective === 'hold') { if (s.turnNo > s.holdTurns) s.status = 'won'; return; }
   if (living(s, 'alien').length === 0) s.status = 'won';
-  else if (living(s, 'human').length === 0) s.status = 'lost';
+  else if (s.objective === 'extract' && z && humans.every(h => h.x >= z.x && h.x < z.x + z.w && h.y >= z.y && h.y < z.y + z.h)) s.status = 'won';
 }
 
 /** Начало хода людей: кровотечение, паника, восстановление AP. */

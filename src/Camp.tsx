@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { buy, COST, DEPLOY, heal, maxHpOf, MAX_ROSTER, recruit, TECH_INFO, type Campaign } from './game/campaign';
+import { buy, choosePerk, COST, DEPLOY, heal, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, type Campaign } from './game/campaign';
 import { DIFF } from './game/difficulty';
-import { TRAITS } from './game/traits';
-import type { Tech } from './game/types';
+import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
+import type { PerkId, Tech } from './game/types';
 import { btn } from './ui';
 
 const panel: React.CSSProperties = { background: '#161b1f', border: '1px solid #2c343b', borderRadius: 8, padding: 12 };
@@ -45,7 +45,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
     <Screen>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'baseline' }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>Подпольная база</h1>
-        <span>Следующая миссия: {c.missionNo}</span>
+        <span>Следующая миссия: {c.missionNo} — {OBJECTIVE_NAME[c.objective]}</span>
         <span>Сложность: {DIFF[c.difficulty].label}</span>
         <b style={{ color: '#ffd34d' }}>Трофеи: {c.scrap}</b>
       </div>
@@ -56,11 +56,20 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         return (
           <div key={s.id} style={{ ...panel, borderColor: on ? '#ffd34d' : '#2c343b' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-              <b style={{ flex: '1 1 140px' }}>{s.name}</b>
+              <b style={{ flex: '1 1 140px' }}>{RANKS[s.rank]} {s.name}</b>
               <span>HP {Math.max(1, max - s.hpLoss)}/{max}{s.fracture ? ' · перелом' : ''}</span>
-              <span style={{ opacity: 0.7 }}>убито: {s.kills} · миссий: {s.missions}</span>
+              <span style={{ opacity: 0.7 }}>убито: {s.kills} · миссий: {s.missions} · опыт {s.xp}{s.rank < XP_STEPS.length ? `/${XP_STEPS[s.rank]}` : ' (макс.)'}</span>
             </div>
             <div style={{ fontSize: 13, opacity: 0.85 }}>{s.traits.map(t => TRAITS[t].name).join(', ')} — {s.bio}</div>
+            {s.perks.length > 0 && <div style={{ fontSize: 12, color: '#9be86a' }}>{s.perks.map(p => PERKS[p].split(' (')[0]).join(', ')}</div>}
+            {s.perkPoints > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>
+                <b style={{ color: '#ffd34d' }}>Повышение!</b>
+                {(Object.keys(PERKS) as PerkId[]).map(p => (
+                  <button key={p} style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => act(x => choosePerk(x, s.id, p))}>{PERKS[p]}</button>
+                ))}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <button style={btn(false, s.hpLoss === 0 && !s.fracture)} onClick={() => act(x => heal(x, s.id))}>Лечить ({COST.heal})</button>
               <button style={btn(on)} onClick={() => toggle(s.id)}>{on ? 'В отряде' : 'В резерве'}</button>

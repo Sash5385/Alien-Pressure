@@ -1,12 +1,13 @@
 import { rand } from './combat';
-import { pickTraits, ROSTER, shuffle } from './traits';
-import type { Difficulty, GameState, Soldier, Tech } from './types';
+import { pickTraits, ROSTER, shuffle, XP_STEPS } from './traits';
+import type { Difficulty, GameState, Objective, PerkId, Soldier, Tech } from './types';
 
 export interface Campaign {
   v: 1;
   rng: number;
   difficulty: Difficulty;
   missionNo: number;
+  objective: Objective;
   roster: Soldier[];
   fallen: { name: string; mission: number }[];
   scrap: number;
@@ -14,6 +15,12 @@ export interface Campaign {
   nextId: number;
   over: boolean;
 }
+
+export const OBJECTIVE_NAME: Record<Objective, string> = {
+  clear: 'Зачистка',
+  extract: 'Эвакуация',
+  hold: 'Удержание',
+};
 
 export const MAX_ROSTER = 6;
 export const DEPLOY = 4;
@@ -27,19 +34,20 @@ export const TECH_INFO: Record<keyof Tech, string> = {
 const KEY = 'alien-pressure:v1';
 
 function mkSoldier(c: Campaign, name: string, bio: string): Soldier {
-  return { id: c.nextId++, name, bio, traits: pickTraits(c), hpLoss: 0, fracture: false, kills: 0, missions: 0 };
+  return { id: c.nextId++, name, bio, traits: pickTraits(c), hpLoss: 0, fracture: false, kills: 0, missions: 0, xp: 0, rank: 0, perks: [], perkPoints: 0 };
 }
 
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Campaign {
   const c: Campaign = {
-    v: 1, rng: seed, difficulty, missionNo: 1, roster: [], fallen: [], scrap: 3,
+    v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', roster: [], fallen: [], scrap: 3,
     tech: { armor: false, optics: false, kits: false }, nextId: 1, over: false,
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
   return c;
 }
 
-export const maxHpOf = (s: Soldier, t: Tech) => 8 + (s.traits.includes('tough') ? 3 : 0) + (t.armor ? 2 : 0);
+export const maxHpOf = (s: Soldier, t: Tech) =>
+  8 + (s.traits.includes('tough') ? 3 : 0) + (t.armor ? 2 : 0) + s.perks.filter(p => p === 'hp').length * 2;
 
 /** Все действия лагеря возвращают текст ошибки или null. */
 export function recruit(c: Campaign): string | null {
@@ -84,12 +92,15 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
     sol.fracture = u.fracture;
     sol.kills += u.kills;
     sol.missions += 1;
+    sol.xp += u.kills * 2 + 1 + (s.status === 'won' ? 1 : 0);
+    while (sol.rank < XP_STEPS.length && sol.xp >= XP_STEPS[sol.rank]) { sol.rank += 1; sol.perkPoints += 1; }
   }
   c.roster.forEach(x => { x.hpLoss = Math.max(0, x.hpLoss - 3); }); // отдых между миссиями
   c.rng = (s.rng + Math.floor(rand(c) * 1e6)) >>> 0;
   if (s.status === 'won') {
-    c.scrap += 3 + c.missionNo;
+    c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : 2);
     c.missionNo += 1;
+    c.objective = (['clear', 'extract', 'hold'] as const)[Math.floor(rand(c) * 3)];
   } else c.over = true;
   if (c.roster.length === 0) c.over = true;
 }
@@ -101,9 +112,20 @@ export function load(): Campaign | null {
   try {
     const raw = localStorage.getItem(KEY);
     const c = raw ? (JSON.parse(raw) as Campaign) : null;
-    return c && c.v === 1 ? c : null;
+    if (!c || c.v !== 1) return null;
+    c.objective ??= 'clear';
+    for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; }
+    return c;
   } catch { return null; }
 }
 export function clearSave() {
   try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+}
+
+export function choosePerk(c: Campaign, id: number, perk: PerkId): string | null {
+  const s = c.roster.find(x => x.id === id);
+  if (!s || s.perkPoints <= 0) return 'Нет очков повышения.';
+  s.perks.push(perk);
+  s.perkPoints -= 1;
+  return null;
 }

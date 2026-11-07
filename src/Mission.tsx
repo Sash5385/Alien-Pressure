@@ -4,7 +4,9 @@ import { bandage, checkEnd, hitChance, isVisible, living, log, shoot, startHuman
 import type { GameState } from './game/types';
 import { btn } from './ui';
 import { TRAITS } from './game/traits';
+import { reinforce } from './game/mission';
 import { GameView } from './render/GameView';
+import { loadModels } from './render/models';
 
 export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: GameState) => void }) {
   const host = useRef<HTMLDivElement>(null);
@@ -13,16 +15,20 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
   const [, rerender] = useReducer(n => n + 1, 0);
 
   useEffect(() => {
-    view.current = new GameView(host.current!, state.current, rerender);
-    rerender();
-    return () => view.current?.dispose();
+    let dead = false;
+    loadModels().then(() => {
+      if (dead) return;
+      view.current = new GameView(host.current!, state.current, rerender);
+      rerender();
+    });
+    return () => { dead = true; view.current?.dispose(); view.current = null; };
   }, []);
 
   const s = state.current;
   const sel = s.units.find(u => u.id === s.selectedId && u.hp > 0);
   const tgt = s.units.find(u => u.id === s.targetId && u.hp > 0);
   const chance = sel && tgt ? hitChance(s, sel, tgt) : null;
-  const canAct = s.turn === 'human' && !s.busy && s.status === 'playing';
+  const canAct = !!view.current && s.turn === 'human' && !s.busy && s.status === 'playing';
   const canFire = canAct && !!sel && sel.ap > 0 && chance !== null;
   const canBandage = canAct && !!sel && sel.ap > 0 && s.medkits > 0 &&
     living(s, 'human').some(h => h.bleeding && Math.abs(h.x - sel.x) + Math.abs(h.y - sel.y) <= 1);
@@ -66,6 +72,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
   const endTurn = async () => {
     if (!canAct) return;
     s.turn = 'alien'; s.busy = true; s.targetId = null;
+    if (s.objective === 'hold' && s.turnNo % 2 === 0) reinforce(s);
     view.current!.syncUnits();
     rerender();
     await runAlienTurn(s, {
@@ -88,13 +95,14 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
   const info = sel
     ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · патроны ${sel.ammo}/${sel.maxAmmo} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}`
     : 'Выбери бойца';
+  const goal = s.objective === 'clear' ? 'зачистка' : s.objective === 'extract' ? 'эвакуация: все в зелёную зону' : `удержание ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`;
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
 
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
       <div style={{ position: 'absolute', top: 8, left: 8, right: 8, pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
-        <b>Миссия {s.missionNo}</b> · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · в поле зрения: {aliens}
+        <b>Миссия {s.missionNo}</b> · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · в поле зрения: {aliens}
         <div>{info}</div>
         {sel && <div style={{ opacity: 0.8, fontSize: 12 }}>{sel.traits.map(t => TRAITS[t].name).join(', ')} — {sel.bio}</div>}
         {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `шанс ${chance}%`}</div>}
