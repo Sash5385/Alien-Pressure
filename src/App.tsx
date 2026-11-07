@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef } from 'react';
 import { runAlienTurn } from './game/ai';
 import { bandage, checkEnd, hitChance, living, log, shoot, startHumanTurn } from './game/combat';
 import { createMission } from './game/mission';
+import { TRAITS } from './game/traits';
 import { GameView } from './render/GameView';
 
 const btn = (primary = false, off = false): React.CSSProperties => ({
@@ -50,6 +51,13 @@ export function App() {
     rerender();
   };
 
+  const pick = (id: number) => {
+    if (!canAct) return;
+    s.selectedId = id; s.targetId = null;
+    view.current!.syncUnits();
+    rerender();
+  };
+
   const overwatch = () => {
     if (!canOw || !sel) return;
     sel.overwatch = true; sel.ap = 0; s.targetId = null;
@@ -91,7 +99,16 @@ export function App() {
       <div style={{ position: 'absolute', top: 8, left: 8, right: 8, pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
         <b>Alien Pressure</b> · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · пришельцев: {aliens}
         <div>{info}</div>
+        {sel && <div style={{ opacity: 0.8, fontSize: 12 }}>{sel.traits.map(t => TRAITS[t].name).join(', ')} — {sel.bio}</div>}
         {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `шанс ${chance}%`}</div>}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, pointerEvents: 'auto' }}>
+          {s.units.filter(u => u.team === 'human').map(u => (
+            <button key={u.id} disabled={u.hp <= 0 || !canAct} onClick={() => pick(u.id)}
+              style={{ ...btn(false, u.hp <= 0), padding: '4px 8px', fontSize: 12, border: u.id === s.selectedId ? '1px solid #ffd34d' : '1px solid #556', textDecoration: u.hp <= 0 ? 'line-through' : 'none' }}>
+              {u.name} {u.hp}/{u.maxHp}{u.bleeding ? ' 🩸' : ''}{u.panic ? ' ⚠' : ''}
+            </button>
+          ))}
+        </div>
       </div>
       <div style={{ position: 'absolute', left: 8, right: 8, bottom: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 200px', maxHeight: 110, overflow: 'hidden', fontSize: 12, textShadow: '0 1px 2px #000', pointerEvents: 'none' }}>

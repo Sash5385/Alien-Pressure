@@ -12,7 +12,7 @@ export interface ShotResult {
 }
 
 /** Детерминированный генератор (mulberry32) — состояние хранится в GameState.rng. */
-export function rand(s: GameState): number {
+export function rand(s: { rng: number }): number {
   let t = (s.rng = (s.rng + 0x6d2b79f5) >>> 0);
   t = Math.imul(t ^ (t >>> 15), t | 1);
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
@@ -66,6 +66,10 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false): num
   return Math.round(Math.min(95, Math.max(5, c)));
 }
 
+const has = (u: Unit, t: string) => (u.traits as string[]).includes(t);
+export const panicAt = (u: Unit) => (has(u, 'stoic') ? 15 : 30);
+const moraleFactor = (u: Unit) => (has(u, 'coward') ? 1.5 : 1) * (has(u, 'veteran') ? 0.7 : 1);
+
 export const moveRange = (u: Unit) => Math.max(1, u.move - (u.fracture ? 2 : 0));
 
 export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotResult {
@@ -77,7 +81,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotRes
   t.hp = Math.max(0, t.hp - dmg);
   const killed = hit && t.hp <= 0;
   let wound: ShotResult['wound'];
-  const shift = (u: Unit, d: number) => { u.morale = Math.min(100, Math.max(0, u.morale + d)); };
+  const shift = (u: Unit, d: number) => { u.morale = Math.min(100, Math.max(0, Math.round(u.morale + (d < 0 ? d * moraleFactor(u) : d)))); };
   if (t.team === 'human') {
     if (hit && !killed) {
       shift(t, -10);
@@ -129,22 +133,23 @@ export function startHumanTurn(s: GameState) {
   }
   checkEnd(s);
   for (const u of living(s, 'human')) {
-    u.panic = u.morale < 30;
+    u.panic = u.morale < panicAt(u);
     if (u.panic) { u.ap = 0; u.morale = 40; log(s, `${u.name} в панике и теряет ход.`); }
   }
 }
 
 /** Перевязка: тратит 1 AP и бинт; стопорит кровотечение и даёт +2 HP. */
 export function bandage(s: GameState, medic: Unit): Unit | null {
-  if (medic.ap <= 0 || s.medkits <= 0) return null;
+  if (medic.ap <= 0 || (s.medkits <= 0 && !has(medic, 'medic'))) return null;
   const t = living(s, 'human')
     .filter(h => h.bleeding && Math.abs(h.x - medic.x) + Math.abs(h.y - medic.y) <= 1)
     .sort((a, b) => a.hp - b.hp)[0];
   if (!t) return null;
-  s.medkits -= 1;
+  const pro = has(medic, 'medic');
+  if (!pro) s.medkits -= 1;
   medic.ap -= 1;
   t.bleeding = false;
-  t.hp = Math.min(t.maxHp, t.hp + 2);
+  t.hp = Math.min(t.maxHp, t.hp + (pro ? 4 : 2));
   log(s, `${medic.name} перевязывает ${t.name}.`);
   return t;
 }

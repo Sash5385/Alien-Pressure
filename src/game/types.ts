@@ -1,3 +1,5 @@
+import type { TraitId } from './traits';
+
 export type Team = 'human' | 'alien';
 export type Cover = 'none' | 'half' | 'full';
 
@@ -22,6 +24,8 @@ export interface Unit {
   fracture: boolean; // −20% меткости, −2 к ходу
   morale: number; // 0–100; <50 — штраф к меткости, <30 — паника
   panic: boolean;
+  traits: TraitId[];
+  bio: string;
 }
 
 export interface GameState {
