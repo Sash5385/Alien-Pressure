@@ -207,3 +207,14 @@ export function updateVision(s: GameState) {
 }
 
 export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || s.vis[u.y][u.x] || s.revealed.includes(u.id);
+
+/** Перезарядка: 1 AP; у людей тратит запасной магазин. */
+export function reload(s: GameState, u: Unit): boolean {
+  if (u.ap <= 0 || u.maxAmmo <= 0 || u.ammo >= u.maxAmmo || (u.team === 'human' && u.mags <= 0)) return false;
+  u.ap -= 1;
+  u.ammo = u.maxAmmo;
+  if (u.team === 'human') u.mags -= 1;
+  u.overwatch = false;
+  log(s, `${u.name} перезаряжается.`);
+  return true;
+}

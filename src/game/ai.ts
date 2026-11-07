@@ -1,4 +1,4 @@
-import { canPsi, hitChance, living, psiAttack, reactions, shoot, type ShotResult } from './combat';
+import { canPsi, hitChance, living, psiAttack, reactions, reload, shoot, type ShotResult } from './combat';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 
@@ -24,6 +24,7 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
     u.ap = u.maxAp;
     for (let i = 0; i < 3 && u.hp > 0 && u.ap > 0 && s.status === 'playing'; i++) {
       const humans = living(s, 'human');
+      if (u.maxAmmo > 0 && u.ammo <= 0) { reload(s, u); continue; }
       const options = humans
         .map(t => ({ t, c: score(s, u, t) }))
         .filter((e): e is { t: Unit; c: number } => e.c !== null)

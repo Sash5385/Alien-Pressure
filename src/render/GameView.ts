@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { GameState, Unit } from '../game/types';
 import { checkEnd, isVisible, moveRange, updateVision, type ShotResult } from '../game/combat';
-import { spawnModel, type Spawned } from './models';
+import { sfx } from '../audio';
+import { spawnCover, spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -16,7 +17,7 @@ export class GameView {
   private controls: OrbitControls;
   private ray = new THREE.Raycaster();
   private ground: THREE.Mesh;
-  private coverMeshes = new Map<string, THREE.Mesh>();
+  private coverMeshes = new Map<string, THREE.Object3D>();
   private fogData!: Uint8Array;
   private fogTex!: THREE.DataTexture;
   private unitMeshes = new Map<number, THREE.Object3D>();
@@ -123,9 +124,19 @@ export class GameView {
       const t = cover[y][x];
       if (t === 'none') continue;
       const h = t === 'half' ? 0.6 : 1.4;
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.9, h, 0.9), mat[t]);
-      m.position.set(x + 0.5, h / 2, y + 0.5);
-      m.castShadow = m.receiveShadow = true;
+      const hash = (x * 7 + y * 13 + x * y) | 0;
+      const model = spawnCover(t, Math.abs(hash));
+      let m: THREE.Object3D;
+      if (model) {
+        m = model;
+        m.position.set(x + 0.5, 0, y + 0.5);
+        m.rotation.y = (Math.abs(hash) % 4) * (Math.PI / 2);
+      } else {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, h, 0.9), mat[t]);
+        box.position.set(x + 0.5, h / 2, y + 0.5);
+        box.castShadow = box.receiveShadow = true;
+        m = box;
+      }
       this.scene.add(m);
       this.coverMeshes.set(`${x},${y}`, m);
     }
@@ -281,6 +292,9 @@ export class GameView {
     this.floatText(t.x + 0.5, t.y + 0.5, r.psi ? (r.hit ? 'давление' : 'устоял') : r.hit ? `−${r.dmg}` : 'мимо', r.hit ? '#ff6b6b' : '#c9ced3');
     if (r.broken) this.floatText(t.x + 0.5, t.y + 0.5, 'укрытие', '#ffd34d', 0.5);
     if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
+    sfx(r.psi ? 'psi' : a.team === 'human' ? 'shot' : 'alienShot');
+    if (!r.psi) setTimeout(() => sfx(r.hit ? 'hit' : 'miss'), 110);
+    if (r.killed) setTimeout(() => sfx('death'), 260);
     const am = this.unitMeshes.get(a.id);
     if (am) am.rotation.y = Math.atan2(t.x - a.x, t.y - a.y);
     this.play(a.id, 'Idle_Shoot', true);

@@ -40,6 +40,7 @@ export interface Unit {
   aim: number; // базовая меткость, %
   ammo: number;
   maxAmmo: number;
+  mags: number; // запасные магазины (у пришельцев не ограничены)
   dmg: [number, number];
   range: number;
   overwatch: boolean;

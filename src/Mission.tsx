@@ -1,12 +1,13 @@
 import { useEffect, useReducer, useRef } from 'react';
 import { runAlienTurn } from './game/ai';
-import { bandage, checkEnd, hitChance, isVisible, living, log, shoot, startHumanTurn } from './game/combat';
+import { bandage, checkEnd, hitChance, isVisible, living, log, reload, shoot, startHumanTurn } from './game/combat';
 import type { GameState } from './game/types';
 import { btn } from './ui';
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
 import { GameView } from './render/GameView';
 import { loadModels } from './render/models';
+import { isMuted, setMuted, sfx } from './audio';
 
 export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: GameState) => void }) {
   const host = useRef<HTMLDivElement>(null);
@@ -43,6 +44,14 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
     await view.current!.shotFx(r);
     if (tgt.hp <= 0) s.targetId = null;
     s.busy = false;
+    view.current!.syncUnits();
+    rerender();
+  };
+
+  const canReload = canAct && !!sel && sel.ap > 0 && sel.ammo < sel.maxAmmo && sel.mags > 0;
+  const doReload = () => {
+    if (!canReload || !sel) return;
+    if (reload(s, sel)) sfx('reload');
     view.current!.syncUnits();
     rerender();
   };
@@ -84,6 +93,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
       s.turnNo += 1;
       log(s, `— Ход ${s.turnNo} —`);
       startHumanTurn(s);
+      if (living(s, 'human').some(u => u.panic)) sfx('panic');
     }
     s.turn = 'human'; s.busy = false;
     view.current!.syncUnits();
@@ -93,7 +103,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
   const leave = () => onExit(s);
 
   const info = sel
-    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · патроны ${sel.ammo}/${sel.maxAmmo} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}`
+    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · патроны ${sel.ammo}/${sel.maxAmmo} (+${sel.mags}) · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}`
     : 'Выбери бойца';
   const goal = s.objective === 'clear' ? 'зачистка' : s.objective === 'extract' ? 'эвакуация: все в зелёную зону' : `удержание ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`;
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
@@ -113,6 +123,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
               {u.name} {u.hp}/{u.maxHp}{u.bleeding ? ' 🩸' : ''}{u.panic ? ' ⚠' : ''}
             </button>
           ))}
+          <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>
         </div>
       </div>
       <div style={{ position: 'absolute', left: 8, right: 8, bottom: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
@@ -120,6 +131,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
           {s.log.slice(-5).map((l, i) => <div key={s.log.length - 5 + i}>{l}</div>)}
         </div>
         <button style={btn(true, !canFire)} disabled={!canFire} onClick={fire}>Огонь{chance !== null ? ` ${chance}%` : ''}</button>
+        <button style={btn(false, !canReload)} disabled={!canReload} onClick={doReload}>Заряд{sel ? ` (${sel.mags})` : ''}</button>
         <button style={btn(false, !canBandage)} disabled={!canBandage} onClick={heal}>Бинт ({s.medkits})</button>
         <button style={btn(false, !canOw)} disabled={!canOw} onClick={overwatch}>Overwatch</button>
         <button style={btn(false, !canAct)} disabled={!canAct} onClick={endTurn}>Конец хода</button>

@@ -9,7 +9,7 @@ export const HOLD_TURNS = 6;
 const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
   const u: Unit = {
     id: s.id, team: 'human', kind: 'soldier', name: s.name, x, y, hp: 8, maxHp: 8, ap: 2, maxAp: 2, move: 5,
-    aim: 70, ammo: 5, maxAmmo: 5, dmg: [2, 4], range: 14, overwatch: false,
+    aim: 70, ammo: 5, maxAmmo: 5, mags: 2, dmg: [2, 4], range: 14, overwatch: false,
     bleeding: false, fracture: s.fracture, morale: 70, panic: false, traits: s.traits, perks: s.perks, bio: s.bio, kills: 0,
   };
   applyTraits(u);
@@ -21,8 +21,8 @@ const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
 };
 
 const ALIEN: Record<'trooper' | 'sniper' | 'psi' | 'heavy', Partial<Unit>> = {
-  trooper: { hp: 6, aim: 55, ammo: 6, dmg: [2, 3], range: 12, move: 5 },
-  sniper: { hp: 4, aim: 70, ammo: 4, dmg: [3, 4], range: 20, move: 4 },
+  trooper: { hp: 6, aim: 50, ammo: 6, dmg: [2, 3], range: 12, move: 5 },
+  sniper: { hp: 4, aim: 65, ammo: 4, dmg: [3, 4], range: 20, move: 4 },
   psi: { hp: 5, aim: 0, ammo: 0, dmg: [0, 0], range: 10, move: 5 },
   heavy: { hp: 10, aim: 50, ammo: 4, dmg: [3, 5], range: 10, move: 4 },
 };
@@ -35,7 +35,7 @@ const alien = (id: number, kind: AlienKind, n: number, x: number, y: number, d: 
   return {
     id, team: 'alien', kind, name: kind === 'trooper' ? `${NAMES[kind]} ${n}` : NAMES[kind], x, y,
     hp, maxHp: hp, ap: 2, maxAp: 2, move: b.move!, aim: kind === 'psi' ? 0 : b.aim! + DIFF[d].aim,
-    ammo: b.ammo!, maxAmmo: b.ammo!, dmg: b.dmg!, range: b.range!, overwatch: false,
+    ammo: b.ammo!, maxAmmo: b.ammo!, mags: 99, dmg: b.dmg!, range: b.range!, overwatch: false,
     bleeding: false, fracture: false, morale: 100, panic: false, traits: [], perks: [], bio: '', kills: 0,
   };
 };
@@ -95,10 +95,11 @@ export function createMission(o: MissionOpts): GameState {
   const humans = o.soldiers.map((s, i) => human(s, 7 + i * 2, 18, o.tech));
 
   let kinds: AlienKind[] = ['trooper', 'sniper', 'trooper', 'psi', 'trooper', 'heavy'];
-  if (o.missionNo >= 2) kinds.push('trooper');
   if (o.missionNo >= 3) kinds.push('trooper');
-  if (o.missionNo >= 4) kinds.push('heavy');
-  if (o.objective === 'hold') kinds = kinds.slice(0, 4);
+  if (o.missionNo >= 5) kinds.push('trooper');
+  if (o.missionNo >= 7) kinds.push('heavy');
+  if (o.objective === 'hold') kinds = kinds.slice(0, 5);
+  if (o.objective === 'extract') kinds = kinds.slice(0, 5);
 
   const spots: [number, number][] = [];
   for (let y = 2; y <= 9; y++) for (let x = 1; x < SIZE - 1; x++) {

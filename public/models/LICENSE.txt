@@ -1,3 +1,5 @@
 Character_Soldier / Character_Enemy / Character_Hazmat
 Quaternius — "Toon Shooter Game Kit", CC0 1.0 (public domain): https://creativecommons.org/publicdomain/zero/1.0/
 https://quaternius.com/packs/toonshootergamekit.html
+
+cover/*.fbx — Quaternius, "Toon Shooter Game Kit", CC0 1.0 (same pack as above).
