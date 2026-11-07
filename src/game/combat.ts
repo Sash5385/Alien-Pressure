@@ -9,6 +9,8 @@ export interface ShotResult {
   killed: boolean;
   reaction: boolean;
   wound?: 'bleed' | 'fracture';
+  psi?: boolean;
+  broken?: { x: number; y: number };
 }
 
 /** Детерминированный генератор (mulberry32) — состояние хранится в GameState.rng. */
@@ -42,26 +44,29 @@ export function los(s: GameState, a: { x: number; y: number }, b: { x: number; y
   return true;
 }
 
-/** Защита цели от стрелка: укрытие рядом с целью со стороны стрелка. */
-export function coverBonus(s: GameState, shooter: Unit, target: Unit): number {
-  let best = 0;
+/** Укрытие, защищающее цель от стрелка (рядом с целью, со стороны стрелка). */
+export function coverSource(s: GameState, shooter: Unit, target: Unit): { bonus: number; x: number; y: number } | null {
+  let best: { bonus: number; x: number; y: number } | null = null;
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const cx = target.x + dx, cy = target.y + dy;
     if (cx < 0 || cy < 0 || cx >= s.size || cy >= s.size) continue;
     const c = s.cover[cy][cx];
     if (c === 'none') continue;
     if ((shooter.x - target.x) * dx + (shooter.y - target.y) * dy <= 0) continue;
-    best = Math.max(best, c === 'full' ? 40 : 20);
+    const bonus = c === 'full' ? 40 : 20;
+    if (!best || bonus > best.bonus) best = { bonus, x: cx, y: cy };
   }
   return best;
 }
+
+export const coverBonus = (s: GameState, shooter: Unit, target: Unit) => coverSource(s, shooter, target)?.bonus ?? 0;
 
 /** Шанс попадания, % — или null, если выстрел невозможен. */
 export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false): number | null {
   if (a.ammo <= 0 || a.hp <= 0 || t.hp <= 0 || a.team === t.team) return null;
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
-  const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - 6) * 3 - (reaction ? 10 : 0)
+  const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - 6) * (a.kind === 'sniper' ? 1 : 3) - (reaction ? 10 : 0)
     - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0);
   return Math.round(Math.min(95, Math.max(5, c)));
 }
@@ -69,6 +74,10 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false): num
 const has = (u: Unit, t: string) => (u.traits as string[]).includes(t);
 export const panicAt = (u: Unit) => (has(u, 'stoic') ? 15 : 30);
 const moraleFactor = (u: Unit) => (has(u, 'coward') ? 1.5 : 1) * (has(u, 'veteran') ? 0.7 : 1);
+
+function shift(u: Unit, d: number) {
+  u.morale = Math.min(100, Math.max(0, Math.round(u.morale + (d < 0 ? d * moraleFactor(u) : d))));
+}
 
 export const moveRange = (u: Unit) => Math.max(1, u.move - (u.fracture ? 2 : 0));
 
@@ -81,7 +90,6 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotRes
   t.hp = Math.max(0, t.hp - dmg);
   const killed = hit && t.hp <= 0;
   let wound: ShotResult['wound'];
-  const shift = (u: Unit, d: number) => { u.morale = Math.min(100, Math.max(0, Math.round(u.morale + (d < 0 ? d * moraleFactor(u) : d)))); };
   if (t.team === 'human') {
     if (hit && !killed) {
       shift(t, -10);
@@ -94,10 +102,16 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotRes
     shift(a, 8);
     living(s, 'human').forEach(h => shift(h, 4));
   }
+  let broken: ShotResult['broken'];
+  if (a.kind === 'heavy') {
+    const cs = coverSource(s, a, t);
+    if (cs) { s.cover[cs.y][cs.x] = 'none'; broken = { x: cs.x, y: cs.y }; }
+  }
   const wtxt = wound === 'bleed' ? ', кровотечение' : wound === 'fracture' ? ', перелом' : '';
-  log(s, `${reaction ? '[Overwatch] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}${wtxt}` : 'мимо'} (${chance}%)`);
+  const btxt = broken ? ' Укрытие разрушено.' : '';
+  log(s, `${reaction ? '[Overwatch] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}${wtxt}` : 'мимо'} (${chance}%)${btxt}`);
   checkEnd(s);
-  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound };
+  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound, broken };
 }
 
 /** Реакция overwatch бойцов на движущегося пришельца. */
@@ -152,4 +166,18 @@ export function bandage(s: GameState, medic: Unit): Unit | null {
   t.hp = Math.min(t.maxHp, t.hp + (pro ? 4 : 2));
   log(s, `${medic.name} перевязывает ${t.name}.`);
   return t;
+}
+
+export function canPsi(a: Unit, t: Unit): boolean {
+  return a.kind === 'psi' && a.hp > 0 && t.hp > 0 && t.team === 'human' && Math.hypot(a.x - t.x, a.y - t.y) <= a.range;
+}
+
+/** Псионика не нужна линия огня: шанс зависит от черт цели. */
+export function psiAttack(s: GameState, a: Unit, t: Unit): ShotResult {
+  const chance = Math.min(95, Math.max(15, 65 - (has(t, 'stoic') ? 25 : 0) - (has(t, 'veteran') ? 10 : 0) + (has(t, 'coward') ? 15 : 0)));
+  a.ap -= 1;
+  const hit = rand(s) * 100 < chance;
+  if (hit) shift(t, -20);
+  log(s, `${a.name} давит на ${t.name}: ${hit ? 'мораль −20' : 'устоял'} (${chance}%)`);
+  return { attackerId: a.id, targetId: t.id, hit, dmg: 0, chance, killed: false, reaction: false, psi: true };
 }

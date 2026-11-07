@@ -15,6 +15,7 @@ export class GameView {
   private controls: OrbitControls;
   private ray = new THREE.Raycaster();
   private ground: THREE.Mesh;
+  private coverMeshes = new Map<string, THREE.Mesh>();
   private unitMeshes = new Map<number, THREE.Object3D>();
   private goals = new Map<number, THREE.Vector3>();
   private highlight = new THREE.Group();
@@ -95,21 +96,31 @@ export class GameView {
       m.position.set(x + 0.5, h / 2, y + 0.5);
       m.castShadow = m.receiveShadow = true;
       this.scene.add(m);
+      this.coverMeshes.set(`${x},${y}`, m);
     }
   }
 
   /** Примитивная модель; позже подменяется glTF из public/models/. */
   private makeUnit(u: Unit): THREE.Object3D {
     const g = new THREE.Group();
-    const color = u.team === 'human' ? 0x4f7fb5 : 0x7fd24a;
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.6, 4, 8), new THREE.MeshStandardMaterial({ color }));
+    const look: Record<Unit['kind'], { color: number; scale: number; glow?: number }> = {
+      soldier: { color: 0x4f7fb5, scale: 1 },
+      trooper: { color: 0x7fd24a, scale: 1 },
+      sniper: { color: 0x3f8f6a, scale: 1.1 },
+      psi: { color: 0xb36bff, scale: 1, glow: 0x401a70 },
+      heavy: { color: 0x6f8a2c, scale: 1.4 },
+    };
+    const l = look[u.kind];
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.6, 4, 8), new THREE.MeshStandardMaterial({ color: l.color, emissive: l.glow ?? 0 }));
     body.position.y = 0.55;
     body.castShadow = true;
     g.add(body);
     if (u.team === 'alien') {
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshStandardMaterial({ color: 0x9be86a, emissive: 0x1d3a0c }));
-      head.position.y = 1.15; head.castShadow = true; g.add(head);
+      const psi = u.kind === 'psi';
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshStandardMaterial({ color: psi ? 0xe0c0ff : 0x9be86a, emissive: psi ? 0x6a3aa8 : 0x1d3a0c }));
+      head.position.y = psi ? 1.3 : 1.15; head.castShadow = true; g.add(head);
     }
+    g.scale.setScalar(l.scale);
     return g;
   }
 
@@ -125,6 +136,10 @@ export class GameView {
       if (instant) m.position.copy(goal);
     }
     for (const [id, m] of this.unitMeshes) if (!alive.has(id)) { this.scene.remove(m); this.unitMeshes.delete(id); this.goals.delete(id); }
+    for (const [k, m] of this.coverMeshes) {
+      const [cx, cy] = k.split(',').map(Number);
+      if (this.state.cover[cy][cx] === 'none') { this.scene.remove(m); this.coverMeshes.delete(k); }
+    }
     this.drawHighlight();
   }
 
@@ -169,12 +184,13 @@ export class GameView {
     if (!r.hit) to.add(new THREE.Vector3((Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 1.2));
     const line = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([from, to]),
-      new THREE.LineBasicMaterial({ color: r.hit ? 0xffe066 : 0x9aa0a6 }),
+      new THREE.LineBasicMaterial({ color: r.psi ? 0xc58bff : r.hit ? 0xffe066 : 0x9aa0a6 }),
     );
-    const flash = new THREE.PointLight(0xffc060, 6, 5);
+    const flash = new THREE.PointLight(r.psi ? 0xb36bff : 0xffc060, 6, 5);
     flash.position.copy(from);
     this.scene.add(line, flash);
-    this.floatText(t.x + 0.5, t.y + 0.5, r.hit ? `−${r.dmg}` : 'мимо', r.hit ? '#ff6b6b' : '#c9ced3');
+    this.floatText(t.x + 0.5, t.y + 0.5, r.psi ? (r.hit ? 'давление' : 'устоял') : r.hit ? `−${r.dmg}` : 'мимо', r.hit ? '#ff6b6b' : '#c9ced3');
+    if (r.broken) this.floatText(t.x + 0.5, t.y + 0.5, 'укрытие', '#ffd34d', 0.5);
     if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
     await sleep(160);
     this.scene.remove(line, flash);

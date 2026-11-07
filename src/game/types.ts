@@ -1,11 +1,13 @@
 import type { TraitId } from './traits';
 
+export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy';
 export type Team = 'human' | 'alien';
 export type Cover = 'none' | 'half' | 'full';
 
 export interface Unit {
   id: number;
   team: Team;
+  kind: UnitKind;
   name: string;
   x: number;
   y: number;
