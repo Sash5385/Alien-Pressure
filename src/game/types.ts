@@ -1,6 +1,21 @@
 import type { TraitId } from './traits';
 
 export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy';
+export type Difficulty = 'easy' | 'normal' | 'hard';
+export interface Tech { armor: boolean; optics: boolean; kits: boolean }
+
+/** Боец кампании: хранится между миссиями. */
+export interface Soldier {
+  id: number;
+  name: string;
+  bio: string;
+  traits: TraitId[];
+  hpLoss: number;
+  fracture: boolean;
+  kills: number;
+  missions: number;
+}
+
 export type Team = 'human' | 'alien';
 export type Cover = 'none' | 'half' | 'full';
 
@@ -28,6 +43,7 @@ export interface Unit {
   panic: boolean;
   traits: TraitId[];
   bio: string;
+  kills: number;
 }
 
 export interface GameState {
@@ -40,6 +56,11 @@ export interface GameState {
   turnNo: number;
   status: 'playing' | 'won' | 'lost';
   medkits: number;
+  vis: boolean[][]; // что видят бойцы сейчас
+  seen: boolean[][]; // что исследовано
+  revealed: number[]; // пришельцы, выдавшие себя выстрелом
+  missionNo: number;
+  difficulty: Difficulty;
   busy: boolean; // идёт анимация/ход ИИ — ввод заблокирован
   log: string[];
   rng: number; // состояние генератора (сид миссии)

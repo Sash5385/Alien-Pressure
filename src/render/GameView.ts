@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { GameState, Unit } from '../game/types';
-import { moveRange, type ShotResult } from '../game/combat';
+import { isVisible, moveRange, updateVision, type ShotResult } from '../game/combat';
 import { reachable, findPath } from '../game/pathfinding';
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -16,6 +16,8 @@ export class GameView {
   private ray = new THREE.Raycaster();
   private ground: THREE.Mesh;
   private coverMeshes = new Map<string, THREE.Mesh>();
+  private fogData!: Uint8Array;
+  private fogTex!: THREE.DataTexture;
   private unitMeshes = new Map<number, THREE.Object3D>();
   private goals = new Map<number, THREE.Vector3>();
   private highlight = new THREE.Group();
@@ -59,6 +61,18 @@ export class GameView {
     this.ground.position.set(n / 2, 0, n / 2);
     this.ground.receiveShadow = true;
     this.scene.add(this.ground, new THREE.GridHelper(n, n, 0x555d4c, 0x2c3027).translateX(n / 2).translateZ(n / 2));
+
+    this.fogData = new Uint8Array(n * n * 4);
+    this.fogTex = new THREE.DataTexture(this.fogData, n, n, THREE.RGBAFormat);
+    this.fogTex.minFilter = this.fogTex.magFilter = THREE.LinearFilter;
+    const fog = new THREE.Mesh(
+      new THREE.PlaneGeometry(n, n),
+      new THREE.MeshBasicMaterial({ map: this.fogTex, transparent: true, depthWrite: false }),
+    );
+    fog.rotation.x = -Math.PI / 2;
+    fog.position.set(n / 2, 1.5, n / 2);
+    fog.renderOrder = 5;
+    this.scene.add(fog);
 
     this.buildCover();
     this.scene.add(this.highlight);
@@ -125,6 +139,9 @@ export class GameView {
   }
 
   syncUnits(instant = false) {
+    updateVision(this.state);
+    const tg = this.state.units.find(u => u.id === this.state.targetId);
+    if (tg && !isVisible(this.state, tg)) this.state.targetId = null;
     const alive = new Set<number>();
     for (const u of this.state.units) {
       if (u.hp <= 0) continue;
@@ -133,6 +150,7 @@ export class GameView {
       const goal = new THREE.Vector3(u.x + 0.5, 0, u.y + 0.5);
       if (!m) { m = this.makeUnit(u); m.position.copy(goal); this.unitMeshes.set(u.id, m); this.scene.add(m); }
       this.goals.set(u.id, goal);
+      m.visible = isVisible(this.state, u);
       if (instant) m.position.copy(goal);
     }
     for (const [id, m] of this.unitMeshes) if (!alive.has(id)) { this.scene.remove(m); this.unitMeshes.delete(id); this.goals.delete(id); }
@@ -140,11 +158,22 @@ export class GameView {
       const [cx, cy] = k.split(',').map(Number);
       if (this.state.cover[cy][cx] === 'none') { this.scene.remove(m); this.coverMeshes.delete(k); }
     }
+    this.updateFog();
     this.drawHighlight();
   }
 
   /** Перемещение с короткой паузой на анимацию. */
   async moved() { this.syncUnits(); await sleep(170); }
+
+  /** Туман войны: неисследованное тёмное, исследованное притемнено, видимое чистое. */
+  private updateFog() {
+    const { size: n, vis, seen } = this.state;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const i = ((n - 1 - y) * n + x) * 4;
+      this.fogData[i + 3] = vis[y][x] ? 0 : seen[y][x] ? 95 : 215;
+    }
+    this.fogTex.needsUpdate = true;
+  }
 
   private ring(x: number, y: number, color: number, r0 = 0.3, r1 = 0.42) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 24), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
@@ -220,7 +249,7 @@ export class GameView {
     const hit = this.ray.intersectObject(this.ground)[0];
     if (!hit) return;
     const x = Math.floor(hit.point.x), y = Math.floor(hit.point.z);
-    const at = s.units.find(v => v.hp > 0 && v.x === x && v.y === y);
+    const at = s.units.find(v => v.hp > 0 && v.x === x && v.y === y && isVisible(s, v));
     const sel = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; }
     else if (at?.team === 'alien') { if (sel) s.targetId = at.id; }

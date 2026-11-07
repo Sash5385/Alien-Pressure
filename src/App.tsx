@@ -1,133 +1,69 @@
-import { useEffect, useReducer, useRef } from 'react';
-import { runAlienTurn } from './game/ai';
-import { bandage, checkEnd, hitChance, living, log, shoot, startHumanTurn } from './game/combat';
+import { useState } from 'react';
+import { Camp, Screen } from './Camp';
+import { clearSave, finishMission, load, newCampaign, save, type Campaign } from './game/campaign';
+import { DIFF } from './game/difficulty';
 import { createMission } from './game/mission';
-import { TRAITS } from './game/traits';
-import { GameView } from './render/GameView';
+import type { Difficulty, GameState } from './game/types';
+import { Mission } from './Mission';
+import { btn } from './ui';
 
-const btn = (primary = false, off = false): React.CSSProperties => ({
-  padding: '10px 14px', border: '1px solid #556', borderRadius: 6, color: '#eef',
-  background: primary ? '#8a2a2a' : '#232a30', opacity: off ? 0.4 : 1, font: 'inherit', cursor: off ? 'default' : 'pointer',
-});
+type Screen_ = 'menu' | 'camp' | 'mission';
 
 export function App() {
-  const host = useRef<HTMLDivElement>(null);
-  const state = useRef(createMission());
-  const view = useRef<GameView | null>(null);
-  const [, rerender] = useReducer(n => n + 1, 0);
+  const [saved, setSaved] = useState<Campaign | null>(() => load());
+  const [c, setC] = useState<Campaign | null>(saved);
+  const [screen, setScreen] = useState<Screen_>('menu');
+  const [mission, setMission] = useState<{ state: GameState; deployed: number[] } | null>(null);
 
-  useEffect(() => {
-    view.current = new GameView(host.current!, state.current, rerender);
-    return () => view.current?.dispose();
-  }, []);
+  const update = (n: Campaign) => { setC(n); setSaved(n); save(n); };
+  const start = (d: Difficulty) => { clearSave(); const n = newCampaign(d); update(n); setScreen('camp'); };
 
-  const s = state.current;
-  const sel = s.units.find(u => u.id === s.selectedId && u.hp > 0);
-  const tgt = s.units.find(u => u.id === s.targetId && u.hp > 0);
-  const chance = sel && tgt ? hitChance(s, sel, tgt) : null;
-  const canAct = s.turn === 'human' && !s.busy && s.status === 'playing';
-  const canFire = canAct && !!sel && sel.ap > 0 && chance !== null;
-  const canBandage = canAct && !!sel && sel.ap > 0 && s.medkits > 0 &&
-    living(s, 'human').some(h => h.bleeding && Math.abs(h.x - sel.x) + Math.abs(h.y - sel.y) <= 1);
-  const canOw = canAct && !!sel && sel.ap > 0 && sel.ammo > 0 && !sel.overwatch;
-
-  const fire = async () => {
-    if (!canFire || !sel || !tgt) return;
-    s.busy = true;
-    const r = shoot(s, sel, tgt);
-    sel.overwatch = false;
-    rerender();
-    await view.current!.shotFx(r);
-    if (tgt.hp <= 0) s.targetId = null;
-    s.busy = false;
-    view.current!.syncUnits();
-    rerender();
-  };
-
-  const heal = () => {
-    if (!canBandage || !sel) return;
-    bandage(s, sel);
-    view.current!.syncUnits();
-    rerender();
-  };
-
-  const pick = (id: number) => {
-    if (!canAct) return;
-    s.selectedId = id; s.targetId = null;
-    view.current!.syncUnits();
-    rerender();
-  };
-
-  const overwatch = () => {
-    if (!canOw || !sel) return;
-    sel.overwatch = true; sel.ap = 0; s.targetId = null;
-    log(s, `${sel.name} занимает overwatch.`);
-    view.current!.syncUnits();
-    rerender();
-  };
-
-  const endTurn = async () => {
-    if (!canAct) return;
-    s.turn = 'alien'; s.busy = true; s.targetId = null;
-    view.current!.syncUnits();
-    rerender();
-    await runAlienTurn(s, {
-      moved: async () => { await view.current!.moved(); rerender(); },
-      shot: async r => { rerender(); await view.current!.shotFx(r); view.current!.syncUnits(); rerender(); },
+  const launch = (c0: Campaign, deployed: number[]) => {
+    setMission({
+      deployed,
+      state: createMission({
+        rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, tech: c0.tech,
+        soldiers: c0.roster.filter(s => deployed.includes(s.id)),
+      }),
     });
-    checkEnd(s);
-    if (s.status === 'playing') {
-      s.turnNo += 1;
-      log(s, `— Ход ${s.turnNo} —`);
-      startHumanTurn(s);
-    }
-    s.turn = 'human'; s.busy = false;
-    view.current!.syncUnits();
-    rerender();
+    setScreen('mission');
   };
 
-  const restart = () => location.reload();
-
-  const info = sel
-    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · патроны ${sel.ammo}/${sel.maxAmmo} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}`
-    : 'Выбери бойца';
-  const aliens = living(s, 'alien').length;
+  if (screen === 'mission' && c && mission) {
+    return (
+      <Mission
+        key={c.missionNo + ':' + mission.state.rng}
+        initial={mission.state}
+        onExit={s => {
+          const n = structuredClone(c);
+          finishMission(n, s, mission.deployed);
+          update(n);
+          setMission(null);
+          setScreen('camp');
+        }}
+      />
+    );
+  }
+  if (screen === 'camp' && c) {
+    return <Camp key={c.missionNo + ':' + c.roster.length} c={c} onChange={update} onStart={d => launch(c, d)} onMenu={() => setScreen('menu')} />;
+  }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
-      <div ref={host} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'absolute', top: 8, left: 8, right: 8, pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
-        <b>Alien Pressure</b> · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · пришельцев: {aliens}
-        <div>{info}</div>
-        {sel && <div style={{ opacity: 0.8, fontSize: 12 }}>{sel.traits.map(t => TRAITS[t].name).join(', ')} — {sel.bio}</div>}
-        {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `шанс ${chance}%`}</div>}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, pointerEvents: 'auto' }}>
-          {s.units.filter(u => u.team === 'human').map(u => (
-            <button key={u.id} disabled={u.hp <= 0 || !canAct} onClick={() => pick(u.id)}
-              style={{ ...btn(false, u.hp <= 0), padding: '4px 8px', fontSize: 12, border: u.id === s.selectedId ? '1px solid #ffd34d' : '1px solid #556', textDecoration: u.hp <= 0 ? 'line-through' : 'none' }}>
-              {u.name} {u.hp}/{u.maxHp}{u.bleeding ? ' 🩸' : ''}{u.panic ? ' ⚠' : ''}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div style={{ position: 'absolute', left: 8, right: 8, bottom: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
-        <div style={{ flex: '1 1 200px', maxHeight: 110, overflow: 'hidden', fontSize: 12, textShadow: '0 1px 2px #000', pointerEvents: 'none' }}>
-          {s.log.slice(-5).map((l, i) => <div key={s.log.length - 5 + i}>{l}</div>)}
-        </div>
-        <button style={btn(true, !canFire)} disabled={!canFire} onClick={fire}>Огонь{chance !== null ? ` ${chance}%` : ''}</button>
-        <button style={btn(false, !canBandage)} disabled={!canBandage} onClick={heal}>Бинт ({s.medkits})</button>
-        <button style={btn(false, !canOw)} disabled={!canOw} onClick={overwatch}>Overwatch</button>
-        <button style={btn(false, !canAct)} disabled={!canAct} onClick={endTurn}>Конец хода</button>
-      </div>
-      {s.status !== 'playing' && (
-        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#000a' }}>
-          <div style={{ textAlign: 'center' }}>
-            <h1 style={{ margin: 0 }}>{s.status === 'won' ? 'Зачистка завершена' : 'Отряд уничтожен'}</h1>
-            <p>Ходов: {s.turnNo} · выжило: {living(s, 'human').length}/4</p>
-            <button style={btn(true)} onClick={restart}>Заново</button>
-          </div>
-        </div>
+    <Screen>
+      <h1 style={{ margin: '24px 0 0', fontSize: 32 }}>Alien Pressure</h1>
+      <p style={{ margin: 0, opacity: 0.8 }}>Подпольный отряд землян против пришельцев. Кровь, паника, патроны на счёт.</p>
+      {saved && !saved.over && (
+        <button style={btn(true)} onClick={() => setScreen('camp')}>
+          Продолжить: миссия {saved.missionNo}, бойцов {saved.roster.length}
+        </button>
       )}
-    </div>
+      <b>Новая игра — сложность</b>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {(Object.keys(DIFF) as Difficulty[]).map(d => (
+          <button key={d} style={btn()} onClick={() => start(d)}>{DIFF[d].label}</button>
+        ))}
+      </div>
+      <p style={{ fontSize: 12, opacity: 0.6 }}>Прогресс хранится в браузере (localStorage). Новая игра перезапишет сохранение.</p>
+    </Screen>
   );
 }

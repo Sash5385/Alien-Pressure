@@ -85,6 +85,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotRes
   const chance = hitChance(s, a, t, reaction) ?? 0;
   a.ammo -= 1;
   if (!reaction) a.ap -= 1;
+  if (a.team === 'alien' && !s.revealed.includes(a.id)) s.revealed.push(a.id);
   const hit = rand(s) * 100 < chance;
   const dmg = hit ? a.dmg[0] + Math.floor(rand(s) * (a.dmg[1] - a.dmg[0] + 1)) : 0;
   t.hp = Math.max(0, t.hp - dmg);
@@ -100,6 +101,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotRes
     if (killed) living(s, 'human').forEach(h => shift(h, -15));
   } else if (killed) {
     shift(a, 8);
+    a.kills += 1;
     living(s, 'human').forEach(h => shift(h, 4));
   }
   let broken: ShotResult['broken'];
@@ -119,7 +121,7 @@ export function reactions(s: GameState, mover: Unit): ShotResult[] {
   const out: ShotResult[] = [];
   for (const h of living(s, 'human')) {
     if (mover.hp <= 0) break;
-    if (!h.overwatch || hitChance(s, h, mover, true) === null) continue;
+    if (!h.overwatch || !isVisible(s, mover) || hitChance(s, h, mover, true) === null) continue;
     h.overwatch = false;
     out.push(shoot(s, h, mover, true));
   }
@@ -177,7 +179,27 @@ export function psiAttack(s: GameState, a: Unit, t: Unit): ShotResult {
   const chance = Math.min(95, Math.max(15, 65 - (has(t, 'stoic') ? 25 : 0) - (has(t, 'veteran') ? 10 : 0) + (has(t, 'coward') ? 15 : 0)));
   a.ap -= 1;
   const hit = rand(s) * 100 < chance;
+  if (!s.revealed.includes(a.id)) s.revealed.push(a.id);
   if (hit) shift(t, -20);
   log(s, `${a.name} давит на ${t.name}: ${hit ? 'мораль −20' : 'устоял'} (${chance}%)`);
   return { attackerId: a.id, targetId: t.id, hit, dmg: 0, chance, killed: false, reaction: false, psi: true };
 }
+
+export const SIGHT = 12;
+
+/** Пересчёт зоны видимости бойцов (радиус + линия видимости) и карты исследованного. */
+export function updateVision(s: GameState) {
+  const n = s.size;
+  const vis = Array.from({ length: n }, () => Array<boolean>(n).fill(false));
+  for (const h of living(s, 'human')) {
+    for (let y = Math.max(0, h.y - SIGHT); y <= Math.min(n - 1, h.y + SIGHT); y++) {
+      for (let x = Math.max(0, h.x - SIGHT); x <= Math.min(n - 1, h.x + SIGHT); x++) {
+        if (!vis[y][x] && Math.hypot(x - h.x, y - h.y) <= SIGHT && los(s, h, { x, y })) vis[y][x] = true;
+      }
+    }
+  }
+  s.vis = vis;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (vis[y][x]) s.seen[y][x] = true;
+}
+
+export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || s.vis[u.y][u.x] || s.revealed.includes(u.id);

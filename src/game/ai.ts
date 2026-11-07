@@ -19,6 +19,7 @@ const ideal = (u: Unit, near: number) =>
 
 /** ИИ: атакует лучшую цель, иначе идёт к клетке с обзором/укрытием на подходящей дистанции. */
 export async function runAlienTurn(s: GameState, h: AiHooks) {
+  s.revealed = [];
   for (const u of living(s, 'alien')) {
     u.ap = u.maxAp;
     for (let i = 0; i < 3 && u.hp > 0 && u.ap > 0 && s.status === 'playing'; i++) {
