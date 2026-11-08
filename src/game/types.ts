@@ -4,7 +4,7 @@ export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy';
 export type Objective = 'clear' | 'extract' | 'hold';
 export type PerkId = 'aim' | 'hp' | 'nerve';
 export type Difficulty = 'easy' | 'normal' | 'hard';
-export interface Tech { armor: boolean; optics: boolean; kits: boolean }
+export interface Tech { armor: boolean; optics: boolean; kits: boolean; grenades: boolean }
 
 /** Боец кампании: хранится между миссиями. */
 export interface Soldier {
@@ -40,6 +40,8 @@ export interface Unit {
   aim: number; // базовая меткость, %
   ammo: number;
   maxAmmo: number;
+  grenades: number;
+  facing: number; // радианы: 0 — на юг (+Z), π — на север
   mags: number; // запасные магазины (у пришельцев не ограничены)
   dmg: [number, number];
   range: number;
@@ -72,6 +74,7 @@ export interface GameState {
   objective: Objective;
   holdTurns: number;
   zone: { x: number; y: number; w: number; h: number } | null;
+  aiming: 'grenade' | null; // режим прицеливания гранаты
   busy: boolean; // идёт анимация/ход ИИ — ввод заблокирован
   log: string[];
   rng: number; // состояние генератора (сид миссии)

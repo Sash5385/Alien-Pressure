@@ -33,6 +33,14 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
   const canFire = canAct && !!sel && sel.ap > 0 && chance !== null;
   const canBandage = canAct && !!sel && sel.ap > 0 && s.medkits > 0 &&
     living(s, 'human').some(h => h.bleeding && Math.abs(h.x - sel.x) + Math.abs(h.y - sel.y) <= 1);
+  const canGrenade = canAct && !!sel && sel.ap > 0 && sel.grenades > 0;
+  const toggleGrenade = () => {
+    if (!canGrenade) return;
+    s.aiming = s.aiming === 'grenade' ? null : 'grenade';
+    s.targetId = null;
+    view.current!.syncUnits();
+    rerender();
+  };
   const canOw = canAct && !!sel && sel.ap > 0 && sel.ammo > 0 && !sel.overwatch;
 
   const fire = async () => {
@@ -65,7 +73,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
 
   const pick = (id: number) => {
     if (!canAct) return;
-    s.selectedId = id; s.targetId = null;
+    s.selectedId = id; s.targetId = null; s.aiming = null;
     view.current!.syncUnits();
     rerender();
   };
@@ -80,7 +88,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
 
   const endTurn = async () => {
     if (!canAct) return;
-    s.turn = 'alien'; s.busy = true; s.targetId = null;
+    s.turn = 'alien'; s.busy = true; s.targetId = null; s.aiming = null;
     if (s.objective === 'hold' && s.turnNo % 2 === 0) reinforce(s);
     view.current!.syncUnits();
     rerender();
@@ -103,7 +111,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
   const leave = () => onExit(s);
 
   const info = sel
-    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · патроны ${sel.ammo}/${sel.maxAmmo} (+${sel.mags}) · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}`
+    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}`
     : 'Выбери бойца';
   const goal = s.objective === 'clear' ? 'зачистка' : s.objective === 'extract' ? 'эвакуация: все в зелёную зону' : `удержание ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`;
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
@@ -115,6 +123,14 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
         <b>Миссия {s.missionNo}</b> · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · в поле зрения: {aliens}
         <div>{info}</div>
         {sel && <div style={{ opacity: 0.8, fontSize: 12 }}>{sel.traits.map(t => TRAITS[t].name).join(', ')} — {sel.bio}</div>}
+        {sel && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, fontSize: 12 }}>
+            {[`🔫 ${sel.ammo}/${sel.maxAmmo}`, `📦 магазины ${sel.mags}`, `💣 гранаты ${sel.grenades}`, `🩹 аптечки ${s.medkits} (отряд)`].map(t => (
+              <span key={t} style={{ border: '1px solid #445', borderRadius: 4, padding: '2px 6px', background: '#0008' }}>{t}</span>
+            ))}
+          </div>
+        )}
+        {s.aiming === 'grenade' && <div style={{ color: '#ffb36b' }}>Бросок гранаты: кликни клетку в оранжевой зоне (красный круг — радиус взрыва, бьёт и по своим). ПКМ — отмена.</div>}
         {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `шанс ${chance}%`}</div>}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, pointerEvents: 'auto' }}>
           {s.units.filter(u => u.team === 'human').map(u => (
@@ -123,6 +139,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
               {u.name} {u.hp}/{u.maxHp}{u.bleeding ? ' 🩸' : ''}{u.panic ? ' ⚠' : ''}
             </button>
           ))}
+          <span style={{ alignSelf: 'center', fontSize: 11, opacity: 0.6 }}>ПКМ — повернуть бойца · СКМ — сдвиг камеры</span>
           <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>
         </div>
       </div>
@@ -132,6 +149,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
         </div>
         <button style={btn(true, !canFire)} disabled={!canFire} onClick={fire}>Огонь{chance !== null ? ` ${chance}%` : ''}</button>
         <button style={btn(false, !canReload)} disabled={!canReload} onClick={doReload}>Заряд{sel ? ` (${sel.mags})` : ''}</button>
+        <button style={btn(s.aiming === 'grenade', !canGrenade)} disabled={!canGrenade} onClick={toggleGrenade}>Граната{sel ? ` (${sel.grenades})` : ''}</button>
         <button style={btn(false, !canBandage)} disabled={!canBandage} onClick={heal}>Бинт ({s.medkits})</button>
         <button style={btn(false, !canOw)} disabled={!canOw} onClick={overwatch}>Overwatch</button>
         <button style={btn(false, !canAct)} disabled={!canAct} onClick={endTurn}>Конец хода</button>

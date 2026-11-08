@@ -24,11 +24,12 @@ export const OBJECTIVE_NAME: Record<Objective, string> = {
 
 export const MAX_ROSTER = 6;
 export const DEPLOY = 4;
-export const COST = { heal: 1, recruit: 3, armor: 6, optics: 6, kits: 4 } as const;
+export const COST = { heal: 1, recruit: 3, armor: 6, optics: 6, kits: 4, grenades: 4 } as const;
 export const TECH_INFO: Record<keyof Tech, string> = {
   armor: 'Бронепластины: +2 HP всем',
   optics: 'Оптика: +5 к меткости всем',
   kits: 'Запас бинтов: +1 аптечка на миссию',
+  grenades: 'Гранаты: +1 каждому бойцу',
 };
 
 const KEY = 'alien-pressure:v1';
@@ -40,7 +41,7 @@ function mkSoldier(c: Campaign, name: string, bio: string): Soldier {
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Campaign {
   const c: Campaign = {
     v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', roster: [], fallen: [], scrap: 3,
-    tech: { armor: false, optics: false, kits: false }, nextId: 1, over: false,
+    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false,
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
   return c;
@@ -114,6 +115,7 @@ export function load(): Campaign | null {
     const c = raw ? (JSON.parse(raw) as Campaign) : null;
     if (!c || c.v !== 1) return null;
     c.objective ??= 'clear';
+    c.tech.grenades ??= false;
     for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; }
     return c;
   } catch { return null; }

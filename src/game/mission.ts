@@ -5,11 +5,13 @@ import type { Cover, Difficulty, GameState, Objective, Soldier, Tech, Unit } fro
 
 const SIZE = 20;
 export const HOLD_TURNS = 6;
+export const HUMAN_AP = 3;
+export const ALIEN_AP = 3;
 
 const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
   const u: Unit = {
-    id: s.id, team: 'human', kind: 'soldier', name: s.name, x, y, hp: 8, maxHp: 8, ap: 2, maxAp: 2, move: 5,
-    aim: 70, ammo: 5, maxAmmo: 5, mags: 2, dmg: [2, 4], range: 14, overwatch: false,
+    id: s.id, team: 'human', kind: 'soldier', name: s.name, x, y, hp: 8, maxHp: 8, ap: HUMAN_AP, maxAp: HUMAN_AP, move: 5,
+    aim: 70, ammo: 5, maxAmmo: 5, mags: 2, grenades: 2 + (tech.grenades ? 1 : 0), facing: Math.PI, dmg: [2, 4], range: 14, overwatch: false,
     bleeding: false, fracture: s.fracture, morale: 70, panic: false, traits: s.traits, perks: s.perks, bio: s.bio, kills: 0,
   };
   applyTraits(u);
@@ -34,8 +36,8 @@ const alien = (id: number, kind: AlienKind, n: number, x: number, y: number, d: 
   const hp = Math.max(1, Math.round(b.hp! * DIFF[d].hp));
   return {
     id, team: 'alien', kind, name: kind === 'trooper' ? `${NAMES[kind]} ${n}` : NAMES[kind], x, y,
-    hp, maxHp: hp, ap: 2, maxAp: 2, move: b.move!, aim: kind === 'psi' ? 0 : b.aim! + DIFF[d].aim,
-    ammo: b.ammo!, maxAmmo: b.ammo!, mags: 99, dmg: b.dmg!, range: b.range!, overwatch: false,
+    hp, maxHp: hp, ap: ALIEN_AP, maxAp: ALIEN_AP, move: b.move!, aim: kind === 'psi' ? 0 : b.aim! + DIFF[d].aim,
+    ammo: b.ammo!, maxAmmo: b.ammo!, mags: 99, grenades: 0, facing: 0, dmg: b.dmg!, range: b.range!, overwatch: false,
     bleeding: false, fracture: false, morale: 100, panic: false, traits: [], perks: [], bio: '', kills: 0,
   };
 };
@@ -126,7 +128,7 @@ export function createMission(o: MissionOpts): GameState {
   return {
     size: SIZE, cover, units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
-    busy: false, vis: grid(), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
+    aiming: null, busy: false, vis: grid(), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: o.objective, holdTurns: HOLD_TURNS, zone,
     log: [`Миссия ${o.missionNo}. ${brief}`, 'Разведка: пехота, снайпер, псионик (давит на мораль), тяжёлый (ломает укрытия).'],
     rng: rng.rng,

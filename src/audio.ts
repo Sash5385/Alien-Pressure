@@ -1,5 +1,5 @@
 /** Синтезированные звуки (WebAudio) — без файлов. Контекст создаётся лениво, после первого клика. */
-export type Sfx = 'shot' | 'alienShot' | 'hit' | 'miss' | 'psi' | 'death' | 'panic' | 'reload' | 'click';
+export type Sfx = 'throw' | 'grenade' | 'shot' | 'alienShot' | 'hit' | 'miss' | 'psi' | 'death' | 'panic' | 'reload' | 'click';
 
 const KEY = 'alien-pressure:mute';
 let ctx: AudioContext | null = null;
@@ -51,7 +51,9 @@ export function sfx(kind: Sfx) {
   if (!c) return;
   const t = c.currentTime;
   switch (kind) {
-    case 'shot': noise(c, t, 0.14, 0.4, 'bandpass', 1800); tone(c, t, 0.12, 140, 50, 0.4); break;
+    case 'shot': noise(c, t, 0.05, 0.55, 'highpass', 1200); noise(c, t, 0.14, 0.35, 'bandpass', 1800); tone(c, t, 0.12, 150, 45, 0.45); noise(c, t + 0.03, 0.4, 0.12, 'lowpass', 500); break;
+    case 'throw': noise(c, t, 0.25, 0.12, 'bandpass', 900); break;
+    case 'grenade': noise(c, t, 0.9, 0.7, 'lowpass', 350); tone(c, t, 0.7, 90, 28, 0.6); noise(c, t, 0.15, 0.5, 'bandpass', 2000); break;
     case 'alienShot': tone(c, t, 0.2, 1000, 220, 0.14, 'sawtooth'); noise(c, t, 0.06, 0.12, 'highpass', 3000); break;
     case 'hit': noise(c, t, 0.1, 0.35, 'lowpass', 700); break;
     case 'miss': tone(c, t, 0.14, 2600, 1100, 0.08); break;

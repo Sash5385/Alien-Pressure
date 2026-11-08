@@ -81,7 +81,12 @@ function shift(u: Unit, d: number) {
 
 export const moveRange = (u: Unit) => Math.max(1, u.move - (u.fracture ? 2 : 0));
 
+export function faceToward(u: Unit, x: number, y: number) {
+  if (x !== u.x || y !== u.y) u.facing = Math.atan2(x - u.x, y - u.y);
+}
+
 export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotResult {
+  faceToward(a, t.x, t.y);
   const chance = hitChance(s, a, t, reaction) ?? 0;
   a.ammo -= 1;
   if (!reaction) a.ap -= 1;
@@ -180,6 +185,7 @@ export function canPsi(a: Unit, t: Unit): boolean {
 
 /** Псионика не нужна линия огня: шанс зависит от черт цели. */
 export function psiAttack(s: GameState, a: Unit, t: Unit): ShotResult {
+  faceToward(a, t.x, t.y);
   const chance = Math.min(95, Math.max(15, 65 - (has(t, 'stoic') ? 25 : 0) - (has(t, 'veteran') ? 10 : 0) + (has(t, 'coward') ? 15 : 0)));
   a.ap -= 1;
   const hit = rand(s) * 100 < chance;
@@ -217,4 +223,58 @@ export function reload(s: GameState, u: Unit): boolean {
   u.overwatch = false;
   log(s, `${u.name} перезаряжается.`);
   return true;
+}
+
+export const GRENADE_RANGE = 8;
+export const BLAST = 1.9;
+
+export interface GrenadeResult {
+  thrower: number;
+  x: number;
+  y: number;
+  hits: { id: number; dmg: number; killed: boolean }[];
+  broken: { x: number; y: number }[];
+}
+
+/** Можно ли кинуть гранату в клетку: дальность и исследованная клетка. */
+export function canThrow(s: GameState, u: Unit, x: number, y: number): boolean {
+  return u.grenades > 0 && u.ap > 0 && x >= 0 && y >= 0 && x < s.size && y < s.size &&
+    Math.hypot(u.x - x, u.y - y) <= GRENADE_RANGE && s.seen[y][x];
+}
+
+/** Граната: центр 5 урона, край 3; бьёт и по своим. Срывает половинные укрытия рядом со взрывом. */
+export function throwGrenade(s: GameState, u: Unit, x: number, y: number): GrenadeResult {
+  faceToward(u, x, y);
+  u.grenades -= 1;
+  u.ap -= 1;
+  u.overwatch = false;
+  s.aiming = null;
+  const hits: GrenadeResult['hits'] = [];
+  for (const t of living(s)) {
+    const d = Math.hypot(t.x - x, t.y - y);
+    if (d > BLAST) continue;
+    const dmg = d <= 1.0 ? 5 : 3;
+    t.hp = Math.max(0, t.hp - dmg);
+    const killed = t.hp <= 0;
+    hits.push({ id: t.id, dmg, killed });
+    if (t.team === 'human') {
+      shift(t, -10);
+      if (!killed && !t.bleeding && rand(s) < 0.25) t.bleeding = true;
+      if (killed) living(s, 'human').forEach(h => shift(h, -15));
+    } else if (killed) {
+      u.kills += 1;
+      shift(u, 8);
+      living(s, 'human').forEach(h => shift(h, 4));
+    }
+  }
+  const broken: GrenadeResult['broken'] = [];
+  for (let cy = Math.max(0, Math.floor(y - 1.5)); cy <= Math.min(s.size - 1, Math.ceil(y + 1.5)); cy++) {
+    for (let cx = Math.max(0, Math.floor(x - 1.5)); cx <= Math.min(s.size - 1, Math.ceil(x + 1.5)); cx++) {
+      if (s.cover[cy][cx] === 'half' && Math.hypot(cx - x, cy - y) <= 1.5) { s.cover[cy][cx] = 'none'; broken.push({ x: cx, y: cy }); }
+    }
+  }
+  const names = hits.map(h => `${s.units.find(v => v.id === h.id)!.name} −${h.dmg}${h.killed ? ' (убит)' : ''}`).join(', ');
+  log(s, `${u.name} бросает гранату: ${names || 'никого'}.`);
+  checkEnd(s);
+  return { thrower: u.id, x, y, hits, broken };
 }
