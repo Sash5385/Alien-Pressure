@@ -1,7 +1,7 @@
 import { log, rand } from './combat';
-import { DIFF } from './difficulty';
+import { BIOME_NAME, DIFF } from './difficulty';
 import { applyTraits, shuffle } from './traits';
-import type { Cover, Difficulty, GameState, Objective, Soldier, Tech, Unit } from './types';
+import type { Biome, Cover, Difficulty, GameState, Objective, Soldier, Tech, Terrain, Unit } from './types';
 
 const SIZE = 20;
 export const HOLD_TURNS = 6;
@@ -47,52 +47,95 @@ export interface MissionOpts {
   difficulty: Difficulty;
   missionNo: number;
   objective: Objective;
+  biome: Biome;
   soldiers: Soldier[];
   tech: Tech;
 }
 
 type Zone = { x: number; y: number; w: number; h: number };
 
-/** Случайная карта: корабль, россыпь укрытий; требует, чтобы поле оставалось проходимым. */
-function genCover(rng: { rng: number }, missionNo: number, zone: Zone | null): Cover[][] {
-  let cover: Cover[][] = [];
-  for (let attempt = 0; attempt < 10; attempt++) {
-    cover = Array.from({ length: SIZE }, () => Array<Cover>(SIZE).fill('none'));
-    const x0 = 5 + Math.floor(rand(rng) * 7);
-    for (let i = 0; i < 4; i++) cover[1][x0 + i] = 'full';
-    cover[2][x0] = 'full'; cover[2][x0 + 3] = 'full';
-    const count = 16 + Math.min(missionNo, 4) * 2;
-    for (let i = 0; i < count; i++) {
-      const x = 1 + Math.floor(rand(rng) * 18), y = 4 + Math.floor(rand(rng) * 12);
-      const t: Cover = rand(rng) < 0.6 ? 'half' : 'full';
-      if (cover[y][x] !== 'none') continue;
-      cover[y][x] = t;
-      if (rand(rng) < 0.5 && x + 1 < SIZE - 1 && cover[y][x + 1] === 'none') cover[y][x + 1] = t;
+type Grids = { cover: Cover[][]; terrain: Terrain[][] };
+
+/** Клетки, достижимые от точки высадки. */
+function reachSet({ cover, terrain }: Grids): Set<string> {
+  const seen = new Set<string>(['9,18']);
+  const q: [number, number][] = [[9, 18]];
+  while (q.length) {
+    const [x, y] = q.shift()!;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy, k = `${nx},${ny}`;
+      if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE || cover[ny][nx] !== 'none' || terrain[ny][nx] === 'water' || seen.has(k)) continue;
+      seen.add(k); q.push([nx, ny]);
     }
-    if (zone) for (let y = zone.y; y < zone.y + zone.h; y++) for (let x = zone.x; x < zone.x + zone.w; x++) cover[y][x] = 'none';
-    // проходимость: от точки высадки должно быть достижимо почти всё открытое поле
-    const seen = new Set<string>(['9,18']);
-    const q: [number, number][] = [[9, 18]];
-    while (q.length) {
-      const [x, y] = q.shift()!;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy, k = `${nx},${ny}`;
-        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE || cover[ny][nx] !== 'none' || seen.has(k)) continue;
-        seen.add(k); q.push([nx, ny]);
+  }
+  return seen;
+}
+
+/** Достижимо почти всё открытое поле (и зона эвакуации). */
+function connected({ cover, terrain }: Grids, zone: Zone | null): boolean {
+  const seen = reachSet({ cover, terrain });
+  let open = 0;
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (cover[y][x] === 'none' && terrain[y][x] === 'ground') open++;
+  return seen.size >= open * 0.95 && (!zone || seen.has(`${zone.x + 1},${zone.y + 1}`));
+}
+
+/** Случайная карта по локации. Деревья — полное укрытие, кусты — половинное, вода непроходима. */
+function genMap(rng: { rng: number }, biome: Biome, missionNo: number, zone: Zone | null): Grids {
+  let g: Grids = { cover: [], terrain: [] };
+  for (let attempt = 0; attempt < 14; attempt++) {
+    const cover: Cover[][] = Array.from({ length: SIZE }, () => Array<Cover>(SIZE).fill('none'));
+    const terrain: Terrain[][] = Array.from({ length: SIZE }, () => Array<Terrain>(SIZE).fill('ground'));
+    const free = (x: number, y: number) => x >= 1 && x < SIZE - 1 && y >= 3 && y <= 15 && cover[y][x] === 'none' && terrain[y][x] === 'ground';
+
+    if (biome === 'ruins') {
+      const x0 = 5 + Math.floor(rand(rng) * 7);
+      for (let i = 0; i < 4; i++) cover[1][x0 + i] = 'full';
+      cover[2][x0] = 'full'; cover[2][x0 + 3] = 'full';
+      const count = 16 + Math.min(missionNo, 4) * 2;
+      for (let i = 0; i < count; i++) {
+        const x = 1 + Math.floor(rand(rng) * 18), y = 4 + Math.floor(rand(rng) * 12);
+        const t: Cover = rand(rng) < 0.6 ? 'half' : 'full';
+        if (cover[y][x] !== 'none') continue;
+        cover[y][x] = t;
+        if (rand(rng) < 0.5 && x + 1 < SIZE - 1 && cover[y][x + 1] === 'none') cover[y][x + 1] = t;
+      }
+    } else {
+      if (biome === 'lake') {
+        // река с извилистыми берегами и 3 бродами
+        const y0 = 6 + Math.floor(rand(rng) * 4), width = 2 + (rand(rng) < 0.5 ? 1 : 0), phase = rand(rng) * 6.28;
+        for (let x = 0; x < SIZE; x++) {
+          const shift = Math.round(Math.sin(x * 0.45 + phase) * 1.3);
+          for (let w = 0; w < width; w++) { const y = y0 + shift + w; if (y >= 3 && y <= 15) terrain[y][x] = 'water'; }
+        }
+        for (const fx of [2 + Math.floor(rand(rng) * 4), 8 + Math.floor(rand(rng) * 4), 14 + Math.floor(rand(rng) * 4)]) {
+          for (let y = 0; y < SIZE; y++) { terrain[y][fx] = 'ground'; terrain[y][Math.min(SIZE - 1, fx + 1)] = 'ground'; }
+        }
+      }
+      // рощи: кластеры деревьев и кустов
+      const clumps = biome === 'forest' ? 6 : 4;
+      for (let i = 0; i < clumps; i++) {
+        const cx = 1 + Math.floor(rand(rng) * 18), cy = 3 + Math.floor(rand(rng) * 13), r = 1.4 + rand(rng) * 1.6;
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+          if (Math.hypot(dx, dy) <= r && rand(rng) < 0.45 && free(cx + dx, cy + dy)) cover[cy + dy][cx + dx] = rand(rng) < 0.5 ? 'full' : 'half';
+        }
+      }
+      for (let i = 0; i < (biome === 'forest' ? 8 : 6); i++) {
+        const x = 1 + Math.floor(rand(rng) * 18), y = 3 + Math.floor(rand(rng) * 13);
+        if (free(x, y)) cover[y][x] = rand(rng) < 0.5 ? 'full' : 'half';
       }
     }
-    const open = cover.flat().filter(c => c === 'none').length;
-    const zoneOk = !zone || seen.has(`${zone.x + 1},${zone.y + 1}`);
-    if (seen.size >= open * 0.95 && zoneOk) break;
+    if (zone) for (let y = zone.y; y < zone.y + zone.h; y++) for (let x = zone.x; x < zone.x + zone.w; x++) { cover[y][x] = 'none'; terrain[y][x] = 'ground'; }
+    g = { cover, terrain };
+    if (connected(g, zone)) break;
   }
-  return cover;
+  return g;
 }
 
 export function createMission(o: MissionOpts): GameState {
   const rng = { rng: o.rng };
   const zone: Zone | null = o.objective === 'extract'
     ? { x: rand(rng) < 0.5 ? 0 : SIZE - 3, y: 0, w: 3, h: 3 } : null;
-  const cover = genCover(rng, o.missionNo, zone);
+  const { cover, terrain } = genMap(rng, o.biome, o.missionNo, zone);
 
   const humans = o.soldiers.map((s, i) => human(s, 7 + i * 2, 18, o.tech));
 
@@ -103,10 +146,11 @@ export function createMission(o: MissionOpts): GameState {
   if (o.objective === 'hold') kinds = kinds.slice(0, 5);
   if (o.objective === 'extract') kinds = kinds.slice(0, 5);
 
+  const reach = reachSet({ cover, terrain });
   const spots: [number, number][] = [];
   for (let y = 2; y <= 9; y++) for (let x = 1; x < SIZE - 1; x++) {
     const inZone = zone && x >= zone.x - 1 && x <= zone.x + zone.w && y <= zone.y + zone.h + 1;
-    if (cover[y][x] === 'none' && !inZone) spots.push([x, y]);
+    if (cover[y][x] === 'none' && terrain[y][x] === 'ground' && !inZone && reach.has(`${x},${y}`)) spots.push([x, y]);
   }
   const chosen: [number, number][] = [];
   for (const p of shuffle(spots, rng)) {
@@ -126,11 +170,11 @@ export function createMission(o: MissionOpts): GameState {
     hold: `Цель: продержаться ${HOLD_TURNS} ходов. Пришельцы получают подкрепление.`,
   }[o.objective];
   return {
-    size: SIZE, cover, units: [...humans, ...aliens], selectedId: null, targetId: null,
+    size: SIZE, cover, terrain, biome: o.biome, units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, busy: false, vis: grid(), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: o.objective, holdTurns: HOLD_TURNS, zone,
-    log: [`Миссия ${o.missionNo}. ${brief}`, 'Разведка: пехота, снайпер, псионик (давит на мораль), тяжёлый (ломает укрытия).'],
+    log: [`Миссия ${o.missionNo} · ${BIOME_NAME[o.biome]}. ${brief}`, 'Разведка: пехота, снайпер, псионик (давит на мораль), тяжёлый (ломает укрытия).'],
     rng: rng.rng,
   };
 }
@@ -139,7 +183,7 @@ export function createMission(o: MissionOpts): GameState {
 export function reinforce(s: GameState) {
   const free: [number, number][] = [];
   for (let y = 0; y <= 2; y++) for (let x = 0; x < s.size; x++) {
-    if (s.cover[y][x] === 'none' && !s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) free.push([x, y]);
+    if (s.cover[y][x] === 'none' && s.terrain[y][x] === 'ground' && !s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) free.push([x, y]);
   }
   if (!free.length) return;
   const [x, y] = free[Math.floor(rand(s) * free.length)];

@@ -8,6 +8,7 @@ import { reinforce } from './game/mission';
 import { GameView } from './render/GameView';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
+import { BIOME_NAME } from './game/difficulty';
 
 export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: GameState) => void }) {
   const host = useRef<HTMLDivElement>(null);
@@ -120,7 +121,7 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
       <div style={{ position: 'absolute', top: 8, left: 8, right: 8, pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
-        <b>Миссия {s.missionNo}</b> · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · в поле зрения: {aliens}
+        <b>Миссия {s.missionNo}</b> · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · в поле зрения: {aliens}
         <div>{info}</div>
         {sel && <div style={{ opacity: 0.8, fontSize: 12 }}>{sel.traits.map(t => TRAITS[t].name).join(', ')} — {sel.bio}</div>}
         {sel && (

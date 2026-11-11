@@ -1,6 +1,6 @@
 import { rand } from './combat';
 import { pickTraits, ROSTER, shuffle, XP_STEPS } from './traits';
-import type { Difficulty, GameState, Objective, PerkId, Soldier, Tech } from './types';
+import type { Biome, Difficulty, GameState, Objective, PerkId, Soldier, Tech } from './types';
 
 export interface Campaign {
   v: 1;
@@ -8,6 +8,7 @@ export interface Campaign {
   difficulty: Difficulty;
   missionNo: number;
   objective: Objective;
+  biome: Biome;
   roster: Soldier[];
   fallen: { name: string; mission: number }[];
   scrap: number;
@@ -40,12 +41,15 @@ function mkSoldier(c: Campaign, name: string, bio: string): Soldier {
 
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Campaign {
   const c: Campaign = {
-    v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', roster: [], fallen: [], scrap: 3,
+    v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', biome: 'ruins', roster: [], fallen: [], scrap: 3,
     tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false,
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
+  c.biome = pickBiome(c);
   return c;
 }
+
+const pickBiome = (c: Campaign): Biome => (['ruins', 'forest', 'lake'] as const)[Math.floor(rand(c) * 3)];
 
 export const maxHpOf = (s: Soldier, t: Tech) =>
   8 + (s.traits.includes('tough') ? 3 : 0) + (t.armor ? 2 : 0) + s.perks.filter(p => p === 'hp').length * 2;
@@ -102,6 +106,7 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
     c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : 2);
     c.missionNo += 1;
     c.objective = (['clear', 'extract', 'hold'] as const)[Math.floor(rand(c) * 3)];
+    c.biome = pickBiome(c);
   } else c.over = true;
   if (c.roster.length === 0) c.over = true;
 }
@@ -116,6 +121,7 @@ export function load(): Campaign | null {
     if (!c || c.v !== 1) return null;
     c.objective ??= 'clear';
     c.tech.grenades ??= false;
+    c.biome ??= 'ruins';
     for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; }
     return c;
   } catch { return null; }

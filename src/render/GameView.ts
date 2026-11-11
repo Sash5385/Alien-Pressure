@@ -32,6 +32,7 @@ export class GameView {
   private tweens: { t: number; dur: number; fn: (k: number) => void; done: () => void }[] = [];
   private lastPos = new Map<number, string>();
   private blast!: THREE.Mesh;
+  private waterTex: THREE.CanvasTexture | null = null;
   private raf = 0;
   private down = { x: 0, y: 0 };
 
@@ -82,7 +83,7 @@ export class GameView {
       new THREE.MeshBasicMaterial({ map: this.fogTex, transparent: true, depthWrite: false }),
     );
     fog.rotation.x = -Math.PI / 2;
-    fog.position.set(n / 2, 1.5, n / 2);
+    fog.position.set(n / 2, 2.3, n / 2);
     fog.renderOrder = 5;
     this.scene.add(fog);
 
@@ -95,6 +96,7 @@ export class GameView {
     this.blast.visible = false;
     this.scene.add(this.blast);
 
+    this.buildTerrain();
     this.buildCover();
     this.buildZone();
     this.scene.add(this.highlight);
@@ -142,10 +144,86 @@ export class GameView {
         (f.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - f.t / 1.1);
       }
       this.floats = this.floats.filter(f => (f.t < 1.1 ? true : (this.scene.remove(f.sprite), false)));
+      if (this.waterTex) { this.waterTex.offset.x += rawDt * 0.03; this.waterTex.offset.y += rawDt * 0.015; }
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
     };
     loop();
+  }
+
+  /** Запасной вид: куст (половинное укрытие) или дерево из примитивов. */
+  private makePlant(t: 'half' | 'full', x: number, y: number, hash: number): THREE.Object3D {
+    const g = new THREE.Group();
+    g.position.set(x + 0.5, 0, y + 0.5);
+    g.rotation.y = hash;
+    if (t === 'half') {
+      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), new THREE.MeshStandardMaterial({ color: 0x3f7a2e, flatShading: true }));
+      b.position.y = 0.3; b.scale.set(1.1, 0.8, 1.1); b.castShadow = true;
+      g.add(b);
+    } else {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 0.8, 6), new THREE.MeshStandardMaterial({ color: 0x5a3f25 }));
+      trunk.position.y = 0.4; trunk.castShadow = true;
+      const crown = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.4, 7), new THREE.MeshStandardMaterial({ color: 0x2f6a2a, flatShading: true }));
+      crown.position.y = 1.3; crown.castShadow = true;
+      g.add(trunk, crown);
+    }
+    return g;
+  }
+
+  /** Земля по локации: цвет, трава (инстансы) и анимированная вода. */
+  private buildTerrain() {
+    const { size: n, biome, terrain, cover } = this.state;
+    const ground = this.ground.material as THREE.MeshStandardMaterial;
+    ground.color.set({ ruins: 0x3a3f33, forest: 0x2f5226, lake: 0x35592a }[biome]);
+    const bg = { ruins: 0x0b0e0c, forest: 0x0a120a, lake: 0x0a1018 }[biome];
+    this.scene.background = new THREE.Color(bg);
+    (this.scene.fog as THREE.Fog).color.set(bg);
+
+    // трава: небольшие конусы на свободных клетках (в руинах — редкая и сухая)
+    const dense = biome !== 'ruins';
+    const spots: [number, number][] = [];
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      if (cover[y][x] !== 'none' || terrain[y][x] === 'water') continue;
+      const k = dense ? 4 : 1;
+      for (let i = 0; i < k; i++) if (Math.random() < (dense ? 0.8 : 0.35)) spots.push([x + Math.random(), y + Math.random()]);
+    }
+    if (spots.length) {
+      const blades = new THREE.InstancedMesh(new THREE.ConeGeometry(0.05, 0.3, 4), new THREE.MeshStandardMaterial({ roughness: 1 }), spots.length);
+      const m4 = new THREE.Matrix4(), col = new THREE.Color();
+      spots.forEach(([px, pz], i) => {
+        const s = 0.7 + Math.random() * 0.9;
+        m4.compose(new THREE.Vector3(px, 0.13 * s, pz), new THREE.Quaternion().setFromEuler(new THREE.Euler((Math.random() - 0.5) * 0.3, Math.random() * 6, (Math.random() - 0.5) * 0.3)), new THREE.Vector3(s, s, s));
+        blades.setMatrixAt(i, m4);
+        blades.setColorAt(i, col.set(dense ? [0x4f8a2a, 0x5f9a34, 0x3f7a22, 0x7bb33f][i % 4] : [0x6b6a3a, 0x7a7340][i % 2]));
+      });
+      this.scene.add(blades);
+    }
+
+    // вода
+    const tiles: [number, number][] = [];
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (terrain[y][x] === 'water') tiles.push([x, y]);
+    if (!tiles.length) return;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const c2 = cv.getContext('2d')!;
+    c2.fillStyle = '#2d78b6'; c2.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 70; i++) {
+      c2.strokeStyle = `rgba(190,225,255,${0.12 + Math.random() * 0.2})`;
+      c2.lineWidth = 1 + Math.random() * 1.5;
+      const x = Math.random() * 128, y = Math.random() * 128, w = 8 + Math.random() * 22;
+      c2.beginPath(); c2.moveTo(x, y); c2.quadraticCurveTo(x + w / 2, y - 4, x + w, y); c2.stroke();
+    }
+    this.waterTex = new THREE.CanvasTexture(cv);
+    this.waterTex.wrapS = this.waterTex.wrapT = THREE.RepeatWrapping;
+    const water = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshStandardMaterial({ map: this.waterTex, color: 0xaad4ff, transparent: true, opacity: 0.85, roughness: 0.15, metalness: 0.25, emissive: 0x0a2236 }),
+      tiles.length,
+    );
+    const m4 = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+    tiles.forEach(([x, y], i) => { m4.setPosition(x + 0.5, 0.03, y + 0.5); water.setMatrixAt(i, m4); });
+    water.receiveShadow = true;
+    this.scene.add(water);
   }
 
   private buildCover() {
@@ -156,18 +234,18 @@ export class GameView {
       if (t === 'none') continue;
       const h = t === 'half' ? 0.6 : 1.4;
       const hash = (x * 7 + y * 13 + x * y) | 0;
-      const model = spawnCover(t, Math.abs(hash));
+      const model = spawnCover(t, Math.abs(hash), this.state.biome);
       let m: THREE.Object3D;
       if (model) {
         m = model;
         m.position.set(x + 0.5, 0, y + 0.5);
         m.rotation.y = (Math.abs(hash) % 4) * (Math.PI / 2);
-      } else {
+      } else if (this.state.biome === 'ruins') {
         const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, h, 0.9), mat[t]);
         box.position.set(x + 0.5, h / 2, y + 0.5);
         box.castShadow = box.receiveShadow = true;
         m = box;
-      }
+      } else m = this.makePlant(t, x, y, Math.abs(hash));
       this.scene.add(m);
       this.coverMeshes.set(`${x},${y}`, m);
     }

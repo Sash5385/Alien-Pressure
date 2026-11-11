@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { buy, choosePerk, COST, DEPLOY, heal, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, type Campaign } from './game/campaign';
-import { DIFF } from './game/difficulty';
+import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { PerkId, Tech } from './game/types';
 import { btn } from './ui';
@@ -45,7 +45,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
     <Screen>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'baseline' }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>Подпольная база</h1>
-        <span>Следующая миссия: {c.missionNo} — {OBJECTIVE_NAME[c.objective]}</span>
+        <span>Следующая миссия: {c.missionNo} — {OBJECTIVE_NAME[c.objective]} · {BIOME_NAME[c.biome]}</span>
         <span>Сложность: {DIFF[c.difficulty].label}</span>
         <b style={{ color: '#ffd34d' }}>Трофеи: {c.scrap}</b>
       </div>

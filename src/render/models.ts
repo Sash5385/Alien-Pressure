@@ -23,19 +23,23 @@ export async function loadModels(): Promise<void> {
 }
 
 const COVER_FILES = { half: ['Crate'], full: ['Container_Small'] } as const;
+const TREES = ['Tree_1', 'Tree_2', 'Tree_3'];
 const coverCache = new Map<string, THREE.Object3D>();
 
 async function loadCovers() {
   const loader = new FBXLoader();
-  const names = [...COVER_FILES.half, ...COVER_FILES.full];
+  const names = [...COVER_FILES.half, ...COVER_FILES.full, ...TREES];
   await Promise.all(names.map(async n => {
     try { coverCache.set(n, await loader.loadAsync(`${import.meta.env.BASE_URL}models/cover/${n}.fbx`)); } catch { /* примитив */ }
   }));
 }
 
 /** Модель укрытия, вписанная в клетку; null — нет файла (рисуется куб). */
-export function spawnCover(type: 'half' | 'full', variant: number): THREE.Object3D | null {
-  const list = COVER_FILES[type].filter(n => coverCache.has(n));
+export function spawnCover(type: 'half' | 'full', variant: number, biome = 'ruins'): THREE.Object3D | null {
+  // вне руин: полное укрытие — дерево, половинное — куст (рисуется в сцене примитивом)
+  const tree = biome !== 'ruins';
+  if (tree && type === 'half') return null;
+  const list = (tree ? TREES : COVER_FILES[type]).filter(n => coverCache.has(n));
   if (!list.length) return null;
   const src = coverCache.get(list[variant % list.length])!;
   const inner = clone(src);
@@ -43,10 +47,20 @@ export function spawnCover(type: 'half' | 'full', variant: number): THREE.Object
     const m = o as THREE.Mesh;
     if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; }
   });
+  if (tree) {
+    // у FBX глянцевые Phong-материалы без текстур: заменяем на матовые зелёный/коричневый
+    const crown = [0x3f7a2e, 0x4a8a30, 0x356c2a][variant % 3];
+    inner.traverse(o => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const swap = (x: THREE.Material) => new THREE.MeshStandardMaterial({ color: x.name.includes('Wood') ? 0x5a3f25 : crown, roughness: 1, flatShading: true });
+      m.material = Array.isArray(m.material) ? m.material.map(swap) : swap(m.material);
+    });
+  }
   const box = new THREE.Box3().setFromObject(inner);
   const size = box.getSize(new THREE.Vector3());
-  const k = 0.95 / Math.max(size.x, size.z, 0.001);
-  const targetH = type === 'half' ? 0.7 : 1.5;
+  const k = (tree ? 1.2 : 0.95) / Math.max(size.x, size.z, 0.001);
+  const targetH = tree ? 2.1 : type === 'half' ? 0.7 : 1.5;
   const ky = Math.min(1.8, Math.max(0.6, targetH / Math.max(size.y * k, 0.001))) * k;
   inner.scale.set(k, ky, k);
   const b2 = new THREE.Box3().setFromObject(inner);

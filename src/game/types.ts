@@ -1,6 +1,8 @@
 import type { TraitId } from './traits';
 
 export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy';
+export type Biome = 'ruins' | 'forest' | 'lake';
+export type Terrain = 'ground' | 'water';
 export type Objective = 'clear' | 'extract' | 'hold';
 export type PerkId = 'aim' | 'hp' | 'nerve';
 export type Difficulty = 'easy' | 'normal' | 'hard';
@@ -59,6 +61,8 @@ export interface Unit {
 export interface GameState {
   size: number;
   cover: Cover[][]; // cover[y][x]
+  terrain: Terrain[][]; // вода непроходима, но не мешает видеть и стрелять
+  biome: Biome;
   units: Unit[];
   selectedId: number | null;
   targetId: number | null;
