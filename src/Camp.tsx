@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { buy, choosePerk, COST, DEPLOY, heal, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, type Campaign } from './game/campaign';
+import { buy, choosePerk, COST, DEPLOY, equip, heal, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
-import type { PerkId, Tech } from './game/types';
+import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
+import { ARMORS, WEAPONS } from './game/weapons';
 import { btn } from './ui';
 
 const panel: React.CSSProperties = { background: '#161b1f', border: '1px solid #2c343b', borderRadius: 8, padding: 12 };
@@ -70,6 +71,19 @@ export function Camp({ c, onChange, onStart, onMenu }: {
                 ))}
               </div>
             )}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center', fontSize: 12 }}>
+              <span style={{ opacity: 0.7 }}>Оружие:</span>
+              {c.weapons.map(w => (
+                <button key={w} title={WEAPONS[w].desc} style={{ ...btn(s.weapon === w), padding: '4px 8px', fontSize: 12 }} onClick={() => act(x => equip(x, s.id, 'weapon', w))}>{WEAPONS[w].name}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center', fontSize: 12 }}>
+              <span style={{ opacity: 0.7 }}>Броня:</span>
+              {c.armors.map(a => (
+                <button key={a} title={ARMORS[a].desc} style={{ ...btn(s.armor === a), padding: '4px 8px', fontSize: 12 }} onClick={() => act(x => equip(x, s.id, 'armor', a))}>{ARMORS[a].name}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{WEAPONS[s.weapon].desc}{ARMORS[s.armor].desc ? ` · ${ARMORS[s.armor].desc}` : ''}</div>
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <button style={btn(false, s.hpLoss === 0 && !s.fracture)} onClick={() => act(x => heal(x, s.id))}>Лечить ({COST.heal})</button>
               <button style={btn(on)} onClick={() => toggle(s.id)}>{on ? 'В отряде' : 'В резерве'}</button>
@@ -87,6 +101,19 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             {TECH_INFO[k]} {c.tech[k] ? '✓' : `(${COST[k]})`}
           </button>
         ))}
+      </div>
+
+      <div style={{ ...panel, display: 'grid', gap: 8 }}>
+        <b>Арсенал</b>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {(Object.keys(WEAPONS) as WeaponId[]).filter(w => !c.weapons.includes(w)).map(w => (
+            <button key={w} title={WEAPONS[w].desc} style={btn()} onClick={() => act(x => unlock(x, 'weapon', w))}>{WEAPONS[w].name} ({WEAPONS[w].cost})</button>
+          ))}
+          {(Object.keys(ARMORS) as ArmorId[]).filter(a => !c.armors.includes(a)).map(a => (
+            <button key={a} title={ARMORS[a].desc} style={btn()} onClick={() => act(x => unlock(x, 'armor', a))}>{ARMORS[a].name} ({ARMORS[a].cost})</button>
+          ))}
+          {c.weapons.length === Object.keys(WEAPONS).length && c.armors.length === Object.keys(ARMORS).length && <span style={{ opacity: 0.7 }}>Всё открыто.</span>}
+        </div>
       </div>
 
       {msg && <div style={{ color: '#ff8a8a' }}>{msg}</div>}

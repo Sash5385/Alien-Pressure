@@ -1,6 +1,7 @@
 import { rand } from './combat';
 import { pickTraits, ROSTER, shuffle, XP_STEPS } from './traits';
-import type { Biome, Difficulty, GameState, Objective, PerkId, Soldier, Tech } from './types';
+import { ARMORS, WEAPONS } from './weapons';
+import type { ArmorId, Biome, Difficulty, GameState, Objective, PerkId, Soldier, Tech, WeaponId } from './types';
 
 export interface Campaign {
   v: 1;
@@ -15,12 +16,16 @@ export interface Campaign {
   tech: Tech;
   nextId: number;
   over: boolean;
+  weapons: WeaponId[]; // разблокированное оружие
+  armors: ArmorId[]; // разблокированная броня
 }
 
 export const OBJECTIVE_NAME: Record<Objective, string> = {
   clear: 'Зачистка',
   extract: 'Эвакуация',
   hold: 'Удержание',
+  assassinate: 'Ликвидация',
+  sabotage: 'Диверсия',
 };
 
 export const MAX_ROSTER = 6;
@@ -36,13 +41,13 @@ export const TECH_INFO: Record<keyof Tech, string> = {
 const KEY = 'alien-pressure:v1';
 
 function mkSoldier(c: Campaign, name: string, bio: string): Soldier {
-  return { id: c.nextId++, name, bio, traits: pickTraits(c), hpLoss: 0, fracture: false, kills: 0, missions: 0, xp: 0, rank: 0, perks: [], perkPoints: 0 };
+  return { id: c.nextId++, name, bio, traits: pickTraits(c), hpLoss: 0, fracture: false, kills: 0, missions: 0, xp: 0, rank: 0, perks: [], perkPoints: 0, weapon: 'rifle', armor: 'none' };
 }
 
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Campaign {
   const c: Campaign = {
     v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', biome: 'ruins', roster: [], fallen: [], scrap: 3,
-    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false,
+    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg'], armors: ['none'],
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
   c.biome = pickBiome(c);
@@ -52,7 +57,7 @@ export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Ca
 const pickBiome = (c: Campaign): Biome => (['ruins', 'forest', 'lake'] as const)[Math.floor(rand(c) * 3)];
 
 export const maxHpOf = (s: Soldier, t: Tech) =>
-  8 + (s.traits.includes('tough') ? 3 : 0) + (t.armor ? 2 : 0) + s.perks.filter(p => p === 'hp').length * 2;
+  8 + (s.traits.includes('tough') ? 3 : 0) + (t.armor ? 2 : 0) + ARMORS[s.armor].hp + s.perks.filter(p => p === 'hp').length * 2;
 
 /** Все действия лагеря возвращают текст ошибки или null. */
 export function recruit(c: Campaign): string | null {
@@ -103,9 +108,9 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
   c.roster.forEach(x => { x.hpLoss = Math.max(0, x.hpLoss - 3); }); // отдых между миссиями
   c.rng = (s.rng + Math.floor(rand(c) * 1e6)) >>> 0;
   if (s.status === 'won') {
-    c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : 2);
+    c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : c.objective === 'assassinate' || c.objective === 'sabotage' ? 3 : 2);
     c.missionNo += 1;
-    c.objective = (['clear', 'extract', 'hold'] as const)[Math.floor(rand(c) * 3)];
+    c.objective = (['clear', 'extract', 'hold', 'assassinate', 'sabotage'] as const)[Math.floor(rand(c) * 5)];
     c.biome = pickBiome(c);
   } else c.over = true;
   if (c.roster.length === 0) c.over = true;
@@ -122,7 +127,9 @@ export function load(): Campaign | null {
     c.objective ??= 'clear';
     c.tech.grenades ??= false;
     c.biome ??= 'ruins';
-    for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; }
+    c.weapons ??= ['rifle', 'smg'];
+    c.armors ??= ['none'];
+    for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; s.weapon ??= 'rifle'; s.armor ??= 'none'; }
     return c;
   } catch { return null; }
 }
@@ -135,5 +142,24 @@ export function choosePerk(c: Campaign, id: number, perk: PerkId): string | null
   if (!s || s.perkPoints <= 0) return 'Нет очков повышения.';
   s.perks.push(perk);
   s.perkPoints -= 1;
+  return null;
+}
+
+/** Разблокировка оружия/брони за трофеи. */
+export function unlock(c: Campaign, kind: 'weapon' | 'armor', id: WeaponId | ArmorId): string | null {
+  const list = kind === 'weapon' ? c.weapons : c.armors;
+  const cost = kind === 'weapon' ? WEAPONS[id as WeaponId].cost : ARMORS[id as ArmorId].cost;
+  if ((list as string[]).includes(id)) return 'Уже открыто.';
+  if (c.scrap < cost) return 'Не хватает трофеев.';
+  c.scrap -= cost;
+  (list as string[]).push(id);
+  return null;
+}
+
+export function equip(c: Campaign, soldierId: number, kind: 'weapon' | 'armor', id: WeaponId | ArmorId): string | null {
+  const s = c.roster.find(x => x.id === soldierId);
+  const list = (kind === 'weapon' ? c.weapons : c.armors) as string[];
+  if (!s || !list.includes(id)) return 'Недоступно.';
+  if (kind === 'weapon') s.weapon = id as WeaponId; else s.armor = id as ArmorId;
   return null;
 }

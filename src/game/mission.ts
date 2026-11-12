@@ -1,6 +1,7 @@
 import { log, rand } from './combat';
 import { BIOME_NAME, DIFF } from './difficulty';
 import { applyTraits, shuffle } from './traits';
+import { ARMORS, WEAPONS } from './weapons';
 import type { Biome, Cover, Difficulty, GameState, Objective, Soldier, Tech, Terrain, Unit } from './types';
 
 const SIZE = 20;
@@ -9,27 +10,30 @@ export const HUMAN_AP = 3;
 export const ALIEN_AP = 3;
 
 const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
+  const w = WEAPONS[s.weapon], ar = ARMORS[s.armor];
   const u: Unit = {
-    id: s.id, team: 'human', kind: 'soldier', name: s.name, x, y, hp: 8, maxHp: 8, ap: HUMAN_AP, maxAp: HUMAN_AP, move: 5,
-    aim: 70, ammo: 5, maxAmmo: 5, mags: 2, grenades: 2 + (tech.grenades ? 1 : 0), facing: Math.PI, dmg: [2, 4], range: 14, overwatch: false,
+    id: s.id, team: 'human', kind: 'soldier', name: s.name, x, y, hp: 8, maxHp: 8, ap: HUMAN_AP, maxAp: HUMAN_AP, move: 5 + w.move + ar.move,
+    aim: w.aim + ar.aim, ammo: w.ammo, maxAmmo: w.ammo, weapon: s.weapon, armor: s.armor, burst: w.burst, falloffFrom: w.falloffFrom, falloff: w.falloff, cut: ar.cut, mags: 2, grenades: 2 + (tech.grenades ? 1 : 0), facing: Math.PI, dmg: w.dmg, range: w.range, overwatch: false,
     bleeding: false, fracture: s.fracture, morale: 70, panic: false, traits: s.traits, perks: s.perks, bio: s.bio, kills: 0,
   };
   applyTraits(u);
   for (const p of s.perks) { if (p === 'aim') u.aim += 5; if (p === 'hp') u.maxHp += 2; }
+  u.maxHp += ar.hp;
   if (tech.armor) u.maxHp += 2;
   if (tech.optics) u.aim += 5;
   u.hp = Math.max(1, u.maxHp - s.hpLoss);
   return u;
 };
 
-const ALIEN: Record<'trooper' | 'sniper' | 'psi' | 'heavy', Partial<Unit>> = {
+const ALIEN: Record<'trooper' | 'sniper' | 'psi' | 'heavy' | 'commander', Partial<Unit>> = {
+  commander: { hp: 14, aim: 60, ammo: 5, dmg: [3, 5], range: 14, move: 4 },
   trooper: { hp: 6, aim: 50, ammo: 6, dmg: [2, 3], range: 12, move: 5 },
   sniper: { hp: 4, aim: 65, ammo: 4, dmg: [3, 4], range: 20, move: 4 },
   psi: { hp: 5, aim: 0, ammo: 0, dmg: [0, 0], range: 10, move: 5 },
   heavy: { hp: 10, aim: 50, ammo: 4, dmg: [3, 5], range: 10, move: 4 },
 };
 type AlienKind = keyof typeof ALIEN;
-const NAMES = { trooper: 'Пехотинец', sniper: 'Снайпер', psi: 'Псионик', heavy: 'Тяжёлый' };
+const NAMES = { trooper: 'Пехотинец', sniper: 'Снайпер', psi: 'Псионик', heavy: 'Тяжёлый', commander: 'Командир' };
 
 const alien = (id: number, kind: AlienKind, n: number, x: number, y: number, d: Difficulty): Unit => {
   const b = ALIEN[kind];
@@ -37,7 +41,8 @@ const alien = (id: number, kind: AlienKind, n: number, x: number, y: number, d: 
   return {
     id, team: 'alien', kind, name: kind === 'trooper' ? `${NAMES[kind]} ${n}` : NAMES[kind], x, y,
     hp, maxHp: hp, ap: ALIEN_AP, maxAp: ALIEN_AP, move: b.move!, aim: kind === 'psi' ? 0 : b.aim! + DIFF[d].aim,
-    ammo: b.ammo!, maxAmmo: b.ammo!, mags: 99, grenades: 0, facing: 0, dmg: b.dmg!, range: b.range!, overwatch: false,
+    ammo: b.ammo!, maxAmmo: b.ammo!, weapon: 'rifle', armor: 'none', burst: kind === 'sniper' ? 1 : kind === 'trooper' ? 2 : 3,
+    falloffFrom: 6, falloff: kind === 'sniper' ? 1 : 3, cut: 0, mags: 99, grenades: 0, facing: 0, dmg: b.dmg!, range: b.range!, overwatch: false,
     bleeding: false, fracture: false, morale: 100, panic: false, traits: [], perks: [], bio: '', kills: 0,
   };
 };
@@ -144,18 +149,34 @@ export function createMission(o: MissionOpts): GameState {
   if (o.missionNo >= 5) kinds.push('trooper');
   if (o.missionNo >= 7) kinds.push('heavy');
   if (o.objective === 'hold') kinds = kinds.slice(0, 5);
-  if (o.objective === 'extract') kinds = kinds.slice(0, 5);
+  if (o.objective === 'extract' || o.objective === 'sabotage') kinds = kinds.slice(0, 5);
+  if (o.objective === 'assassinate') kinds = [...kinds.slice(0, 5), 'commander'];
 
   const reach = reachSet({ cover, terrain });
-  const spots: [number, number][] = [];
+  let spots: [number, number][] = [];
   for (let y = 2; y <= 9; y++) for (let x = 1; x < SIZE - 1; x++) {
     const inZone = zone && x >= zone.x - 1 && x <= zone.x + zone.w && y <= zone.y + zone.h + 1;
     if (cover[y][x] === 'none' && terrain[y][x] === 'ground' && !inZone && reach.has(`${x},${y}`)) spots.push([x, y]);
+  }
+  // диверсия: два маяка на стороне пришельцев (полное укрытие, помечены на карте)
+  const beacons: GameState['beacons'] = [];
+  if (o.objective === 'sabotage') {
+    for (const p of shuffle(spots.filter(([, y]) => y <= 6), rng)) {
+      if (beacons.length === 2) break;
+      if (beacons.every(b => Math.hypot(b.x - p[0], b.y - p[1]) >= 7)) beacons.push({ x: p[0], y: p[1], done: false });
+    }
+    for (const b of beacons) cover[b.y][b.x] = 'full';
+    spots = spots.filter(([x, y]) => !beacons.some(b => Math.abs(b.x - x) + Math.abs(b.y - y) <= 1));
   }
   const chosen: [number, number][] = [];
   for (const p of shuffle(spots, rng)) {
     if (chosen.length === kinds.length) break;
     if (chosen.every(c => Math.hypot(c[0] - p[0], c[1] - p[1]) >= 2.5)) chosen.push(p);
+  }
+  if (o.objective === 'assassinate' && chosen.length === kinds.length) { // командир — в самой дальней точке
+    let j = 0;
+    chosen.forEach((p, i) => { if (p[1] < chosen[j][1]) j = i; });
+    [chosen[j], chosen[chosen.length - 1]] = [chosen[chosen.length - 1], chosen[j]];
   }
   let tn = 0;
   const aliens = kinds.slice(0, chosen.length).map((k, i) => alien(1000 + i, k, k === 'trooper' ? ++tn : 0, chosen[i][0], chosen[i][1], o.difficulty));
@@ -163,17 +184,20 @@ export function createMission(o: MissionOpts): GameState {
   const grid = () => Array.from({ length: SIZE }, () => Array<boolean>(SIZE).fill(false));
   const seen = grid();
   if (zone) for (let y = zone.y; y < zone.y + zone.h; y++) for (let x = zone.x; x < zone.x + zone.w; x++) seen[y][x] = true;
+  for (const b of beacons) seen[b.y][b.x] = true;
 
   const brief = {
     clear: 'Цель: уничтожить всех пришельцев.',
     extract: 'Цель: эвакуация — все выжившие бойцы должны дойти до зелёной зоны.',
     hold: `Цель: продержаться ${HOLD_TURNS} ходов. Пришельцы получают подкрепление.`,
+    assassinate: 'Цель: убить командира пришельцев (он помечен красным кольцом и виден всегда).',
+    sabotage: 'Цель: взорвать два маяка (подойди вплотную: заряд тратит 1 AP и 1 гранату).',
   }[o.objective];
   return {
     size: SIZE, cover, terrain, biome: o.biome, units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, busy: false, vis: grid(), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
-    objective: o.objective, holdTurns: HOLD_TURNS, zone,
+    objective: o.objective, markId: aliens.find(a => a.kind === 'commander')?.id ?? null, beacons, holdTurns: HOLD_TURNS, zone,
     log: [`Миссия ${o.missionNo} · ${BIOME_NAME[o.biome]}. ${brief}`, 'Разведка: пехота, снайпер, псионик (давит на мораль), тяжёлый (ломает укрытия).'],
     rng: rng.rng,
   };

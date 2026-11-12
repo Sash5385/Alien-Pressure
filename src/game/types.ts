@@ -1,9 +1,11 @@
 import type { TraitId } from './traits';
 
-export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy';
+export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy' | 'commander';
+export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper';
+export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export type Biome = 'ruins' | 'forest' | 'lake';
 export type Terrain = 'ground' | 'water';
-export type Objective = 'clear' | 'extract' | 'hold';
+export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage';
 export type PerkId = 'aim' | 'hp' | 'nerve';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface Tech { armor: boolean; optics: boolean; kits: boolean; grenades: boolean }
@@ -22,6 +24,8 @@ export interface Soldier {
   rank: number;
   perks: PerkId[];
   perkPoints: number;
+  weapon: WeaponId;
+  armor: ArmorId;
 }
 
 export type Team = 'human' | 'alien';
@@ -42,6 +46,12 @@ export interface Unit {
   aim: number; // базовая меткость, %
   ammo: number;
   maxAmmo: number;
+  weapon: WeaponId;
+  armor: ArmorId;
+  burst: number;
+  falloffFrom: number;
+  falloff: number;
+  cut: number; // снижение урона от попадания (броня)
   grenades: number;
   facing: number; // радианы: 0 — на юг (+Z), π — на север
   mags: number; // запасные магазины (у пришельцев не ограничены)
@@ -76,6 +86,8 @@ export interface GameState {
   missionNo: number;
   difficulty: Difficulty;
   objective: Objective;
+  markId: number | null; // помеченная цель (командир) видна всегда
+  beacons: { x: number; y: number; done: boolean }[];
   holdTurns: number;
   zone: { x: number; y: number; w: number; h: number } | null;
   aiming: 'grenade' | null; // режим прицеливания гранаты

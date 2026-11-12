@@ -66,7 +66,7 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false): num
   if (a.ammo <= 0 || a.hp <= 0 || t.hp <= 0 || a.team === t.team) return null;
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
-  const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - 6) * (a.kind === 'sniper' ? 1 : 3) - (reaction ? 10 : 0)
+  const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
     - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0);
   return Math.round(Math.min(95, Math.max(5, c)));
 }
@@ -92,7 +92,8 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotRes
   if (!reaction) a.ap -= 1;
   if (a.team === 'alien' && !s.revealed.includes(a.id)) s.revealed.push(a.id);
   const hit = rand(s) * 100 < chance;
-  const dmg = hit ? a.dmg[0] + Math.floor(rand(s) * (a.dmg[1] - a.dmg[0] + 1)) : 0;
+  let dmg = hit ? a.dmg[0] + Math.floor(rand(s) * (a.dmg[1] - a.dmg[0] + 1)) : 0;
+  if (hit && t.cut > 0) dmg = Math.max(1, dmg - t.cut);
   t.hp = Math.max(0, t.hp - dmg);
   const killed = hit && t.hp <= 0;
   let wound: ShotResult['wound'];
@@ -138,6 +139,8 @@ export function checkEnd(s: GameState) {
   if (humans.length === 0) { s.status = 'lost'; return; }
   const z = s.zone;
   if (s.objective === 'hold') { if (s.turnNo > s.holdTurns) s.status = 'won'; return; }
+  if (s.objective === 'assassinate') { if (!living(s, 'alien').some(a => a.kind === 'commander')) s.status = 'won'; return; }
+  if (s.objective === 'sabotage') { if (s.beacons.length > 0 && s.beacons.every(b => b.done)) s.status = 'won'; return; }
   if (living(s, 'alien').length === 0) s.status = 'won';
   else if (s.objective === 'extract' && z && humans.every(h => h.x >= z.x && h.x < z.x + z.w && h.y >= z.y && h.y < z.y + z.h)) s.status = 'won';
 }
@@ -212,7 +215,7 @@ export function updateVision(s: GameState) {
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (vis[y][x]) s.seen[y][x] = true;
 }
 
-export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || s.vis[u.y][u.x] || s.revealed.includes(u.id);
+export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || u.id === s.markId || s.vis[u.y][u.x] || s.revealed.includes(u.id);
 
 /** Перезарядка: 1 AP; у людей тратит запасной магазин. */
 export function reload(s: GameState, u: Unit): boolean {
@@ -253,7 +256,7 @@ export function throwGrenade(s: GameState, u: Unit, x: number, y: number): Grena
   for (const t of living(s)) {
     const d = Math.hypot(t.x - x, t.y - y);
     if (d > BLAST) continue;
-    const dmg = d <= 1.0 ? 5 : 3;
+    const dmg = Math.max(1, (d <= 1.0 ? 5 : 3) - t.cut);
     t.hp = Math.max(0, t.hp - dmg);
     const killed = t.hp <= 0;
     hits.push({ id: t.id, dmg, killed });
@@ -277,4 +280,22 @@ export function throwGrenade(s: GameState, u: Unit, x: number, y: number): Grena
   log(s, `${u.name} бросает гранату: ${names || 'никого'}.`);
   checkEnd(s);
   return { thrower: u.id, x, y, hits, broken };
+}
+
+export const nearBeacon = (s: GameState, u: Unit) =>
+  s.beacons.find(b => !b.done && Math.max(Math.abs(b.x - u.x), Math.abs(b.y - u.y)) <= 1);
+
+/** Заряд на маяк: 1 AP и 1 граната; маяк разрушается. */
+export function placeCharge(s: GameState, u: Unit): { x: number; y: number } | null {
+  const b = nearBeacon(s, u);
+  if (!b || u.ap <= 0 || u.grenades <= 0) return null;
+  u.ap -= 1;
+  u.grenades -= 1;
+  u.overwatch = false;
+  b.done = true;
+  s.cover[b.y][b.x] = 'none';
+  faceToward(u, b.x, b.y);
+  log(s, `${u.name} взрывает маяк (${s.beacons.filter(x => x.done).length}/${s.beacons.length}).`);
+  checkEnd(s);
+  return { x: b.x, y: b.y };
 }

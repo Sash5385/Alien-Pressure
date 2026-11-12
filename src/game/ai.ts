@@ -3,7 +3,7 @@ import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 
 export interface AiHooks {
-  moved(): Promise<void>; // позиции обновились — перерисовать
+  moved(u: Unit): Promise<void>; // позиции обновились — перерисовать
   shot(r: ShotResult): Promise<void>;
 }
 
@@ -52,7 +52,7 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
       u.ap -= 1;
       for (const [x, y] of findPath(s, u.x, u.y, best[0], best[1], u.move)) {
         u.x = x; u.y = y;
-        await h.moved();
+        await h.moved(u);
         for (const r of reactions(s, u)) await h.shot(r);
         if (u.hp <= 0 || s.status !== 'playing') break;
       }

@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { GameState, Unit } from '../game/types';
 import { BLAST, canThrow, checkEnd, faceToward, isVisible, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx } from '../audio';
@@ -32,6 +36,16 @@ export class GameView {
   private tweens: { t: number; dur: number; fn: (k: number) => void; done: () => void }[] = [];
   private lastPos = new Map<number, string>();
   private blast!: THREE.Mesh;
+  private sun!: THREE.DirectionalLight;
+  private composer: EffectComposer | null = null;
+  private quality: 'high' | 'low' = 'high';
+  private autoCam = true;
+  private focus: THREE.Vector3 | null = null;
+  private vel = new Map<number, number>();
+  private dpr = 1;
+  private ft = 0.016;
+  private frames = 0;
+  private beaconMeshes = new Map<string, THREE.Object3D>();
   private waterTex: THREE.CanvasTexture | null = null;
   private raf = 0;
   private down = { x: 0, y: 0 };
@@ -39,8 +53,12 @@ export class GameView {
   constructor(private host: HTMLElement, private state: GameState, private onChange: () => void) {
     const n = state.size;
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.dpr = Math.min(devicePixelRatio, 2);
+    this.renderer.setPixelRatio(this.dpr);
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.35;
     host.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(0x0b0e0c);
@@ -55,12 +73,19 @@ export class GameView {
     this.controls.maxDistance = 38;
     // ПКМ занят поворотом бойца; сдвиг камеры — средняя кнопка (на тач — двумя пальцами)
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: null as unknown as THREE.MOUSE };
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.addEventListener('start', () => { this.focus = null; });
 
     this.scene.add(new THREE.HemisphereLight(0x8899aa, 0x222018, 0.7));
     const sun = new THREE.DirectionalLight(0xffe0b0, 1.4);
+    this.sun = sun;
     sun.position.set(n, 20, n * 0.2);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.03;
+    sun.shadow.radius = 3;
     const c = sun.shadow.camera;
     c.left = -n; c.right = n; c.top = n; c.bottom = -n; c.far = 60;
     sun.target.position.set(n / 2, 0, n / 2);
@@ -84,6 +109,8 @@ export class GameView {
     );
     fog.rotation.x = -Math.PI / 2;
     fog.position.set(n / 2, 2.3, n / 2);
+    this.setQuality((() => { try { const q = localStorage.getItem('alien-pressure:gfx'); if (q === 'high' || q === 'low') return q; } catch { /* ignore */ } return matchMedia('(pointer: coarse)').matches ? 'low' : 'high'; })(), false);
+    try { this.autoCam = localStorage.getItem('alien-pressure:cam') !== 'manual'; } catch { /* ignore */ }
     fog.renderOrder = 5;
     this.scene.add(fog);
 
@@ -99,6 +126,7 @@ export class GameView {
     this.buildTerrain();
     this.buildCover();
     this.buildZone();
+    this.buildBeacons();
     this.scene.add(this.highlight);
     this.syncUnits(true);
 
@@ -123,11 +151,18 @@ export class GameView {
         if (g && !this.dying.has(id)) {
           // постоянная скорость к цели (без рывков); при большом отставании догоняем быстрее
           const dx = g.x - m.position.x, dz = g.z - m.position.z, dist = Math.hypot(dx, dz);
+          // разгон и торможение; бег ускоряется вместе со скоростью
+          const vel = this.vel.get(id) ?? 0;
+          const want = dist > 1.6 ? dist * 5 : dist > 0.04 ? SPEED : 0;
+          const nv = vel + (want - vel) * (1 - Math.exp(-(want > vel ? 14 : 22) * dt));
+          this.vel.set(id, nv);
           if (dist > 0.001) {
-            const step = Math.min(dist, (dist > 1.6 ? dist * 5 : SPEED) * dt);
+            const step = Math.min(dist, nv * dt);
             m.position.x += (dx / dist) * step;
             m.position.z += (dz / dist) * step;
           }
+          const runA = this.rigs.get(id)?.actions.get('Run');
+          if (runA) runA.timeScale = 0.6 + nv * 0.18;
           if (dist > 0.12 && this.rigs.has(id)) this.play(id, 'Run');
           else if (this.anim.get(id) === 'Run') this.play(id, 'Idle');
         }
@@ -145,8 +180,11 @@ export class GameView {
       }
       this.floats = this.floats.filter(f => (f.t < 1.1 ? true : (this.scene.remove(f.sprite), false)));
       if (this.waterTex) { this.waterTex.offset.x += rawDt * 0.03; this.waterTex.offset.y += rawDt * 0.015; }
+      this.stepCamera(dt);
       this.controls.update();
-      this.renderer.render(this.scene, this.camera);
+      this.adaptDpr(rawDt);
+      if (this.composer) this.composer.render();
+      else this.renderer.render(this.scene, this.camera);
     };
     loop();
   }
@@ -174,10 +212,48 @@ export class GameView {
   private buildTerrain() {
     const { size: n, biome, terrain, cover } = this.state;
     const ground = this.ground.material as THREE.MeshStandardMaterial;
-    ground.color.set({ ruins: 0x3a3f33, forest: 0x2f5226, lake: 0x35592a }[biome]);
-    const bg = { ruins: 0x0b0e0c, forest: 0x0a120a, lake: 0x0a1018 }[biome];
-    this.scene.background = new THREE.Color(bg);
-    (this.scene.fog as THREE.Fog).color.set(bg);
+    const pal = {
+      ruins: { g: '#3a3f33', alt: ['#464b3c', '#2f332a', '#4a4535'], hor: 0x2a3340, top: 0x131b25, outer: 0x1b1f19 },
+      forest: { g: '#2f5226', alt: ['#3a6530', '#264620', '#4a6a2c'], hor: 0x203628, top: 0x0c1f14, outer: 0x142814 },
+      lake: { g: '#35592a', alt: ['#416b33', '#2c4d23', '#52703a'], hor: 0x23415a, top: 0x0f2236, outer: 0x15301f },
+    }[biome];
+    // текстура земли: пятна травы/грунта
+    const gcv = document.createElement('canvas');
+    gcv.width = gcv.height = 256;
+    const gcx = gcv.getContext('2d')!;
+    gcx.fillStyle = pal.g; gcx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 900; i++) {
+      gcx.fillStyle = pal.alt[i % 3]; gcx.globalAlpha = 0.18 + Math.random() * 0.22;
+      gcx.beginPath(); gcx.arc(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 9, 0, 6.3); gcx.fill();
+    }
+    const gt = new THREE.CanvasTexture(gcv);
+    gt.wrapS = gt.wrapT = THREE.RepeatWrapping;
+    gt.repeat.set(n / 4, n / 4);
+    gt.colorSpace = THREE.SRGBColorSpace;
+    gt.anisotropy = 4;
+    ground.map = gt;
+    ground.color.set(0xffffff);
+    ground.needsUpdate = true;
+    // дальний план и небо, туман в цвет горизонта
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), new THREE.MeshStandardMaterial({ color: pal.outer, roughness: 1 }));
+    outer.rotation.x = -Math.PI / 2;
+    outer.position.set(n / 2, -0.03, n / 2);
+    outer.receiveShadow = true;
+    this.scene.add(outer);
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(120, 24, 12),
+      new THREE.ShaderMaterial({
+        side: THREE.BackSide, depthWrite: false,
+        uniforms: { top: { value: new THREE.Color(pal.top) }, hor: { value: new THREE.Color(pal.hor) } },
+        vertexShader: 'varying float h; void main(){ h = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+        fragmentShader: 'uniform vec3 top; uniform vec3 hor; varying float h; void main(){ gl_FragColor = vec4(mix(hor, top, smoothstep(0.0, 0.7, h)), 1.0); }',
+      }),
+    );
+    sky.position.set(n / 2, 0, n / 2);
+    sky.renderOrder = -10;
+    this.scene.add(sky);
+    this.scene.background = new THREE.Color(pal.hor);
+    (this.scene.fog as THREE.Fog).color.set(pal.hor);
 
     // трава: небольшие конусы на свободных клетках (в руинах — редкая и сухая)
     const dense = biome !== 'ruins';
@@ -231,7 +307,7 @@ export class GameView {
     const mat = { half: new THREE.MeshStandardMaterial({ color: 0x6b6254 }), full: new THREE.MeshStandardMaterial({ color: 0x4a4f57 }) };
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
       const t = cover[y][x];
-      if (t === 'none') continue;
+      if (t === 'none' || this.state.beacons.some(b => b.x === x && b.y === y && !b.done)) continue;
       const h = t === 'half' ? 0.6 : 1.4;
       const hash = (x * 7 + y * 13 + x * y) | 0;
       const model = spawnCover(t, Math.abs(hash), this.state.biome);
@@ -248,6 +324,23 @@ export class GameView {
       } else m = this.makePlant(t, x, y, Math.abs(hash));
       this.scene.add(m);
       this.coverMeshes.set(`${x},${y}`, m);
+    }
+  }
+
+  /** Маяки диверсии: высокие светящиеся столбы (выше слоя тумана, видны всегда). */
+  private buildBeacons() {
+    for (const b of this.state.beacons) {
+      const g = new THREE.Group();
+      g.position.set(b.x + 0.5, 0, b.y + 0.5);
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.45, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x3a3f46 }));
+      base.position.y = 0.25; base.castShadow = true;
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3.4, 8), new THREE.MeshBasicMaterial({ color: 0xff3347, transparent: true, opacity: 0.85 }));
+      pillar.position.y = 1.9;
+      const light = new THREE.PointLight(0xff3347, 4, 5);
+      light.position.y = 1.2;
+      g.add(base, pillar, light);
+      this.scene.add(g);
+      this.beaconMeshes.set(`${b.x},${b.y}`, g);
     }
   }
 
@@ -271,20 +364,29 @@ export class GameView {
     next.reset().setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
     next.clampWhenFinished = true;
     next.play();
-    if (prev && prev !== next) prev.crossFadeTo(next, 0.15, false);
+    if (prev && prev !== next) prev.crossFadeTo(next, 0.22, false);
     this.anim.set(id, name);
     if (once && name !== 'Death') setTimeout(() => { if (this.anim.get(id) === name) this.play(id, 'Idle'); }, next.getClip().duration * 1000);
   }
 
   /** glTF-модель из public/models/, а если её нет — примитив. */
   private makeUnit(u: Unit): THREE.Object3D {
-    const height = { soldier: 1.05, trooper: 1.05, sniper: 1.15, psi: 1.05, heavy: 1.45 }[u.kind];
-    const tint = { soldier: undefined, trooper: 0x7fd24a, sniper: 0x3f8f6a, psi: 0xb36bff, heavy: 0x6f8a2c }[u.kind];
+    const height = { soldier: 1.05, trooper: 1.05, sniper: 1.15, psi: 1.05, heavy: 1.45, commander: 1.6 }[u.kind];
+    const tint = { soldier: undefined, trooper: 0x7fd24a, sniper: 0x3f8f6a, psi: 0xb36bff, heavy: 0x6f8a2c, commander: 0xc0392b }[u.kind];
     const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint);
-    if (!sp) return this.makePrimitive(u);
+    if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
     this.rigs.set(u.id, sp);
     this.play(u.id, 'Idle');
+    this.addBlob(sp.obj);
     return sp.obj;
+  }
+
+  /** Мягкая тень-пятно под юнитом — «привязывает» его к земле. */
+  private addBlob(o: THREE.Object3D) {
+    const b = new THREE.Mesh(new THREE.CircleGeometry(0.34, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.38, depthWrite: false }));
+    b.rotation.x = -Math.PI / 2;
+    b.position.y = 0.025;
+    o.add(b);
   }
 
   private makePrimitive(u: Unit): THREE.Object3D {
@@ -295,6 +397,7 @@ export class GameView {
       sniper: { color: 0x3f8f6a, scale: 1.1 },
       psi: { color: 0xb36bff, scale: 1, glow: 0x401a70 },
       heavy: { color: 0x6f8a2c, scale: 1.4 },
+      commander: { color: 0xc0392b, scale: 1.55 },
     };
     const l = look[u.kind];
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.6, 4, 8), new THREE.MeshStandardMaterial({ color: l.color, emissive: l.glow ?? 0 }));
@@ -340,12 +443,85 @@ export class GameView {
       const [cx, cy] = k.split(',').map(Number);
       if (this.state.cover[cy][cx] === 'none') { this.scene.remove(m); this.coverMeshes.delete(k); }
     }
+    for (const b of this.state.beacons) {
+      const m = this.beaconMeshes.get(`${b.x},${b.y}`);
+      if (b.done && m) {
+        this.beaconMeshes.delete(`${b.x},${b.y}`);
+        this.scene.remove(m);
+        const p = new THREE.Vector3(b.x + 0.5, 0.5, b.y + 0.5);
+        this.burst(p, 0xffb050, 30, 5, 650);
+        this.burst(p, 0x555555, 16, 3, 800);
+        sfx('grenade');
+      }
+    }
     this.updateFog();
     this.drawHighlight();
   }
 
   /** Перемещение с короткой паузой на анимацию. */
-  async moved() { this.syncUnits(); await sleep(150); }
+  async moved(u?: Unit) {
+    this.syncUnits();
+    if (u && isVisible(this.state, u)) this.focusOn(u.x, u.y);
+    await sleep(150);
+  }
+
+  // --- камера и графика ---
+  focusOn(x: number, y: number) { if (this.autoCam) this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
+  unfocus() { this.focus = null; }
+  getQuality() { return this.quality; }
+  getAutoCam() { return this.autoCam; }
+  setAutoCam(on: boolean) {
+    this.autoCam = on;
+    if (!on) this.focus = null;
+    try { localStorage.setItem('alien-pressure:cam', on ? 'auto' : 'manual'); } catch { /* ignore */ }
+  }
+
+  private stepCamera(dt: number) {
+    if (!this.focus) return;
+    const t = this.controls.target, k = 1 - Math.exp(-3 * dt);
+    const dx = (this.focus.x - t.x) * k, dz = (this.focus.z - t.z) * k;
+    t.x += dx; t.z += dz;
+    this.camera.position.x += dx; this.camera.position.z += dz;
+    if (Math.hypot(this.focus.x - t.x, this.focus.z - t.z) < 0.05) this.focus = null;
+  }
+
+  /** Высокое: свечение (bloom), сглаживание, тени 2048. Обычное: прямой рендер, тени 1024. */
+  setQuality(q: 'high' | 'low', save = true) {
+    this.quality = q;
+    this.sun.shadow.mapSize.set(q === 'high' ? 2048 : 1024, q === 'high' ? 2048 : 1024);
+    this.sun.shadow.map?.dispose();
+    (this.sun.shadow as THREE.DirectionalLightShadow).map = null;
+    this.composer?.dispose();
+    this.composer = null;
+    if (q === 'high') {
+      const w = Math.max(1, this.host.clientWidth), h = Math.max(1, this.host.clientHeight);
+      const rt = new THREE.WebGLRenderTarget(w * this.dpr, h * this.dpr, { type: THREE.HalfFloatType, samples: 4 });
+      const c = new EffectComposer(this.renderer, rt);
+      c.setPixelRatio(this.dpr);
+      c.setSize(w, h);
+      c.addPass(new RenderPass(this.scene, this.camera));
+      c.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.4, 0.5, 0.88));
+      c.addPass(new OutputPass());
+      this.composer = c;
+    }
+    if (save) { try { localStorage.setItem('alien-pressure:gfx', q); } catch { /* ignore */ } }
+  }
+
+  /** Адаптивное разрешение: если кадры медленные — снижаем, если быстрые — возвращаем. */
+  private adaptDpr(rawDt: number) {
+    this.ft = this.ft * 0.95 + Math.min(rawDt, 0.2) * 0.05;
+    if (++this.frames < 90) return;
+    this.frames = 0;
+    const max = Math.min(devicePixelRatio, 2);
+    let d = this.dpr;
+    if (this.ft > 0.034 && d > 0.75) d = Math.max(0.75, d - 0.25);
+    else if (this.ft < 0.018 && d < max) d = Math.min(max, d + 0.25);
+    if (d === this.dpr) return;
+    this.dpr = d;
+    this.renderer.setPixelRatio(d);
+    this.composer?.setPixelRatio(d);
+    this.resize();
+  }
 
   /** Туман войны: неисследованное тёмное, исследованное притемнено, видимое чистое. */
   private updateFog() {
@@ -370,6 +546,8 @@ export class GameView {
     for (const o of s.units) if (o.hp > 0 && o.overwatch) this.ring(o.x, o.y, 0x35e0e0, 0.46, 0.52);
     for (const o of s.units) if (o.hp > 0 && o.bleeding) this.ring(o.x, o.y, 0xb01818, 0.54, 0.6);
     for (const o of s.units) if (o.hp > 0 && o.panic) this.ring(o.x, o.y, 0xff9f43, 0.62, 0.68);
+    const mk = s.units.find(v => v.id === s.markId && v.hp > 0);
+    if (mk) this.ring(mk.x, mk.y, 0xff2222, 0.72, 0.82);
     const t = s.units.find(v => v.id === s.targetId && v.hp > 0);
     if (t) this.ring(t.x, t.y, 0xff3b3b);
     const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
@@ -461,6 +639,7 @@ export class GameView {
   async shotFx(r: ShotResult) {
     const a = this.state.units.find(u => u.id === r.attackerId)!;
     const t = this.state.units.find(u => u.id === r.targetId)!;
+    if (isVisible(this.state, a) || isVisible(this.state, t)) this.focusOn((a.x + t.x) / 2, (a.y + t.y) / 2);
     const am = this.unitMeshes.get(a.id);
     const chest = new THREE.Vector3(t.x + 0.5, 0.85, t.y + 0.5);
     const f = a.facing;
@@ -478,7 +657,7 @@ export class GameView {
       return;
     }
     this.play(a.id, 'Idle_Shoot', true);
-    const rounds = a.kind === 'sniper' ? 1 : a.kind === 'trooper' ? 2 : 3;
+    const rounds = a.burst;
     const shots: Promise<void>[] = [];
     for (let i = 0; i < rounds; i++) {
       const last = i === rounds - 1;
@@ -508,6 +687,7 @@ export class GameView {
     const s = this.state;
     s.busy = true;
     const res = throwGrenade(s, u, x, y);
+    this.focusOn(x, y);
     this.blast.visible = false;
     this.play(u.id, 'Punch', true);
     sfx('throw');
@@ -606,7 +786,7 @@ export class GameView {
     }
     const at = s.units.find(v => v.hp > 0 && v.x === x && v.y === y && isVisible(s, v));
     const sel = s.units.find(v => v.id === s.selectedId && v.hp > 0);
-    if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; s.aiming = null; }
+    if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; s.aiming = null; this.focusOn(at.x, at.y); }
     else if (at?.team === 'alien') { if (sel) s.targetId = at.id; }
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
       s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false;
@@ -621,6 +801,7 @@ export class GameView {
   private resize() {
     const w = this.host.clientWidth, h = this.host.clientHeight;
     this.renderer.setSize(w, h);
+    this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
