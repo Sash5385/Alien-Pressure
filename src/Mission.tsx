@@ -3,7 +3,7 @@ import { runAlienTurn } from './game/ai';
 import { aimedShot, bandage, canShootBarrel, checkEnd, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState } from './game/types';
-import { btn } from './ui';
+import { btn, VERSION } from './ui';
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
 import { GameView } from './render/GameView';
@@ -211,6 +211,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручная' : 'авто'}</button>
           <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>
           </>}
+          <span style={{ alignSelf: 'center', fontSize: 11, opacity: 0.45 }}>{VERSION}</span>
           {narrow && <button style={{ ...btn(more), padding: '4px 8px', fontSize: 12 }} onClick={() => setMore(!more)}>⚙</button>}
         </div>
       </div>

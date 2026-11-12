@@ -5,7 +5,7 @@ import { DIFF } from './game/difficulty';
 import { createMission } from './game/mission';
 import type { Difficulty, GameState } from './game/types';
 import { Mission } from './Mission';
-import { btn } from './ui';
+import { btn, BUILD, VERSION } from './ui';
 
 type Screen_ = 'menu' | 'camp' | 'mission';
 
@@ -57,7 +57,7 @@ export function App() {
 
   return (
     <Screen>
-      <h1 style={{ margin: '24px 0 0', fontSize: 32 }}>Alien Pressure</h1>
+      <h1 style={{ margin: '24px 0 0', fontSize: 32 }}>Alien Pressure <span style={{ fontSize: 14, opacity: 0.6, fontWeight: 400 }}>{VERSION}</span></h1>
       <p style={{ margin: 0, opacity: 0.8 }}>Подпольный отряд землян против пришельцев. Кровь, паника, патроны на счёт.</p>
       {midSave && saved && !saved.over && (
         <button style={btn(true)} onClick={() => { setC(midSave.before); setMission({ state: midSave.state, deployed: midSave.deployed, before: midSave.before, run: Date.now() }); setScreen('mission'); }}>
@@ -75,6 +75,7 @@ export function App() {
           <button key={d} style={btn()} onClick={() => start(d)}>{DIFF[d].label}</button>
         ))}
       </div>
+      <p style={{ fontSize: 12, opacity: 0.5 }}>Версия {VERSION} · сборка {BUILD}</p>
       <p style={{ fontSize: 12, opacity: 0.6 }}>Прогресс хранится в браузере (localStorage). Новая игра перезапишет сохранение.</p>
     </Screen>
   );
