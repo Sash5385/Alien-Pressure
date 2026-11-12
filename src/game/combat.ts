@@ -9,6 +9,8 @@ export interface ShotResult {
   killed: boolean;
   reaction: boolean;
   wound?: 'bleed' | 'fracture';
+  alerted?: number[];
+  suppress?: boolean;
   psi?: boolean;
   broken?: { x: number; y: number };
 }
@@ -62,16 +64,16 @@ export function coverSource(s: GameState, shooter: Unit, target: Unit): { bonus:
 export const coverBonus = (s: GameState, shooter: Unit, target: Unit) => coverSource(s, shooter, target)?.bonus ?? 0;
 
 /** Шанс попадания, % — или null, если выстрел невозможен. */
-export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false): number | null {
+export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 0): number | null {
   if (a.ammo <= 0 || a.hp <= 0 || t.hp <= 0 || a.team === t.team) return null;
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
-    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0);
+    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0); // скрытая атака, умения, подавление
   return Math.round(Math.min(95, Math.max(5, c)));
 }
 
-const has = (u: Unit, t: string) => (u.traits as string[]).includes(t) || (u.perks as string[]).includes(t);
+const has = (u: Unit, t: string) => (u.traits as string[]).includes(t) || (u.perks as string[]).includes(t) || u.cls === t;
 export const panicAt = (u: Unit) => (has(u, 'stoic') ? 15 : 30);
 const moraleFactor = (u: Unit) => (has(u, 'coward') ? 1.5 : 1) * (has(u, 'veteran') ? 0.7 : 1) * (has(u, 'nerve') ? 0.75 : 1);
 
@@ -85,9 +87,9 @@ export function faceToward(u: Unit, x: number, y: number) {
   if (x !== u.x || y !== u.y) u.facing = Math.atan2(x - u.x, y - u.y);
 }
 
-export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotResult {
+export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 0): ShotResult {
   faceToward(a, t.x, t.y);
-  const chance = hitChance(s, a, t, reaction) ?? 0;
+  const chance = hitChance(s, a, t, reaction, bonus) ?? 0;
   a.ammo -= 1;
   if (!reaction) a.ap -= 1;
   if (a.team === 'alien' && !s.revealed.includes(a.id)) s.revealed.push(a.id);
@@ -96,6 +98,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotRes
   if (hit && t.cut > 0) dmg = Math.max(1, dmg - t.cut);
   t.hp = Math.max(0, t.hp - dmg);
   const killed = hit && t.hp <= 0;
+  const alerted = a.team === 'human' ? raiseAlert(s, a.x, a.y, 14) : undefined; // выстрел слышно
   let wound: ShotResult['wound'];
   if (t.team === 'human') {
     if (hit && !killed) {
@@ -119,7 +122,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false): ShotRes
   const btxt = broken ? ' Укрытие разрушено.' : '';
   log(s, `${reaction ? '[Overwatch] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}${wtxt}` : 'мимо'} (${chance}%)${btxt}`);
   checkEnd(s);
-  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound, broken };
+  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound, broken, alerted };
 }
 
 /** Реакция overwatch бойцов на движущегося пришельца. */
@@ -147,6 +150,8 @@ export function checkEnd(s: GameState) {
 
 /** Начало хода людей: кровотечение, паника, восстановление AP. */
 export function startHumanTurn(s: GameState) {
+  for (const a of living(s, 'alien')) a.suppressed = false;
+  tickFire(s);
   for (const u of living(s, 'human')) {
     u.ap = u.maxAp;
     u.overwatch = false;
@@ -237,6 +242,9 @@ export interface GrenadeResult {
   y: number;
   hits: { id: number; dmg: number; killed: boolean }[];
   broken: { x: number; y: number }[];
+  alerted: number[];
+  ignited: { x: number; y: number }[];
+  chain: GrenadeResult[]; // цепные взрывы бочек
 }
 
 /** Можно ли кинуть гранату в клетку: дальность и исследованная клетка. */
@@ -245,13 +253,18 @@ export function canThrow(s: GameState, u: Unit, x: number, y: number): boolean {
     Math.hypot(u.x - x, u.y - y) <= GRENADE_RANGE && s.seen[y][x];
 }
 
-/** Граната: центр 5 урона, край 3; бьёт и по своим. Срывает половинные укрытия рядом со взрывом. */
+/** Бросок гранаты: тратит гранату и AP, затем взрыв. */
 export function throwGrenade(s: GameState, u: Unit, x: number, y: number): GrenadeResult {
   faceToward(u, x, y);
   u.grenades -= 1;
   u.ap -= 1;
   u.overwatch = false;
   s.aiming = null;
+  return blast(s, u, x, y, `${u.name} бросает гранату`);
+}
+
+/** Взрыв (граната/мина): центр 5, край 3 (−броня); бьёт и по своим, срывает половинные укрытия. Убийства засчитываются owner. */
+export function blast(s: GameState, owner: Unit | null, x: number, y: number, label: string, oil = false): GrenadeResult {
   const hits: GrenadeResult['hits'] = [];
   for (const t of living(s)) {
     const d = Math.hypot(t.x - x, t.y - y);
@@ -265,8 +278,7 @@ export function throwGrenade(s: GameState, u: Unit, x: number, y: number): Grena
       if (!killed && !t.bleeding && rand(s) < 0.25) t.bleeding = true;
       if (killed) living(s, 'human').forEach(h => shift(h, -15));
     } else if (killed) {
-      u.kills += 1;
-      shift(u, 8);
+      if (owner) { owner.kills += 1; shift(owner, 8); }
       living(s, 'human').forEach(h => shift(h, 4));
     }
   }
@@ -277,9 +289,25 @@ export function throwGrenade(s: GameState, u: Unit, x: number, y: number): Grena
     }
   }
   const names = hits.map(h => `${s.units.find(v => v.id === h.id)!.name} −${h.dmg}${h.killed ? ' (убит)' : ''}`).join(', ');
-  log(s, `${u.name} бросает гранату: ${names || 'никого'}.`);
+  log(s, `${label}: ${names || 'никого'}.`);
   checkEnd(s);
-  return { thrower: u.id, x, y, hits, broken };
+  // цепная реакция: бочки рядом тоже взрываются
+  const chain: GrenadeResult[] = [];
+  for (const b of [...s.barrels]) {
+    if (Math.hypot(b.x - x, b.y - y) <= BLAST + 0.1 && !(b.x === x && b.y === y) && s.barrels.includes(b)) chain.push(detonateBarrel(s, owner, b.x, b.y));
+  }
+  // огонь: в лесу и у воды горит трава, в руинах — только разлитое топливо бочек
+  const ignited: GrenadeResult['ignited'] = [];
+  if (oil || s.biome !== 'ruins') {
+    for (let cy = Math.max(0, Math.floor(y - 1.5)); cy <= Math.min(s.size - 1, Math.ceil(y + 1.5)); cy++) {
+      for (let cx = Math.max(0, Math.floor(x - 1.5)); cx <= Math.min(s.size - 1, Math.ceil(x + 1.5)); cx++) {
+        if (Math.hypot(cx - x, cy - y) <= 1.5 && igniteTile(s, cx, cy, oil ? 2 : 3)) ignited.push({ x: cx, y: cy });
+      }
+    }
+  }
+  if (ignited.length) log(s, 'Пожар!');
+  const alerted = raiseAlert(s, x, y, 16);
+  return { thrower: owner?.id ?? 0, x, y, hits, broken, alerted, ignited, chain };
 }
 
 export const nearBeacon = (s: GameState, u: Unit) =>
@@ -296,6 +324,139 @@ export function placeCharge(s: GameState, u: Unit): { x: number; y: number } | n
   s.cover[b.y][b.x] = 'none';
   faceToward(u, b.x, b.y);
   log(s, `${u.name} взрывает маяк (${s.beacons.filter(x => x.done).length}/${s.beacons.length}).`);
+  raiseAlert(s, b.x, b.y, 12);
   checkEnd(s);
   return { x: b.x, y: b.y };
+}
+
+export const ALERT_SIGHT = 12;
+
+/** Пришелец видит бойца (радиус + линия видимости). */
+export const alienSees = (s: GameState, u: Unit) =>
+  living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= ALERT_SIGHT && los(s, u, h));
+
+/** Тревога: все непредупреждённые пришельцы в радиусе узнают о бойцах. Возвращает их id. */
+export function raiseAlert(s: GameState, x: number, y: number, radius: number): number[] {
+  const ids: number[] = [];
+  for (const a of living(s, 'alien')) {
+    if (!a.alert && Math.hypot(a.x - x, a.y - y) <= radius) { a.alert = true; ids.push(a.id); }
+  }
+  if (ids.length) log(s, 'Пришельцы подняли тревогу!');
+  return ids;
+}
+
+// --- умения классов ---
+
+/** Штурмовик: подавление — цель теряет меткость и AP в свой ход. */
+export function suppress(s: GameState, a: Unit, t: Unit): ShotResult | null {
+  const chance = hitChance(s, a, t);
+  if (a.ap <= 0 || a.ammo < 2 || chance === null) return null;
+  faceToward(a, t.x, t.y);
+  a.ap -= 1; a.ammo -= 2; a.overwatch = false;
+  t.suppressed = true;
+  const alerted = raiseAlert(s, a.x, a.y, 14);
+  log(s, `${a.name} подавляет огнём ${t.name}.`);
+  return { attackerId: a.id, targetId: t.id, hit: false, dmg: 0, chance, killed: false, reaction: false, suppress: true, alerted };
+}
+
+/** Снайпер: прицельный выстрел — 2 AP, меткость +30. */
+export function aimedShot(s: GameState, a: Unit, t: Unit): ShotResult | null {
+  if (a.ap < 2 || hitChance(s, a, t, false, 30) === null) return null;
+  const r = shoot(s, a, t, false, 30);
+  a.ap = Math.max(0, a.ap - 1);
+  return r;
+}
+
+/** Медик: лечит всех в радиусе 2 на 3 HP и останавливает кровь. */
+export function medicHeal(s: GameState, u: Unit): boolean {
+  if (u.ap <= 0 || u.abilityUsed >= 2) return false;
+  const allies = living(s, 'human').filter(h => Math.max(Math.abs(h.x - u.x), Math.abs(h.y - u.y)) <= 2);
+  if (!allies.some(h => h.hp < h.maxHp || h.bleeding)) return false;
+  u.ap -= 1; u.abilityUsed += 1;
+  for (const h of allies) { h.hp = Math.min(h.maxHp, h.hp + 3); h.bleeding = false; }
+  log(s, `${u.name} лечит отряд.`);
+  return true;
+}
+
+/** Сапёр: куда можно поставить мину (впереди бойца, иначе рядом). */
+export function mineTile(s: GameState, u: Unit): { x: number; y: number } | null {
+  const front = { x: u.x + Math.round(Math.sin(u.facing)), y: u.y + Math.round(Math.cos(u.facing)) };
+  const cands = [front, ...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: u.x + dx, y: u.y + dy }))];
+  return cands.find(c => c.x >= 0 && c.y >= 0 && c.x < s.size && c.y < s.size && s.cover[c.y][c.x] === 'none' && s.terrain[c.y][c.x] === 'ground' &&
+    !s.units.some(v => v.hp > 0 && v.x === c.x && v.y === c.y) && !s.mines.some(m => m.x === c.x && m.y === c.y)) ?? null;
+}
+
+export function placeMine(s: GameState, u: Unit): boolean {
+  const t = u.abilityUsed < 2 && u.ap > 0 ? mineTile(s, u) : null;
+  if (!t) return false;
+  u.ap -= 1; u.abilityUsed += 1; u.overwatch = false;
+  s.mines.push({ x: t.x, y: t.y, owner: u.id });
+  faceToward(u, t.x, t.y);
+  log(s, `${u.name} ставит мину.`);
+  return true;
+}
+
+/** Пришелец наступил на мину — взрыв. */
+export function triggerMine(s: GameState, u: Unit): GrenadeResult | null {
+  if (u.team !== 'alien') return null;
+  const i = s.mines.findIndex(m => m.x === u.x && m.y === u.y);
+  if (i < 0) return null;
+  const m = s.mines.splice(i, 1)[0];
+  return blast(s, s.units.find(v => v.id === m.owner) ?? null, m.x, m.y, 'Мина взрывается');
+}
+
+// --- бочки и огонь ---
+
+/** Поджечь клетку (не воду, не укрытие, не выжженное). */
+export function igniteTile(s: GameState, x: number, y: number, ttl: number): boolean {
+  if (x < 0 || y < 0 || x >= s.size || y >= s.size) return false;
+  if (s.terrain[y][x] === 'water' || s.cover[y][x] !== 'none' || s.scorched[y][x] || s.fires.some(f => f.x === x && f.y === y)) return false;
+  s.fires.push({ x, y, ttl });
+  return true;
+}
+
+/** Взрыв бочки: бочка исчезает, укрытие снято, огонь на разлитом топливе. */
+export function detonateBarrel(s: GameState, owner: Unit | null, x: number, y: number): GrenadeResult {
+  s.barrels = s.barrels.filter(b => !(b.x === x && b.y === y));
+  s.cover[y][x] = 'none';
+  return blast(s, owner, x, y, 'Взрыв бочки', true);
+}
+
+export const barrelAt = (s: GameState, x: number, y: number) => s.barrels.find(b => b.x === x && b.y === y);
+
+/** Можно ли выстрелить в бочку: патрон, AP, дальность и линия видимости. */
+export function canShootBarrel(s: GameState, a: Unit, x: number, y: number): boolean {
+  return a.ap > 0 && a.ammo > 0 && !!barrelAt(s, x, y) && Math.hypot(a.x - x, a.y - y) <= a.range && los(s, a, { x, y });
+}
+
+/** Выстрел в бочку: всегда попадает и взрывается. */
+export function shootBarrel(s: GameState, a: Unit, x: number, y: number): GrenadeResult | null {
+  if (!canShootBarrel(s, a, x, y)) return null;
+  faceToward(a, x, y);
+  a.ap -= 1; a.ammo -= 1; a.overwatch = false;
+  s.targetBarrel = null;
+  raiseAlert(s, a.x, a.y, 14);
+  return detonateBarrel(s, a, x, y);
+}
+
+/** Огонь за раунд: стоящие в огне получают 2 урона, пламя гаснет и (на траве) перекидывается на соседей. */
+export function tickFire(s: GameState) {
+  const burning = [...s.fires];
+  for (const f of burning) {
+    for (const u of living(s)) {
+      if (u.x !== f.x || u.y !== f.y) continue;
+      u.hp = Math.max(0, u.hp - Math.max(1, 2 - u.cut));
+      if (u.team === 'human') u.morale = Math.max(0, u.morale - 5);
+      log(s, `${u.name} горит (−2 HP${u.hp <= 0 ? ', убит' : ''}).`);
+    }
+  }
+  for (const f of burning) {
+    f.ttl -= 1;
+    if (s.biome !== 'ruins') {
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (rand(s) < 0.3) igniteTile(s, f.x + dx, f.y + dy, 3);
+    }
+    if (f.ttl <= 0) { s.scorched[f.y][f.x] = true; }
+  }
+  s.fires = s.fires.filter(f => f.ttl > 0);
+  checkEnd(s);
 }

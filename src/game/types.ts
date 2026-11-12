@@ -1,6 +1,7 @@
 import type { TraitId } from './traits';
 
 export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy' | 'commander';
+export type ClassId = 'assault' | 'sniper' | 'medic' | 'engineer';
 export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper';
 export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export type Biome = 'ruins' | 'forest' | 'lake';
@@ -26,6 +27,7 @@ export interface Soldier {
   perkPoints: number;
   weapon: WeaponId;
   armor: ArmorId;
+  cls: ClassId;
 }
 
 export type Team = 'human' | 'alien';
@@ -52,6 +54,12 @@ export interface Unit {
   falloffFrom: number;
   falloff: number;
   cut: number; // снижение урона от попадания (броня)
+  cls: ClassId;
+  abilityUsed: number; // применений умения за миссию
+  suppressed: boolean; // подавлен: −25% меткости и −1 AP в свой ход
+  alert: boolean; // пришелец знает о бойцах (иначе патрулирует)
+  homeX: number;
+  homeY: number;
   grenades: number;
   facing: number; // радианы: 0 — на юг (+Z), π — на север
   mags: number; // запасные магазины (у пришельцев не ограничены)
@@ -91,6 +99,13 @@ export interface GameState {
   holdTurns: number;
   zone: { x: number; y: number; w: number; h: number } | null;
   aiming: 'grenade' | null; // режим прицеливания гранаты
+  mines: { x: number; y: number; owner: number }[];
+  barrels: { x: number; y: number }[]; // взрывоопасные бочки (половинное укрытие)
+  fires: { x: number; y: number; ttl: number }[]; // горящие клетки: непроходимы, жгут стоящих
+  scorched: boolean[][]; // выжженное не загорается снова
+  bridges: { x: number; y: number }[]; // мосты (визуально) на бродах
+  targetBarrel: { x: number; y: number } | null;
+  turning: boolean; // режим «повернуть бойца» (тач)
   busy: boolean; // идёт анимация/ход ИИ — ввод заблокирован
   log: string[];
   rng: number; // состояние генератора (сид миссии)

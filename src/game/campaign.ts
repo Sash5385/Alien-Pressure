@@ -1,7 +1,8 @@
 import { rand } from './combat';
 import { pickTraits, ROSTER, shuffle, XP_STEPS } from './traits';
+import { CLASS_IDS } from './classes';
 import { ARMORS, WEAPONS } from './weapons';
-import type { ArmorId, Biome, Difficulty, GameState, Objective, PerkId, Soldier, Tech, WeaponId } from './types';
+import type { ArmorId, Biome, ClassId, Difficulty, GameState, Objective, PerkId, Soldier, Tech, WeaponId } from './types';
 
 export interface Campaign {
   v: 1;
@@ -40,8 +41,10 @@ export const TECH_INFO: Record<keyof Tech, string> = {
 
 const KEY = 'alien-pressure:v1';
 
-function mkSoldier(c: Campaign, name: string, bio: string): Soldier {
-  return { id: c.nextId++, name, bio, traits: pickTraits(c), hpLoss: 0, fracture: false, kills: 0, missions: 0, xp: 0, rank: 0, perks: [], perkPoints: 0, weapon: 'rifle', armor: 'none' };
+function mkSoldier(c: Campaign, name: string, bio: string, cls?: ClassId): Soldier {
+  const count = (k: ClassId) => c.roster.filter(r => r.cls === k).length;
+  cls ??= [...CLASS_IDS].sort((a, b) => count(a) - count(b) || rand(c) - 0.5)[0]; // самый редкий класс
+  return { id: c.nextId++, name, bio, traits: pickTraits(c), hpLoss: 0, fracture: false, kills: 0, missions: 0, xp: 0, rank: 0, perks: [], perkPoints: 0, weapon: 'rifle', armor: 'none', cls };
 }
 
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Campaign {
@@ -129,7 +132,7 @@ export function load(): Campaign | null {
     c.biome ??= 'ruins';
     c.weapons ??= ['rifle', 'smg'];
     c.armors ??= ['none'];
-    for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; s.weapon ??= 'rifle'; s.armor ??= 'none'; }
+    for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; s.weapon ??= 'rifle'; s.armor ??= 'none'; s.cls ??= 'assault'; }
     return c;
   } catch { return null; }
 }
@@ -161,5 +164,32 @@ export function equip(c: Campaign, soldierId: number, kind: 'weapon' | 'armor', 
   const list = (kind === 'weapon' ? c.weapons : c.armors) as string[];
   if (!s || !list.includes(id)) return 'Недоступно.';
   if (kind === 'weapon') s.weapon = id as WeaponId; else s.armor = id as ArmorId;
+  return null;
+}
+
+// --- сохранение посреди миссии ---
+const MKEY = 'alien-pressure:mission';
+export interface MissionSave { state: GameState; deployed: number[]; before: Campaign }
+
+export function saveMission(m: MissionSave) {
+  try { localStorage.setItem(MKEY, JSON.stringify(m)); } catch { /* ignore */ }
+}
+export function loadMission(): MissionSave | null {
+  try {
+    const raw = localStorage.getItem(MKEY);
+    const m = raw ? (JSON.parse(raw) as MissionSave) : null;
+    if (!m || m.state.status !== 'playing' || !Array.isArray(m.state.barrels) || !Array.isArray(m.state.mines)) return null; // старые сохранения несовместимы
+    m.state.busy = false; m.state.aiming = null; m.state.turning = false; m.state.turn = 'human';
+    return m;
+  } catch { return null; }
+}
+export function clearMission() {
+  try { localStorage.removeItem(MKEY); } catch { /* ignore */ }
+}
+
+export function setClass(c: Campaign, soldierId: number, cls: ClassId): string | null {
+  const s = c.roster.find(x => x.id === soldierId);
+  if (!s) return 'Недоступно.';
+  s.cls = cls;
   return null;
 }

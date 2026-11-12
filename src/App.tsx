@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Camp, Screen } from './Camp';
-import { clearSave, finishMission, load, newCampaign, save, type Campaign } from './game/campaign';
+import { clearMission, clearSave, finishMission, load, loadMission, newCampaign, save, saveMission, type Campaign } from './game/campaign';
 import { DIFF } from './game/difficulty';
 import { createMission } from './game/mission';
 import type { Difficulty, GameState } from './game/types';
@@ -13,14 +13,18 @@ export function App() {
   const [saved, setSaved] = useState<Campaign | null>(() => load());
   const [c, setC] = useState<Campaign | null>(saved);
   const [screen, setScreen] = useState<Screen_>('menu');
-  const [mission, setMission] = useState<{ state: GameState; deployed: number[] } | null>(null);
+  const [mission, setMission] = useState<{ state: GameState; deployed: number[]; before: Campaign; run: number } | null>(null);
+  const [midSave] = useState(() => loadMission());
 
   const update = (n: Campaign) => { setC(n); setSaved(n); save(n); };
-  const start = (d: Difficulty) => { clearSave(); const n = newCampaign(d); update(n); setScreen('camp'); };
+  const start = (d: Difficulty) => { clearSave(); clearMission(); const n = newCampaign(d); update(n); setScreen('camp'); };
 
   const launch = (c0: Campaign, deployed: number[]) => {
+    clearMission();
     setMission({
       deployed,
+      before: structuredClone(c0),
+      run: Date.now(),
       state: createMission({
         rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, objective: c0.objective, biome: c0.biome, tech: c0.tech,
         soldiers: c0.roster.filter(s => deployed.includes(s.id)),
@@ -32,9 +36,12 @@ export function App() {
   if (screen === 'mission' && c && mission) {
     return (
       <Mission
-        key={c.missionNo + ':' + mission.state.rng}
+        key={c.missionNo + ':' + mission.run}
         initial={mission.state}
-        onExit={s => {
+        onSave={s => saveMission({ state: s, deployed: mission.deployed, before: mission.before })}
+        onExit={(s, repeat) => {
+          clearMission();
+          if (repeat) { launch(mission.before, mission.deployed); return; }
           const n = structuredClone(c);
           finishMission(n, s, mission.deployed);
           update(n);
@@ -52,6 +59,11 @@ export function App() {
     <Screen>
       <h1 style={{ margin: '24px 0 0', fontSize: 32 }}>Alien Pressure</h1>
       <p style={{ margin: 0, opacity: 0.8 }}>Подпольный отряд землян против пришельцев. Кровь, паника, патроны на счёт.</p>
+      {midSave && saved && !saved.over && (
+        <button style={btn(true)} onClick={() => { setC(midSave.before); setMission({ state: midSave.state, deployed: midSave.deployed, before: midSave.before, run: Date.now() }); setScreen('mission'); }}>
+          Продолжить миссию {midSave.before.missionNo} (ход {midSave.state.turnNo})
+        </button>
+      )}
       {saved && !saved.over && (
         <button style={btn(true)} onClick={() => setScreen('camp')}>
           Продолжить: миссия {saved.missionNo}, бойцов {saved.roster.length}

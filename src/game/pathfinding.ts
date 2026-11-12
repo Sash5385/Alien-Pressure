@@ -13,7 +13,7 @@ function bfs(s: GameState, sx: number, sy: number, range: number) {
     for (const [dx, dy] of DIRS) {
       const nx = x + dx, ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= s.size || ny >= s.size) continue;
-      if (s.cover[ny][nx] !== 'none' || s.terrain[ny][nx] === 'water') continue;
+      if (s.cover[ny][nx] !== 'none' || s.terrain[ny][nx] === 'water' || s.fires.some(f => f.x === nx && f.y === ny)) continue;
       if (s.units.some(u => u.hp > 0 && u.x === nx && u.y === ny)) continue;
       const k = `${nx},${ny}`;
       if (dist.has(k)) continue;

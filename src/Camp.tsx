@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { buy, choosePerk, COST, DEPLOY, equip, heal, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
+import { CLASS_IDS, CLASSES } from './game/classes';
+import { buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
@@ -71,6 +72,13 @@ export function Camp({ c, onChange, onStart, onMenu }: {
                 ))}
               </div>
             )}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center', fontSize: 12 }}>
+              <span style={{ opacity: 0.7 }}>Класс:</span>
+              {CLASS_IDS.map(k => (
+                <button key={k} title={CLASSES[k].desc} style={{ ...btn(s.cls === k), padding: '4px 8px', fontSize: 12 }} onClick={() => act(x => setClass(x, s.id, k))}>{CLASSES[k].name}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 2 }}>{CLASSES[s.cls].desc} Пассивно: {CLASSES[s.cls].passive}.</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center', fontSize: 12 }}>
               <span style={{ opacity: 0.7 }}>Оружие:</span>
               {c.weapons.map(w => (

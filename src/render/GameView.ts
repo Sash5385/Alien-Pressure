@@ -5,7 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { GameState, Unit } from '../game/types';
-import { BLAST, canThrow, checkEnd, faceToward, isVisible, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { barrelAt, BLAST, type GrenadeResult, canThrow, checkEnd, faceToward, isVisible, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
@@ -46,6 +46,10 @@ export class GameView {
   private ft = 0.016;
   private frames = 0;
   private beaconMeshes = new Map<string, THREE.Object3D>();
+  private mineMeshes = new Map<string, THREE.Object3D>();
+  private barrelMeshes = new Map<string, THREE.Object3D>();
+  private fireMeshes = new Map<string, THREE.Group>();
+  private scorchMeshes = new Map<string, THREE.Object3D>();
   private waterTex: THREE.CanvasTexture | null = null;
   private raf = 0;
   private down = { x: 0, y: 0 };
@@ -127,12 +131,27 @@ export class GameView {
     this.buildCover();
     this.buildZone();
     this.buildBeacons();
+    this.buildBarrels();
+    this.buildBridges();
     this.scene.add(this.highlight);
     this.syncUnits(true);
 
     const el = this.renderer.domElement;
-    el.addEventListener('pointerdown', e => (this.down = { x: e.clientX, y: e.clientY }));
+    // долгое нажатие на тач-экране = ПКМ (поворот бойца / отмена гранаты)
+    let lp: number | undefined;
+    let longFired = false;
+    const cancelLp = () => { if (lp) { clearTimeout(lp); lp = undefined; } };
+    el.addEventListener('pointerdown', e => {
+      this.down = { x: e.clientX, y: e.clientY };
+      longFired = false;
+      cancelLp();
+      if (e.pointerType === 'touch' && e.isPrimary) lp = window.setTimeout(() => { longFired = true; lp = undefined; this.rightClick(e); }, 550);
+    });
+    el.addEventListener('pointermove', e => { if (lp && Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y) >= 8) cancelLp(); });
+    el.addEventListener('pointercancel', cancelLp);
     el.addEventListener('pointerup', e => {
+      cancelLp();
+      if (longFired) { longFired = false; return; }
       if (Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y) >= 5) return;
       if (e.button === 2) this.rightClick(e);
       else if (e.button === 0) void this.click(e);
@@ -172,6 +191,8 @@ export class GameView {
         }
         this.rigs.get(id)?.mixer.update(dt);
       }
+      const tt = this.clock.elapsedTime;
+      for (const g of this.fireMeshes.values()) g.children.forEach((c, i) => { c.scale.y = 0.7 + 0.55 * Math.abs(Math.sin(tt * 9 + (g.userData.phase as number) + i)); });
       for (const tw of this.tweens) { tw.t += rawDt; const k = Math.min(1, tw.t / tw.dur); tw.fn(k); if (k >= 1) tw.done(); }
       this.tweens = this.tweens.filter(tw => tw.t < tw.dur);
       for (const f of this.floats) {
@@ -307,7 +328,7 @@ export class GameView {
     const mat = { half: new THREE.MeshStandardMaterial({ color: 0x6b6254 }), full: new THREE.MeshStandardMaterial({ color: 0x4a4f57 }) };
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
       const t = cover[y][x];
-      if (t === 'none' || this.state.beacons.some(b => b.x === x && b.y === y && !b.done)) continue;
+      if (t === 'none' || this.state.beacons.some(b => b.x === x && b.y === y && !b.done) || this.state.barrels.some(b => b.x === x && b.y === y)) continue;
       const h = t === 'half' ? 0.6 : 1.4;
       const hash = (x * 7 + y * 13 + x * y) | 0;
       const model = spawnCover(t, Math.abs(hash), this.state.biome);
@@ -324,6 +345,68 @@ export class GameView {
       } else m = this.makePlant(t, x, y, Math.abs(hash));
       this.scene.add(m);
       this.coverMeshes.set(`${x},${y}`, m);
+    }
+  }
+
+  /** Бочки: красные, с жёлтой полосой; убираются при взрыве. */
+  private buildBarrels() {
+    for (const b of this.state.barrels) {
+      const g = new THREE.Group();
+      g.position.set(b.x + 0.5, 0, b.y + 0.5);
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.75, 14), new THREE.MeshStandardMaterial({ color: 0xb03030, roughness: 0.6 }));
+      body.position.y = 0.375; body.castShadow = true;
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.12, 14), new THREE.MeshStandardMaterial({ color: 0xe8c02a }));
+      band.position.y = 0.4;
+      const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.03, 14), new THREE.MeshStandardMaterial({ color: 0x3a3a3a }));
+      lid.position.y = 0.76;
+      g.add(body, band, lid);
+      this.scene.add(g);
+      this.barrelMeshes.set(`${b.x},${b.y}`, g);
+    }
+  }
+
+  /** Мосты на бродах: доски и бортики поверх воды. */
+  private buildBridges() {
+    const wood = new THREE.MeshStandardMaterial({ color: 0x8a6a42, roughness: 1 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x5a4328, roughness: 1 });
+    for (const b of this.state.bridges) {
+      const g = new THREE.Group();
+      g.position.set(b.x + 0.5, 0.07, b.y + 0.5);
+      for (let i = 0; i < 4; i++) {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.05, 0.2), i % 2 ? wood : dark);
+        plank.position.z = -0.36 + i * 0.24; plank.receiveShadow = plank.castShadow = true;
+        g.add(plank);
+      }
+      this.scene.add(g);
+    }
+  }
+
+  /** Огонь и выжженная земля. */
+  private syncFire() {
+    const live = new Set(this.state.fires.map(f => `${f.x},${f.y}`));
+    for (const f of this.state.fires) {
+      const k = `${f.x},${f.y}`;
+      if (this.fireMeshes.has(k)) continue;
+      const g = new THREE.Group();
+      g.position.set(f.x + 0.5, 0, f.y + 0.5);
+      g.userData.phase = Math.random() * 6;
+      for (let i = 0; i < 4; i++) {
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.7, 6), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffb030 : 0xff5a1a, transparent: true, opacity: 0.9 }));
+        flame.position.set((Math.random() - 0.5) * 0.5, 0.3, (Math.random() - 0.5) * 0.5);
+        g.add(flame);
+      }
+      this.scene.add(g);
+      this.fireMeshes.set(k, g);
+    }
+    for (const [k, g] of this.fireMeshes) if (!live.has(k)) { this.scene.remove(g); this.fireMeshes.delete(k); }
+    const { scorched, size } = this.state;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const k = `${x},${y}`;
+      if (!scorched[y][x] || this.scorchMeshes.has(k)) continue;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), new THREE.MeshBasicMaterial({ color: 0x050505, transparent: true, opacity: 0.55, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2; m.position.set(x + 0.5, 0.022, y + 0.5);
+      this.scene.add(m);
+      this.scorchMeshes.set(k, m);
     }
   }
 
@@ -420,6 +503,7 @@ export class GameView {
     updateVision(this.state);
     const tg = this.state.units.find(u => u.id === this.state.targetId);
     if (tg && !isVisible(this.state, tg)) this.state.targetId = null;
+    if (this.state.targetBarrel && !barrelAt(this.state, this.state.targetBarrel.x, this.state.targetBarrel.y)) this.state.targetBarrel = null;
     const alive = new Set<number>();
     for (const u of this.state.units) {
       if (u.hp <= 0) continue;
@@ -457,15 +541,53 @@ export class GameView {
         sfx('grenade');
       }
     }
+    this.syncFire();
+    for (const [k, o] of this.barrelMeshes) {
+      const [bx, by] = k.split(',').map(Number);
+      if (!this.state.barrels.some(b => b.x === bx && b.y === by)) { this.scene.remove(o); this.barrelMeshes.delete(k); }
+    }
+    // мины сапёра
+    const live = new Set(this.state.mines.map(m => `${m.x},${m.y}`));
+    for (const m of this.state.mines) {
+      const k = `${m.x},${m.y}`;
+      if (this.mineMeshes.has(k)) continue;
+      const g = new THREE.Group();
+      g.position.set(m.x + 0.5, 0, m.y + 0.5);
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.06, 12), new THREE.MeshStandardMaterial({ color: 0x2a2f2a }));
+      disc.position.y = 0.04;
+      const dot = new THREE.Mesh(new THREE.CircleGeometry(0.09, 10), new THREE.MeshBasicMaterial({ color: 0xff3030 }));
+      dot.rotation.x = -Math.PI / 2; dot.position.y = 0.075;
+      g.add(disc, dot);
+      this.scene.add(g);
+      this.mineMeshes.set(k, g);
+    }
+    for (const [k, o] of this.mineMeshes) if (!live.has(k)) { this.scene.remove(o); this.mineMeshes.delete(k); }
     this.updateFog();
     this.drawHighlight();
   }
 
   /** Перемещение с короткой паузой на анимацию. */
+  /** Знак «!» над заметившими бойцов пришельцами. */
+  alertFx(ids: number[]) {
+    let any = false;
+    for (const id of ids) {
+      const u = this.state.units.find(v => v.id === id);
+      if (u && isVisible(this.state, u)) { this.floatText(u.x + 0.5, u.y + 0.5, '!', '#ffd34d', 0.4); any = true; }
+    }
+    if (any) sfx('alert');
+  }
+
   async moved(u?: Unit) {
     this.syncUnits();
     if (u && isVisible(this.state, u)) this.focusOn(u.x, u.y);
     await sleep(150);
+  }
+
+  /** Экранные координаты клетки (для отладки и тестов). */
+  screenOf(x: number, y: number) {
+    const v = new THREE.Vector3(x + 0.5, 0.3, y + 0.5).project(this.camera);
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: (v.x * 0.5 + 0.5) * r.width + r.left, y: (-v.y * 0.5 + 0.5) * r.height + r.top };
   }
 
   // --- камера и графика ---
@@ -549,6 +671,8 @@ export class GameView {
     for (const o of s.units) if (o.hp > 0 && o.overwatch) this.ring(o.x, o.y, 0x35e0e0, 0.46, 0.52);
     for (const o of s.units) if (o.hp > 0 && o.bleeding) this.ring(o.x, o.y, 0xb01818, 0.54, 0.6);
     for (const o of s.units) if (o.hp > 0 && o.panic) this.ring(o.x, o.y, 0xff9f43, 0.62, 0.68);
+    for (const o of s.units) if (o.hp > 0 && o.team === 'alien' && !o.alert && isVisible(s, o)) this.ring(o.x, o.y, 0xe8e8a0, 0.5, 0.54);
+    if (s.targetBarrel) this.ring(s.targetBarrel.x, s.targetBarrel.y, 0xff3b3b, 0.42, 0.52);
     const mk = s.units.find(v => v.id === s.markId && v.hp > 0);
     if (mk) this.ring(mk.x, mk.y, 0xff2222, 0.72, 0.82);
     const t = s.units.find(v => v.id === s.targetId && v.hp > 0);
@@ -678,7 +802,8 @@ export class GameView {
       sfx('hit');
       this.floatText(t.x + 0.5, t.y + 0.5, `−${r.dmg}`, '#ff6b6b');
       if (!r.killed) this.play(t.id, 'HitReact', true);
-    } else this.floatText(t.x + 0.5, t.y + 0.5, 'мимо', '#c9ced3');
+    } else this.floatText(t.x + 0.5, t.y + 0.5, r.suppress ? 'подавлен' : 'мимо', r.suppress ? '#ffd34d' : '#c9ced3');
+    if (r.alerted?.length) this.alertFx(r.alerted);
     if (r.broken) this.floatText(t.x + 0.5, t.y + 0.5, 'укрытие', '#ffd34d', 0.5);
     if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
     if (r.killed) setTimeout(() => sfx('death'), 120);
@@ -705,6 +830,16 @@ export class GameView {
     });
     this.scene.remove(g);
     g.geometry.dispose();
+    await this.explode(res);
+    s.busy = false;
+    this.syncUnits();
+    this.onChange();
+  }
+
+  /** Взрыв: вспышка, огненный шар, искры, урон над целями. */
+  private async explode(res: GrenadeResult) {
+    const s = this.state;
+    const to = new THREE.Vector3(res.x + 0.5, 0.1, res.y + 0.5);
     sfx('grenade');
     const light = new THREE.PointLight(0xffa040, 40, 14);
     light.position.set(to.x, 0.8, to.z);
@@ -714,6 +849,7 @@ export class GameView {
     this.burst(new THREE.Vector3(to.x, 0.3, to.z), 0xffb050, 30, 5, 650);
     this.burst(new THREE.Vector3(to.x, 0.3, to.z), 0x555555, 18, 3, 800);
     for (const b of res.broken) this.burst(new THREE.Vector3(b.x + 0.5, 0.3, b.y + 0.5), 0x8a7a62, 10, 2.5, 600);
+    if (res.alerted.length) this.alertFx(res.alerted);
     for (const h of res.hits) {
       const tu = s.units.find(v => v.id === h.id)!;
       this.floatText(tu.x + 0.5, tu.y + 0.5, `−${h.dmg}`, '#ff6b6b');
@@ -727,9 +863,25 @@ export class GameView {
     });
     this.scene.remove(light, ball);
     ball.geometry.dispose();
-    s.busy = false;
+    for (const c of res.chain) { await sleep(160); await this.explode(c); }
+  }
+
+  /** Выстрел по бочке: пуля и взрыв. */
+  async barrelShotFx(a: Unit, res: GrenadeResult) {
+    this.focusOn(res.x, res.y);
+    const f = a.facing;
+    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, 0.9, a.y + 0.5 + Math.cos(f) * 0.5);
+    this.play(a.id, 'Idle_Shoot', true);
+    await this.fireRound(muzzle, new THREE.Vector3(res.x + 0.5, 0.4, res.y + 0.5), 0, true, true, a.team === 'human');
+    await this.explode(res);
     this.syncUnits();
-    this.onChange();
+  }
+
+  /** Взрыв, начатый ИИ (мина). */
+  async blastFx(res: GrenadeResult) {
+    this.focusOn(res.x, res.y);
+    await this.explode(res);
+    this.syncUnits();
   }
 
   private tileAt(e: PointerEvent): { x: number; y: number } | null {
@@ -754,7 +906,7 @@ export class GameView {
   private rightClick(e: PointerEvent) {
     const s = this.state;
     if (s.turn !== 'human' || s.busy || s.status !== 'playing') return;
-    if (s.aiming) { s.aiming = null; this.syncUnits(); this.onChange(); return; }
+    if (s.aiming || s.turning) { s.aiming = null; s.turning = false; this.syncUnits(); this.onChange(); return; }
     const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     const t = this.tileAt(e);
     if (u && t) faceToward(u, t.x, t.y);
@@ -782,6 +934,13 @@ export class GameView {
     const hit = this.ray.intersectObject(this.ground)[0];
     if (!hit) return;
     const x = Math.floor(hit.point.x), y = Math.floor(hit.point.z);
+    if (s.turning) {
+      const tu = s.units.find(v => v.id === s.selectedId && v.hp > 0);
+      if (tu) faceToward(tu, x, y);
+      s.turning = false;
+      this.onChange();
+      return;
+    }
     if (s.aiming === 'grenade') {
       const th = s.units.find(v => v.id === s.selectedId && v.hp > 0);
       if (th && canThrow(s, th, x, y)) await this.throwAt(th, x, y);
@@ -789,8 +948,9 @@ export class GameView {
     }
     const at = s.units.find(v => v.hp > 0 && v.x === x && v.y === y && isVisible(s, v));
     const sel = s.units.find(v => v.id === s.selectedId && v.hp > 0);
-    if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; s.aiming = null; this.focusOn(at.x, at.y); }
-    else if (at?.team === 'alien') { if (sel) s.targetId = at.id; }
+    if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; s.targetBarrel = null; s.aiming = null; this.focusOn(at.x, at.y); }
+    else if (at?.team === 'alien') { if (sel) { s.targetId = at.id; s.targetBarrel = null; } }
+    else if (barrelAt(s, x, y)) { if (sel) { s.targetBarrel = { x, y }; s.targetId = null; } }
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
       s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false;
       for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) { sel.x = px; sel.y = py; await this.moved(); }
