@@ -891,6 +891,30 @@ export class GameView {
     this.highlight.add(ring);
   }
 
+  /** Полоски на краях клетки со стороны укрытия: зелёная — полное (−40%), жёлтая — половинное (−20%); оранжевая рамка — окоп. */
+  private coverBars(x: number, y: number) {
+    const s = this.state;
+    const y0 = this.hy(x, y) + 0.06;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      const c = s.cover[ny]?.[nx];
+      if (!c || c === 'none') continue;
+      const bar = new THREE.Mesh(this.barGeo, c === 'full' ? this.barFull : this.barHalf);
+      bar.position.set(x + 0.5 + dx * 0.44, y0, y + 0.5 + dy * 0.44);
+      bar.rotation.y = dx ? Math.PI / 2 : 0;
+      bar.scale.z = c === 'full' ? 1.6 : 1;
+      this.highlight.add(bar);
+    }
+    if (s.trenches.some(t => t.x === x && t.y === y)) {
+      const r = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.4, 4, 1, Math.PI / 4), this.barTrench);
+      r.rotation.x = -Math.PI / 2; r.position.set(x + 0.5, y0, y + 0.5); this.highlight.add(r);
+    }
+  }
+  private barGeo = new THREE.BoxGeometry(0.86, 0.05, 0.12);
+  private barFull = new THREE.MeshBasicMaterial({ color: 0x3cff7a });
+  private barHalf = new THREE.MeshBasicMaterial({ color: 0xffd34d });
+  private barTrench = new THREE.MeshBasicMaterial({ color: 0xff9f43, side: THREE.DoubleSide });
+
   private drawHighlight() {
     this.highlight.clear();
     this.blast.visible = false;
@@ -900,6 +924,7 @@ export class GameView {
     for (const o of s.units) if (o.hp > 0 && o.panic) this.ring(o.x, o.y, 0xff9f43, 0.62, 0.68);
     for (const o of s.units) if (o.hp > 0 && o.team === 'alien' && !o.alert && isVisible(s, o)) this.ring(o.x, o.y, 0xe8e8a0, 0.5, 0.54);
     if (s.targetBarrel) this.ring(s.targetBarrel.x, s.targetBarrel.y, 0xff3b3b, 0.42, 0.52);
+    for (const o of s.units) if (o.hp > 0 && isVisible(s, o)) this.coverBars(o.x, o.y);
     const mk = s.units.find(v => v.id === s.markId && v.hp > 0);
     if (mk) this.ring(mk.x, mk.y, 0xff2222, 0.72, 0.82);
     const t = s.units.find(v => v.id === s.targetId && v.hp > 0);
@@ -920,11 +945,14 @@ export class GameView {
     }
     if (u.ap <= 0 || s.busy) return;
     const mat = new THREE.MeshBasicMaterial({ color: 0x4fa3ff, transparent: true, opacity: 0.35 });
+    const matCover = new THREE.MeshBasicMaterial({ color: 0x4fe08a, transparent: true, opacity: 0.4 });
     const geo = new THREE.PlaneGeometry(0.92, 0.92);
     for (const k of reachable(s, u.x, u.y, moveRange(u)).keys()) {
       const [x, y] = k.split(',').map(Number);
       if (x === u.x && y === u.y) continue;
-      const p = new THREE.Mesh(geo, mat);
+      const covered = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => (s.cover[y + dy]?.[x + dx] ?? 'none') !== 'none') || s.trenches.some(t => t.x === x && t.y === y);
+      if (covered) this.coverBars(x, y);
+      const p = new THREE.Mesh(geo, covered ? matCover : mat);
       p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, this.hy(x, y) + 0.03, y + 0.5);
       this.highlight.add(p);
     }
