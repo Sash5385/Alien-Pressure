@@ -74,7 +74,7 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
         const seen = humans.some(t => score(s, ghost, t) !== null);
         const cov = [[1, 0], [-1, 0], [0, 1], [0, -1]]
           .some(([dx, dy]) => s.cover[y + dy]?.[x + dx] && s.cover[y + dy][x + dx] !== 'none');
-        const sc = ideal(u, near) - (seen ? 3 : 0) - (cov ? 1.5 : 0) - s.height[y][x] * (u.kind === 'sniper' ? 1.5 : 0.7); // снайперы тянутся на высоту
+        const sc = ideal(u, near) - (seen ? 3 : 0) - (cov ? 1.5 : 0) - s.height[y][x] * (u.kind === 'sniper' ? 1.5 : 0.7) - (trenchAt(s, x, y) ? 2 : 0); // снайперы тянутся на высоту, любой пришелец охотно занимает окоп
         if (sc < bestScore) { bestScore = sc; best = [x, y]; }
       }
       if (!best) break;

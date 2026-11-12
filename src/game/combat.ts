@@ -475,6 +475,16 @@ export function tickFire(s: GameState) {
       log(s, `${u.name} горит (−2 HP${u.hp <= 0 ? ', убит' : ''}).`);
     }
   }
+  // жар: стоящие вплотную к огню (но не в нём) получают 1 урон
+  const hot = new Set<number>();
+  for (const f of burning) for (const u of living(s)) {
+    if (Math.max(Math.abs(u.x - f.x), Math.abs(u.y - f.y)) === 1 && !burning.some(g => g.x === u.x && g.y === u.y)) hot.add(u.id);
+  }
+  for (const id of hot) {
+    const u = s.units.find(v => v.id === id)!;
+    u.hp = Math.max(0, u.hp - 1);
+    log(s, `${u.name} обжигает жар (−1 HP${u.hp <= 0 ? ', убит' : ''}).`);
+  }
   for (const f of burning) {
     f.ttl -= 1;
     if (s.biome !== 'ruins') {
