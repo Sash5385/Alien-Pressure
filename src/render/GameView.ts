@@ -11,7 +11,8 @@ import { spawnCover, spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
-const SPEED = 6.5; // клеток в секунду
+const SPEED = 3.6; // клеток в секунду (было 6,5 — медленнее по просьбе)
+const STEP_MS = Math.round(1000 / SPEED); // пауза на одну клетку пути, чтобы движение шло без рывков
 
 interface Float { sprite: THREE.Sprite; t: number }
 
@@ -743,7 +744,7 @@ export class GameView {
   async moved(u?: Unit) {
     this.syncUnits();
     if (u && isVisible(this.state, u)) this.focusOn(u.x, u.y);
-    await sleep(150);
+    await sleep(STEP_MS);
   }
 
   /** Экранные координаты клетки (для отладки и тестов). */
