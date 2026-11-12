@@ -6,7 +6,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
 import { barrelAt, BLAST, type GrenadeResult, canThrow, checkEnd, faceToward, isVisible, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
-import { sfx } from '../audio';
+import { sfx, type Sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
 
@@ -55,6 +55,14 @@ export class GameView {
   private bridgeMeshes = new Map<string, THREE.Object3D>();
   private houseMeshes = new Map<number, { g: THREE.Object3D; hs: { x: number; y: number; w: number; h: number } }>();
   private waterMat?: THREE.MeshStandardMaterial;
+  // состояние для звуков: по изменениям определяем перезарядку, лечение, стойку и т.д. (в т.ч. у ИИ)
+  private sndReady = false;
+  private lastAmmo = new Map<number, number>();
+  private lastHp = new Map<number, number>();
+  private lastBleed = new Map<number, boolean>();
+  private lastStance = new Map<number, string>();
+  private lastOw = new Map<number, boolean>();
+  private crumbleAt = 0;
   private barrelMeshes = new Map<string, THREE.Object3D>();
   private fireMeshes = new Map<string, THREE.Group>();
   private scorchMeshes = new Map<string, THREE.Object3D>();
@@ -324,6 +332,7 @@ export class GameView {
       }
       this.scene.add(g);
       this.trenchMeshes.set(k, g);
+      if (this.sndReady) sfx('dig');
     }
     for (const [k, g] of this.trenchMeshes) if (!live.has(k)) { this.scene.remove(g); this.trenchMeshes.delete(k); }
   }
@@ -670,6 +679,16 @@ export class GameView {
       const key = `${u.x},${u.y}`, prev = this.lastPos.get(u.id);
       if (prev && prev !== key) { const [px, py] = prev.split(',').map(Number); u.facing = Math.atan2(u.x - px, u.y - py); }
       this.lastPos.set(u.id, key);
+      const q: Sfx[] = [];
+      const pa = this.lastAmmo.get(u.id), ph = this.lastHp.get(u.id), ps = this.lastStance.get(u.id);
+      if (pa !== undefined && u.ammo > pa) q.push('reload');
+      if (this.lastBleed.get(u.id) && !u.bleeding) q.push('bandage');
+      if (ph !== undefined && u.hp > ph) q.push('heal');
+      if (ps !== undefined && ps !== u.stance) q.push(u.stance === 'prone' ? 'stanceProne' : 'stance');
+      if (this.lastOw.get(u.id) === false && u.overwatch) q.push('overwatch');
+      this.lastAmmo.set(u.id, u.ammo); this.lastHp.set(u.id, u.hp); this.lastBleed.set(u.id, u.bleeding);
+      this.lastStance.set(u.id, u.stance); this.lastOw.set(u.id, u.overwatch);
+      if (this.sndReady && q.length && isVisible(this.state, u)) q.forEach((k, i) => setTimeout(() => sfx(k), i * 170));
       if (!m) { m = this.makeUnit(u); m.position.copy(goal); m.rotation.y = u.facing; this.unitMeshes.set(u.id, m); this.scene.add(m); }
       this.goals.set(u.id, goal);
       m.visible = isVisible(this.state, u);
@@ -685,7 +704,10 @@ export class GameView {
     }
     for (const [k, m] of this.coverMeshes) {
       const [cx, cy] = k.split(',').map(Number);
-      if (this.state.cover[cy][cx] === 'none') { this.scene.remove(m); this.coverMeshes.delete(k); }
+      if (this.state.cover[cy][cx] === 'none') {
+        this.scene.remove(m); this.coverMeshes.delete(k);
+        if (this.sndReady && performance.now() - this.crumbleAt > 400) { this.crumbleAt = performance.now(); sfx('crumble'); }
+      }
     }
     for (const b of this.state.beacons) {
       const m = this.beaconMeshes.get(`${b.x},${b.y}`);
@@ -704,7 +726,7 @@ export class GameView {
       this.scene.remove(h.g);
       this.houseMeshes.delete(id);
       this.burst(new THREE.Vector3(h.hs.x + h.hs.w / 2, this.hy(h.hs.x, h.hs.y) + 0.6, h.hs.y + h.hs.h / 2), 0xb8a98a, 40, 4, 900);
-      sfx('grenade');
+      sfx('collapse');
       for (let yy = h.hs.y; yy < h.hs.y + h.hs.h; yy++) for (let xx = h.hs.x; xx < h.hs.x + h.hs.w; xx++) {
         const rk = this.makeRock('half', xx, yy, xx * 3 + yy);
         this.scene.add(rk);
@@ -716,6 +738,7 @@ export class GameView {
       if (this.state.bridges.some(b => b.x === bx && b.y === by)) continue;
       this.scene.remove(g);
       this.bridgeMeshes.delete(k);
+      sfx('splash');
       if (this.waterMat) {
         const pl = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.waterMat);
         pl.rotation.x = -Math.PI / 2; pl.position.set(bx + 0.5, 0.03, by + 0.5);
@@ -742,8 +765,10 @@ export class GameView {
       g.add(disc, dot);
       this.scene.add(g);
       this.mineMeshes.set(k, g);
+      if (this.sndReady) sfx('mine');
     }
     for (const [k, o] of this.mineMeshes) if (!live.has(k)) { this.scene.remove(o); this.mineMeshes.delete(k); }
+    this.sndReady = true;
     this.updateFog();
     this.drawHighlight();
   }
@@ -759,12 +784,24 @@ export class GameView {
     if (any) sfx('alert');
   }
 
+  /** Шаги: два за клетку, тише вдали от камеры; пришельцы тяжелее (ниже тоном). */
+  private stepFx(u: Unit) {
+    const t = this.controls.target;
+    const d = Math.hypot(u.x + 0.5 - t.x, u.y + 0.5 - t.z);
+    const vol = Math.max(0.2, 1 - d / 28);
+    const heavy = u.kind === 'heavy' || u.kind === 'commander';
+    const pitch = u.team === 'alien' ? (heavy ? 0.7 : 0.85) : 1;
+    sfx('step', { vol, pitch });
+    setTimeout(() => sfx('step', { vol: vol * 0.8, pitch: pitch * 0.92 }), 1000 / speedOf(u) / 2);
+  }
+
   /** Высота ствола/груди над землёй по стойке. */
   private eye(u: Unit) { return u.stance === 'prone' ? 0.3 : u.stance === 'kneel' ? 0.62 : 0.9; }
 
   async moved(u?: Unit) {
     this.syncUnits();
     if (u && u.team === 'alien' && !isVisible(this.state, u)) return; // в тумане не ждём: игрок этого не видит
+    if (u) this.stepFx(u);
     if (u && isVisible(this.state, u)) this.focusOn(u.x, u.y);
     await sleep(Math.round(1000 / speedOf(u)));
   }
@@ -935,9 +972,9 @@ export class GameView {
   }
 
   /** Один патрон: вспышка, летящая пуля и попадание/рикошет. */
-  private async fireRound(from: THREE.Vector3, to: THREE.Vector3, delayMs: number, hit: boolean, last: boolean, human: boolean) {
+  private async fireRound(from: THREE.Vector3, to: THREE.Vector3, delayMs: number, hit: boolean, last: boolean, human: boolean, variant?: string) {
     if (delayMs) await sleep(delayMs);
-    sfx(human ? 'shot' : 'alienShot');
+    if (variant) sfx('shot', { variant }); else sfx(human ? 'shot' : 'alienShot');
     this.muzzleFlash(from);
     const bullet = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.6), new THREE.MeshBasicMaterial({ color: 0xffe9a8 }));
     bullet.position.copy(from);
@@ -972,6 +1009,8 @@ export class GameView {
       return;
     }
     if (!r.reaction) await sleep(a.team === 'alien' ? 450 : 150); // пауза на прицеливание: стрелок успевает повернуться
+    // звук выстрела по оружию: автомат/ПП/дробовик/снайперка; у пришельцев — по типу
+    const variant = a.team === 'human' ? a.weapon : a.kind === 'sniper' ? 'sniper' : a.kind === 'heavy' || a.kind === 'commander' ? 'shotgun' : undefined;
     this.play(a.id, 'Idle_Shoot', true);
     const rounds = a.burst;
     const shots: Promise<void>[] = [];
@@ -983,7 +1022,7 @@ export class GameView {
         to.z += (Math.random() - 0.5) * (last ? 1.6 : 1.1);
         to.y = 0.15 + Math.random() * 0.9;
       }
-      shots.push(this.fireRound(muzzle, to, i * BURST_GAP, last && r.hit, last, a.team === 'human'));
+      shots.push(this.fireRound(muzzle, to, i * BURST_GAP, last && r.hit, last, a.team === 'human', variant));
     }
     if (am) { am.position.x -= Math.sin(f) * 0.07; am.position.z -= Math.cos(f) * 0.07; } // отдача
     await Promise.all(shots);
@@ -994,6 +1033,7 @@ export class GameView {
     } else this.floatText(t.x + 0.5, t.y + 0.5, r.suppress ? 'подавлен' : 'мимо', r.suppress ? '#ffd34d' : '#c9ced3');
     if (r.alerted?.length) this.alertFx(r.alerted);
     if (r.broken) this.floatText(t.x + 0.5, t.y + 0.5, 'укрытие', '#ffd34d', 0.5);
+    if (r.wound) sfx('wound');
     if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
     if (r.killed) setTimeout(() => sfx('death'), 120);
     await sleep(r.reaction ? 300 : 550);
@@ -1007,7 +1047,8 @@ export class GameView {
     this.focusOn(x, y);
     this.blast.visible = false;
     this.play(u.id, 'Punch', true);
-    sfx('throw');
+    sfx('pin');
+    setTimeout(() => sfx('throw'), 220);
     const from = new THREE.Vector3(u.x + 0.5, 1.0 + this.hy(u.x, u.y), u.y + 0.5);
     const to = new THREE.Vector3(x + 0.5, 0.1 + this.hy(x, y), y + 0.5);
     const dist = from.distanceTo(to);
@@ -1038,6 +1079,7 @@ export class GameView {
     this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0xffb050, 30, 5, 650);
     this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0x555555, 18, 3, 800);
     for (const b of res.broken) this.burst(new THREE.Vector3(b.x + 0.5, 0.3 + this.hy(b.x, b.y), b.y + 0.5), 0x8a7a62, 10, 2.5, 600);
+    if (res.ignited.length) setTimeout(() => sfx('fire'), 250);
     if (res.alerted.length) this.alertFx(res.alerted);
     for (const h of res.hits) {
       const tu = s.units.find(v => v.id === h.id)!;
@@ -1137,12 +1179,12 @@ export class GameView {
     }
     const at = s.units.find(v => v.hp > 0 && v.x === x && v.y === y && isVisible(s, v));
     const sel = s.units.find(v => v.id === s.selectedId && v.hp > 0);
-    if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; s.targetBarrel = null; s.aiming = null; this.focusOn(at.x, at.y); }
+    if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; s.targetBarrel = null; s.aiming = null; this.focusOn(at.x, at.y); sfx('select'); }
     else if (at?.team === 'alien') { if (sel) { s.targetId = at.id; s.targetBarrel = null; } }
     else if (barrelAt(s, x, y)) { if (sel) { s.targetBarrel = { x, y }; s.targetId = null; } }
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
       s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false; sel.stance = 'stand';
-      for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) { sel.x = px; sel.y = py; await this.moved(); }
+      for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) { sel.x = px; sel.y = py; this.stepFx(sel); await this.moved(); }
       s.busy = false;
       checkEnd(s);
     }

@@ -72,6 +72,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const bb = (primary = false, off = false) => ({ ...btn(primary, off), ...(touch ? { minHeight: 46, padding: '10px 12px' } : {}) });
   // автосохранение: в начале хода и после каждого действия игрока
   useEffect(() => { if (s.turn === 'human' && !s.busy && s.status === 'playing') onSave(s); });
+  useEffect(() => { if (s.status === 'won') sfx('win'); else if (s.status === 'lost') sfx('lose'); }, [s.status]);
   const sel = s.units.find(u => u.id === s.selectedId && u.hp > 0);
   const tgt = s.units.find(u => u.id === s.targetId && u.hp > 0);
   const chance = sel && tgt ? hitChance(s, sel, tgt) : null;
@@ -92,7 +93,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const canCharge = canAct && !!sel && sel.ap > 0 && sel.grenades > 0 && !!nearBeacon(s, sel);
   const doCharge = () => {
     if (!canCharge || !sel) return;
-    if (placeCharge(s, sel)) sfx('grenade');
+    if (placeCharge(s, sel)) sfx('charge');
     view.current!.syncUnits();
     rerender();
   };
@@ -112,8 +113,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       if (r) await view.current!.shotFx(r);
       if (tgt.hp <= 0) s.targetId = null;
       s.busy = false;
-    } else if (cls === 'medic') { if (medicHeal(s, sel)) sfx('reload'); }
-    else if (placeMine(s, sel)) sfx('click');
+    } else if (cls === 'medic') medicHeal(s, sel);
+    else placeMine(s, sel);
     view.current!.syncUnits();
     rerender();
   };
@@ -121,7 +122,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const canDig = canAct && !!sel && sel.ap > 0 && !trenchAt(s, sel.x, sel.y) && s.terrain[sel.y][sel.x] !== 'water';
   const doDig = () => {
     if (!canDig || !sel) return;
-    if (digIn(s, sel)) sfx('reload');
+    digIn(s, sel);
     view.current!.syncUnits();
     rerender();
   };
@@ -130,7 +131,6 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const canStance = (st: 'stand' | 'kneel' | 'prone') => canAct && !!sel && st !== stanceNow && (rank[st] <= rank[stanceNow] || sel.ap > 0);
   const doStance = (st: 'stand' | 'kneel' | 'prone') => {
     if (!sel || !setStance(s, sel, st)) return;
-    sfx('click');
     view.current!.syncUnits();
     rerender();
   };
@@ -162,7 +162,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const canReload = canAct && !!sel && sel.ap > 0 && sel.ammo < sel.maxAmmo && sel.mags > 0;
   const doReload = () => {
     if (!canReload || !sel) return;
-    if (reload(s, sel)) sfx('reload');
+    reload(s, sel);
     view.current!.syncUnits();
     rerender();
   };
@@ -177,6 +177,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const pick = (id: number) => {
     if (!canAct) return;
     s.selectedId = id; s.targetId = null; s.targetBarrel = null; s.aiming = null;
+    sfx('select');
     const u = s.units.find(v => v.id === id);
     if (u) view.current!.focusOn(u.x, u.y);
     view.current!.syncUnits();
@@ -193,6 +194,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
 
   const endTurn = async () => {
     if (!canAct) return;
+    sfx('turnEnemy');
     s.turn = 'alien'; s.busy = true; s.targetId = null; s.aiming = null;
     if (s.objective === 'hold' && s.turnNo % 2 === 0) reinforce(s);
     view.current!.syncUnits();
@@ -209,7 +211,9 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       s.turnNo += 1;
       log(s, `— Ход ${s.turnNo} —`);
       startHumanTurn(s);
-      if (living(s, 'human').some(u => u.panic)) sfx('panic');
+      sfx('turnPlayer');
+      if (s.fires.length) setTimeout(() => sfx('fire'), 400);
+      if (living(s, 'human').some(u => u.panic)) setTimeout(() => sfx('panic'), 500);
     }
     s.turn = 'human'; s.busy = false;
     view.current!.syncUnits();
