@@ -373,7 +373,10 @@ export class GameView {
   private makeUnit(u: Unit): THREE.Object3D {
     const height = { soldier: 1.05, trooper: 1.05, sniper: 1.15, psi: 1.05, heavy: 1.45, commander: 1.6 }[u.kind];
     const tint = { soldier: undefined, trooper: 0x7fd24a, sniper: 0x3f8f6a, psi: 0xb36bff, heavy: 0x6f8a2c, commander: 0xc0392b }[u.kind];
-    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint);
+    const gun = u.team === 'human'
+      ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper' }[u.weapon]
+      : { soldier: '', trooper: 'AK', sniper: 'Sniper_2', psi: '', heavy: 'ShortCannon', commander: 'Revolver' }[u.kind];
+    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun);
     if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
     this.rigs.set(u.id, sp);
     this.play(u.id, 'Idle');

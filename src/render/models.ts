@@ -74,13 +74,17 @@ export function spawnCover(type: 'half' | 'full', variant: number, biome = 'ruin
 export interface Spawned { obj: THREE.Group; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction> }
 
 /** Клонирует модель, подгоняет высоту (в клетках) и красит (tint — смешивается с исходным цветом). */
-export function spawnModel(name: ModelName, height: number, tint?: number): Spawned | null {
+// Все оружия лежат в модели узлами в руке; показываем только выбранное (пустая строка — без оружия)
+const WEAPON_NODES = ['AK', 'GrenadeLauncher', 'Knife_1', 'Knife_2', 'Pistol', 'Revolver', 'Revolver_Small', 'RocketLauncher', 'ShortCannon', 'Shotgun', 'Shovel', 'SMG', 'Sniper', 'Sniper_2'];
+
+export function spawnModel(name: ModelName, height: number, tint?: number, weapon = 'AK'): Spawned | null {
   const m = cache.get(name);
   if (!m) return null;
   const obj = new THREE.Group();
   const inner = clone(m.scene);
   inner.scale.setScalar(height / m.height);
   inner.traverse(o => {
+    if (WEAPON_NODES.includes(o.name)) o.visible = o.name === weapon;
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
     mesh.castShadow = true;

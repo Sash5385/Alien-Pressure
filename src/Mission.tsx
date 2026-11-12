@@ -83,6 +83,8 @@ export function Mission({ initial, onExit }: { initial: GameState; onExit: (s: G
   const pick = (id: number) => {
     if (!canAct) return;
     s.selectedId = id; s.targetId = null; s.aiming = null;
+    const u = s.units.find(v => v.id === id);
+    if (u) view.current!.focusOn(u.x, u.y);
     view.current!.syncUnits();
     rerender();
   };
