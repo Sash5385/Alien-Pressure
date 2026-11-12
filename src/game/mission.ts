@@ -195,8 +195,8 @@ function genMap(rng: { rng: number }, biome: Biome, n: number, missionNo: number
 }
 
 /** Оборона: расчищаем центр и строим либо холм с мешками, либо укрепление с воротами. Возвращает вид. */
-function fortify(rng: { rng: number }, g: Grids, n: number): 'hill' | 'fort' {
-  const c = n >> 1, kind = rand(rng) < 0.5 ? 'hill' : 'fort', R = 8;
+function fortify(rng: { rng: number }, g: Grids, n: number): 'hill' | 'fort' | 'house' {
+  const c = n >> 1, r3 = rand(rng), kind = r3 < 0.34 ? 'hill' : r3 < 0.67 ? 'fort' : 'house', R = 9;
   g.houses = g.houses.filter(h => Math.hypot(h.x + h.w / 2 - c, h.y + h.h / 2 - c) > R + 2).map((h, i) => ({ ...h, id: i }));
   for (let y = c - R; y <= c + R; y++) for (let x = c - R; x <= c + R; x++) {
     if (g.look[y][x] === 'house' && !g.houses.some(h => x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h)) { g.cover[y][x] = 'none'; g.look[y][x] = ''; }
@@ -204,10 +204,18 @@ function fortify(rng: { rng: number }, g: Grids, n: number): 'hill' | 'fort' {
     if (d > R) continue;
     g.terrain[y][x] = 'ground'; g.bridges = g.bridges.filter(b => b.x !== x || b.y !== y);
     if (g.look[y][x] !== 'house') { g.cover[y][x] = 'none'; g.look[y][x] = ''; }
-    g.height[y][x] = kind === 'hill' ? (d <= 2.6 ? 3 : d <= 4.2 ? 2 : d <= 5.8 ? 1 : 0) : 0;
+    g.height[y][x] = kind === 'hill' ? (d <= 2.6 ? 3 : d <= 4.2 ? 2 : d <= 5.8 ? 1 : 0) : kind === 'house' ? (d <= 4 ? 3 : d <= 5.6 ? 2 : d <= 7.2 ? 1 : 0) : 0;
   }
   const put = (x: number, y: number, cv: Cover, l: Look) => { g.cover[y][x] = cv; g.look[y][x] = l; };
-  if (kind === 'hill') { // мешки на гребне и камни ниже по склону
+  if (kind === 'house') { // дом на вершине холма: отряд держит оборону вокруг него
+    for (let y = c - 1; y <= c + 1; y++) for (let x = c - 1; x <= c + 1; x++) put(x, y, 'full', 'house');
+    g.houses.push({ x: c - 1, y: c - 1, w: 3, h: 3, id: g.houses.length, hp: 9 });
+    for (let a = 0; a < 20; a++) {
+      const t = (a / 20) * 6.283;
+      if (a % 5 !== 0) put(Math.round(c + Math.cos(t) * 4.8), Math.round(c + Math.sin(t) * 4.8), 'half', 'crate');
+      if (a % 4 === 2) put(Math.round(c + Math.cos(t + 0.15) * 6.8), Math.round(c + Math.sin(t + 0.15) * 6.8), 'full', 'rock');
+    }
+  } else if (kind === 'hill') { // мешки на гребне и камни ниже по склону
     for (let a = 0; a < 16; a++) {
       const t = (a / 16) * 6.283, gap = a % 4 === 0;
       if (!gap) put(Math.round(c + Math.cos(t) * 3.4), Math.round(c + Math.sin(t) * 3.4), 'half', 'crate');
@@ -245,17 +253,17 @@ export function createMission(o: MissionOpts): GameState {
     barrels.push({ x, y });
   }
 
-  const humans = o.soldiers.map((s, i) => defend ? human(s, cx - 2 + (i % 3) * 2, cx - 1 + (i >> 1 & 1) * 2, o.tech) : human(s, cx - 3 + i * 2, n - 2, o.tech));
+  const humans = o.soldiers.map((s, i) => defend ? (dKind === 'house' ? human(s, cx + [-3, 3, 0, 0, -3, 3, -2, 2][i % 8], cx + [0, 0, -3, 3, 2, -2, 3, -3][i % 8], o.tech) : human(s, cx - 2 + (i % 3) * 2, cx - 1 + (i >> 1 & 1) * 2, o.tech)) : human(s, cx - 3 + i * 2, n - 2, o.tech));
 
-  const base: AlienKind[] = ['trooper', 'trooper', 'sniper', 'trooper', 'psi', 'heavy', 'trooper', 'trooper', 'sniper', 'psi'];
-  let kinds: AlienKind[] = base.slice(0, 8);
+  const base: AlienKind[] = ['trooper', 'trooper', 'sniper', 'trooper', 'heavy', 'trooper', 'trooper', 'sniper'];
+  let kinds: AlienKind[] = base.slice(0, 7);
   if (o.missionNo >= 3) kinds.push('trooper');
   if (o.missionNo >= 5) kinds.push('trooper', 'heavy');
   if (o.missionNo >= 7) kinds.push('sniper', 'trooper');
-  if (o.objective === 'extract') kinds = base.slice(0, 6);
+  if (o.objective === 'extract') kinds = base.slice(0, 5);
   if (o.objective === 'hold') kinds = base.slice(0, 4);
-  if (o.objective === 'sabotage') kinds = base.slice(0, 7);
-  if (o.objective === 'assassinate') kinds = [...base.slice(0, 6), 'commander'];
+  if (o.objective === 'sabotage') kinds = base.slice(0, 6);
+  if (o.objective === 'assassinate') kinds = [...base.slice(0, 5), 'commander'];
   if (defend) kinds = [];
 
   if (n >= 64) { // большая карта: меньше пришельцев, но они дальше друг от друга
@@ -313,20 +321,21 @@ export function createMission(o: MissionOpts): GameState {
     hold: `Цель: продержаться ${HOLD_TURNS} ходов. Пришельцы получают подкрепление.`,
     assassinate: 'Цель: убить командира пришельцев (он помечен красным кольцом и виден всегда).',
     sabotage: 'Цель: взорвать два маяка (подойди вплотную: заряд тратит 1 AP и 1 гранату).',
-    defend: `Цель: выжить ${DEFEND_TURNS} ходов. Отряд ${dKind === 'hill' ? 'удерживает высоту' : 'обороняет укрепление'}; пришельцы идут волнами со всех сторон.`,
+    defend: `Цель: выжить ${DEFEND_TURNS} ходов. Отряд ${dKind === 'hill' ? 'удерживает высоту' : dKind === 'house' ? 'обороняет дом на холме' : 'обороняет укрепление'}; пришельцы идут волнами со всех сторон.`,
   }[o.objective];
   return {
     size: n, cover, terrain, height, look, houses, trenches: [], biome: o.biome, units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels, fires: [], scorched: grid(n, false), bridges, targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: o.objective, markId: aliens.find(a => a.kind === 'commander')?.id ?? null, beacons, holdTurns: defend ? DEFEND_TURNS : HOLD_TURNS, zone,
-    log: [`Миссия ${o.missionNo} · ${BIOME_NAME[o.biome]}. ${brief}`, 'Разведка: пехота, снайпер, псионик (давит на мораль), тяжёлый (ломает укрытия).'],
+    log: [`Миссия ${o.missionNo} · ${BIOME_NAME[o.biome]}. ${brief}`, 'Разведка: пехота, снайпер, тяжёлый (ломает укрытия).'],
     rng: rng.rng,
   };
 }
 
 /** Подкрепление: в «Удержании» — с юга; в «Обороне» — волна по краям карты (размер растёт с ходом). */
 export function reinforce(s: GameState) {
+  if (s.objective === 'defend' && s.turnNo < 2) return; // первый ход — на обустройство
   const c = s.size >> 1;
   const free: [number, number][] = [];
   if (s.objective === 'defend') {
@@ -341,7 +350,7 @@ export function reinforce(s: GameState) {
     }
   }
   if (!free.length) return;
-  const wave = s.objective === 'defend' ? Math.min(3, 1 + Math.floor(s.turnNo / 4) + (s.size >= 64 ? 1 : 0)) : 1;
+  const wave = s.objective === 'defend' ? Math.min(3, 1 + Math.floor(s.turnNo / 5) + (s.size >= 64 ? 1 : 0)) : 1;
   const kinds: AlienKind[] = ['trooper', 'trooper', 'trooper', 'trooper', 'heavy', 'sniper', 'psi'];
   for (let k = 0; k < wave && free.length; k++) {
     const j = Math.floor(rand(s) * free.length), [x, y] = free.splice(j, 1)[0];
