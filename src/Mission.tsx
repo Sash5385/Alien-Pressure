@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { runAlienTurn } from './game/ai';
-import { aimedShot, bandage, canShootBarrel, checkEnd, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
+import { aimedShot, bandage, canShootBarrel, checkEnd, digIn, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState } from './game/types';
 import { btn, VERSION } from './ui';
@@ -11,6 +11,41 @@ import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
 import { ARMORS, WEAPONS } from './game/weapons';
+
+/** Миникарта: рельеф, укрытия, туман войны, бойцы и видимые пришельцы; клик — перенос камеры. */
+function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick: (x: number, y: number) => void }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const px = 3;
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const g = c.getContext('2d')!;
+    const n = s.size;
+    const cov: Record<string, string> = { tree: '#2f6a2a', bush: '#3f7a2e', rock: '#8a8a84', house: '#c9b88f', crate: '#8a6a42', container: '#4a5a72' };
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      let col = s.terrain[y][x] === 'water' ? '#2d6aa0' : s.cover[y][x] !== 'none' ? (cov[s.look[y][x]] ?? '#6b6254') : `hsl(95 22% ${22 + s.height[y][x] * 7}%)`;
+      g.fillStyle = col;
+      g.fillRect(x * px, y * px, px, px);
+      if (!s.vis[y][x]) { g.fillStyle = s.seen[y][x] ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.7)'; g.fillRect(x * px, y * px, px, px); }
+    }
+    if (s.zone) { g.strokeStyle = '#35e07a'; g.strokeRect(s.zone.x * px + 0.5, s.zone.y * px + 0.5, s.zone.w * px, s.zone.h * px); }
+    g.fillStyle = '#ffd34d';
+    for (const b of s.beacons) if (!b.done) g.fillRect(b.x * px - 1, b.y * px - 1, px + 2, px + 2);
+    for (const t of s.trenches) { g.fillStyle = '#1c150d'; g.fillRect(t.x * px, t.y * px, px, px); }
+    for (const u of s.units) {
+      if (u.hp <= 0) continue;
+      if (u.team === 'human') { g.fillStyle = u.id === s.selectedId ? '#ffd34d' : '#4fc3ff'; g.fillRect(u.x * px - 1, u.y * px - 1, px + 2, px + 2); }
+      else if (isVisible(s, u)) { g.fillStyle = u.id === s.markId ? '#ff2222' : '#ff6b6b'; g.fillRect(u.x * px - 1, u.y * px - 1, px + 2, px + 2); }
+    }
+  });
+  return (
+    <canvas
+      ref={ref} width={s.size * px} height={s.size * px}
+      onClick={e => { const r = e.currentTarget.getBoundingClientRect(); onPick(Math.floor(((e.clientX - r.left) / r.width) * s.size), Math.floor(((e.clientY - r.top) / r.height) * s.size)); }}
+      style={{ border: '1px solid #667', borderRadius: 4, background: '#000', width: s.size * px * (narrow ? 0.75 : 1), imageRendering: 'pixelated', pointerEvents: 'auto', display: 'block' }}
+    />
+  );
+}
 
 export function Mission({ initial, onExit, onSave }: { initial: GameState; onExit: (s: GameState, repeat?: boolean) => void; onSave: (s: GameState) => void }) {
   const host = useRef<HTMLDivElement>(null);
@@ -31,6 +66,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const s = state.current;
   if (import.meta.env.DEV) Object.assign(window, { __s: s, __view: view.current });
   const [more, setMore] = useState(false);
+  const [showMap, setShowMap] = useState(true);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
   const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   const bb = (primary = false, off = false) => ({ ...btn(primary, off), ...(touch ? { minHeight: 46, padding: '10px 12px' } : {}) });
@@ -82,6 +118,13 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     rerender();
   };
   const abilityLabel = sel ? { assault: 'Подавить', sniper: 'Прицельный (2 AP)', medic: `Лечение (${2 - sel.abilityUsed})`, engineer: `Мина (${2 - sel.abilityUsed})` }[sel.cls] : '';
+  const canDig = canAct && !!sel && sel.ap > 0 && !trenchAt(s, sel.x, sel.y) && s.terrain[sel.y][sel.x] !== 'water';
+  const doDig = () => {
+    if (!canDig || !sel) return;
+    if (digIn(s, sel)) sfx('reload');
+    view.current!.syncUnits();
+    rerender();
+  };
   const canOw = canAct && !!sel && sel.ap > 0 && sel.ammo > 0 && !sel.overwatch;
 
   const fire = async () => {
@@ -211,16 +254,23 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручная' : 'авто'}</button>
           <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>
           </>}
+          <button style={{ ...btn(showMap), padding: '4px 8px', fontSize: 12 }} onClick={() => setShowMap(!showMap)}>🗺</button>
           <span style={{ alignSelf: 'center', fontSize: 11, opacity: 0.45 }}>{VERSION}</span>
           {narrow && <button style={{ ...btn(more), padding: '4px 8px', fontSize: 12 }} onClick={() => setMore(!more)}>⚙</button>}
         </div>
       </div>
+      {showMap && (
+        <div style={{ position: 'absolute', right: 8, top: narrow ? 210 : 140 }}>
+          <Minimap s={s} narrow={narrow} onPick={(x, y) => view.current?.panTo(x, y)} />
+        </div>
+      )}
       <div style={{ position: 'absolute', left: 8, right: 8, bottom: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 200px', maxHeight: 110, overflow: 'hidden', fontSize: narrow ? 11 : 12, textShadow: '0 1px 2px #000', pointerEvents: 'none' }}>
           {s.log.slice(narrow ? -2 : -5).map((l, i) => <div key={s.log.length + ':' + i}>{l}</div>)}
         </div>
         <button style={bb(true, !canFire)} disabled={!canFire} onClick={fire}>Огонь{chance !== null ? ` ${chance}%` : tb ? ' по бочке' : ''}</button>
         <button style={bb(false, !canReload)} disabled={!canReload} onClick={doReload}>Заряд{sel ? ` (${sel.mags})` : ''}</button>
+        {sel && <button style={bb(false, !canDig)} disabled={!canDig} title="Окоп: укрытие со всех сторон, −1 урон от взрывов" onClick={doDig}>Окопаться</button>}
         {sel && <button style={bb(false, !canAbility)} disabled={!canAbility} title={CLASSES[sel.cls].desc} onClick={doAbility}>{abilityLabel}</button>}
         <button style={bb(s.aiming === 'grenade', !canGrenade)} disabled={!canGrenade} onClick={toggleGrenade}>Граната{sel ? ` (${sel.grenades})` : ''}</button>
         {s.objective === 'sabotage' && <button style={bb(true, !canCharge)} disabled={!canCharge} onClick={doCharge}>Взорвать маяк</button>}

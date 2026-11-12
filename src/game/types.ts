@@ -4,6 +4,9 @@ export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy' | 'com
 export type ClassId = 'assault' | 'sniper' | 'medic' | 'engineer';
 export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper';
 export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
+export const STEP = 0.55; // высота одного уровня рельефа, в клетках
+export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container';
+export interface House { x: number; y: number; w: number; h: number }
 export type Biome = 'ruins' | 'forest' | 'lake';
 export type Terrain = 'ground' | 'water';
 export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage';
@@ -79,6 +82,10 @@ export interface Unit {
 export interface GameState {
   size: number;
   cover: Cover[][]; // cover[y][x]
+  height: number[][]; // уровень рельефа 0–3: подъём на 1 проходим, обрыв (2+) — нет
+  look: Look[][]; // вид укрытия (дерево, камень, дом…)
+  houses: House[];
+  trenches: { x: number; y: number }[]; // окопы
   terrain: Terrain[][]; // вода непроходима, но не мешает видеть и стрелять
   biome: Biome;
   units: Unit[];

@@ -34,6 +34,7 @@ export function log(s: GameState, msg: string) {
 /** Линия видимости (Bresenham): полное укрытие блокирует, половинное — нет. */
 export function los(s: GameState, a: { x: number; y: number }, b: { x: number; y: number }): boolean {
   let x = a.x, y = a.y;
+  const la = s.height[a.y][a.x], lb = s.height[b.y][b.x];
   const dx = Math.abs(b.x - x), dy = Math.abs(b.y - y);
   const sx = x < b.x ? 1 : -1, sy = y < b.y ? 1 : -1;
   let err = dx - dy;
@@ -41,14 +42,17 @@ export function los(s: GameState, a: { x: number; y: number }, b: { x: number; y
     const e2 = 2 * err;
     if (e2 > -dy) { err -= dy; x += sx; }
     if (e2 < dx) { err += dx; y += sy; }
-    if ((x !== b.x || y !== b.y) && s.cover[y][x] === 'full') return false;
+    if (x === b.x && y === b.y) break;
+    const lv = s.height[y][x];
+    if (lv > Math.max(la, lb)) return false; // холм закрывает обзор
+    if (s.cover[y][x] === 'full' && lv >= la) return false; // полное укрытие, если стрелок не выше
   }
   return true;
 }
 
 /** Укрытие, защищающее цель от стрелка (рядом с целью, со стороны стрелка). */
-export function coverSource(s: GameState, shooter: Unit, target: Unit): { bonus: number; x: number; y: number } | null {
-  let best: { bonus: number; x: number; y: number } | null = null;
+export function coverSource(s: GameState, shooter: Unit, target: Unit): { bonus: number; x: number; y: number; trench?: boolean } | null {
+  let best: { bonus: number; x: number; y: number; trench?: boolean } | null = null;
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const cx = target.x + dx, cy = target.y + dy;
     if (cx < 0 || cy < 0 || cx >= s.size || cy >= s.size) continue;
@@ -58,6 +62,8 @@ export function coverSource(s: GameState, shooter: Unit, target: Unit): { bonus:
     const bonus = c === 'full' ? 40 : 20;
     if (!best || bonus > best.bonus) best = { bonus, x: cx, y: cy };
   }
+  // окоп даёт укрытие со всех сторон (как среднее между половинным и полным)
+  if (s.trenches.some(tr => tr.x === target.x && tr.y === target.y) && (!best || best.bonus < 30)) best = { bonus: 30, x: target.x, y: target.y, trench: true };
   return best;
 }
 
@@ -69,7 +75,7 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonu
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
-    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0); // скрытая атака, умения, подавление
+    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t); // скрытая атака, умения, подавление, высота
   return Math.round(Math.min(95, Math.max(5, c)));
 }
 
@@ -116,7 +122,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
   let broken: ShotResult['broken'];
   if (a.kind === 'heavy') {
     const cs = coverSource(s, a, t);
-    if (cs) { s.cover[cs.y][cs.x] = 'none'; broken = { x: cs.x, y: cs.y }; }
+    if (cs && !cs.trench && s.look[cs.y][cs.x] !== 'rock' && s.look[cs.y][cs.x] !== 'house') { s.cover[cs.y][cs.x] = 'none'; broken = { x: cs.x, y: cs.y }; }
   }
   const wtxt = wound === 'bleed' ? ', кровотечение' : wound === 'fracture' ? ', перелом' : '';
   const btxt = broken ? ' Укрытие разрушено.' : '';
@@ -269,7 +275,7 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
   for (const t of living(s)) {
     const d = Math.hypot(t.x - x, t.y - y);
     if (d > BLAST) continue;
-    const dmg = Math.max(1, (d <= 1.0 ? 5 : 3) - t.cut);
+    const dmg = Math.max(1, (d <= 1.0 ? 5 : 3) - t.cut - (s.trenches.some(tr => tr.x === t.x && tr.y === t.y) ? 1 : 0));
     t.hp = Math.max(0, t.hp - dmg);
     const killed = t.hp <= 0;
     hits.push({ id: t.id, dmg, killed });
@@ -285,7 +291,7 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
   const broken: GrenadeResult['broken'] = [];
   for (let cy = Math.max(0, Math.floor(y - 1.5)); cy <= Math.min(s.size - 1, Math.ceil(y + 1.5)); cy++) {
     for (let cx = Math.max(0, Math.floor(x - 1.5)); cx <= Math.min(s.size - 1, Math.ceil(x + 1.5)); cx++) {
-      if (s.cover[cy][cx] === 'half' && Math.hypot(cx - x, cy - y) <= 1.5) { s.cover[cy][cx] = 'none'; broken.push({ x: cx, y: cy }); }
+      if (s.cover[cy][cx] === 'half' && s.look[cy][cx] !== 'rock' && Math.hypot(cx - x, cy - y) <= 1.5) { s.cover[cy][cx] = 'none'; broken.push({ x: cx, y: cy }); }
     }
   }
   const names = hits.map(h => `${s.units.find(v => v.id === h.id)!.name} −${h.dmg}${h.killed ? ' (убит)' : ''}`).join(', ');
@@ -459,4 +465,22 @@ export function tickFire(s: GameState) {
   }
   s.fires = s.fires.filter(f => f.ttl > 0);
   checkEnd(s);
+}
+
+/** Высота: стрелок выше — +10% за уровень (до +20), ниже — −10%. */
+export function heightBonus(s: GameState, a: Unit, t: Unit): number {
+  const dh = s.height[a.y][a.x] - s.height[t.y][t.x];
+  return dh > 0 ? Math.min(20, dh * 10) : dh < 0 ? -10 : 0;
+}
+
+export const trenchAt = (s: GameState, x: number, y: number) => s.trenches.some(t => t.x === x && t.y === y);
+
+/** Окопаться: 1 AP; на клетке появляется окоп (укрытие со всех сторон, −1 урон от взрывов). */
+export function digIn(s: GameState, u: Unit): boolean {
+  if (u.ap <= 0 || s.terrain[u.y][u.x] === 'water' || trenchAt(s, u.x, u.y)) return false;
+  u.ap -= 1;
+  u.overwatch = false;
+  s.trenches.push({ x: u.x, y: u.y });
+  log(s, `${u.name} окапывается.`);
+  return true;
 }

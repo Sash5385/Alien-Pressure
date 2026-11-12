@@ -4,7 +4,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import type { GameState, Unit } from '../game/types';
+import { STEP, type GameState, type Unit } from '../game/types';
 import { barrelAt, BLAST, type GrenadeResult, canThrow, checkEnd, faceToward, isVisible, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
@@ -47,6 +47,7 @@ export class GameView {
   private frames = 0;
   private beaconMeshes = new Map<string, THREE.Object3D>();
   private mineMeshes = new Map<string, THREE.Object3D>();
+  private trenchMeshes = new Map<string, THREE.Object3D>();
   private barrelMeshes = new Map<string, THREE.Object3D>();
   private fireMeshes = new Map<string, THREE.Group>();
   private scorchMeshes = new Map<string, THREE.Object3D>();
@@ -66,15 +67,15 @@ export class GameView {
     host.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(0x0b0e0c);
-    this.scene.fog = new THREE.Fog(0x0b0e0c, 18, 42);
+    this.scene.fog = new THREE.Fog(0x0b0e0c, 36, Math.max(90, n * 2.4));
 
-    this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-    this.camera.position.set(n / 2, 16, n + 6);
+    this.camera = new THREE.PerspectiveCamera(50, 1, 0.3, 300);
+    this.camera.position.set(n / 2, 16, n - 1); // сначала смотрим на точку высадки (юг карты)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(n / 2, 0, n / 2);
+    this.controls.target.set(n / 2, 0, n - 13);
     this.controls.maxPolarAngle = Math.PI / 2.2;
     this.controls.minDistance = 6;
-    this.controls.maxDistance = 38;
+    this.controls.maxDistance = 64;
     // ПКМ занят поворотом бойца; сдвиг камеры — средняя кнопка (на тач — двумя пальцами)
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: null as unknown as THREE.MOUSE };
     this.controls.enableDamping = true;
@@ -91,18 +92,14 @@ export class GameView {
     sun.shadow.normalBias = 0.03;
     sun.shadow.radius = 3;
     const c = sun.shadow.camera;
-    c.left = -n; c.right = n; c.top = n; c.bottom = -n; c.far = 60;
-    sun.target.position.set(n / 2, 0, n / 2);
+    c.left = -30; c.right = 30; c.top = 30; c.bottom = -30; c.far = 140; // тень только вокруг камеры
+    sun.target.position.set(n / 2, 0, n - 13);
     this.scene.add(sun, sun.target);
 
-    this.ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(n, n),
-      new THREE.MeshStandardMaterial({ color: 0x3a3f33, roughness: 1 }),
-    );
-    this.ground.rotation.x = -Math.PI / 2;
-    this.ground.position.set(n / 2, 0, n / 2);
+    // земля — ступенчатый рельеф (геометрия строится в buildTerrain)
+    this.ground = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ roughness: 1, vertexColors: true, side: THREE.DoubleSide }));
     this.ground.receiveShadow = true;
-    this.scene.add(this.ground, new THREE.GridHelper(n, n, 0x555d4c, 0x2c3027).translateX(n / 2).translateZ(n / 2));
+    this.scene.add(this.ground);
 
     this.fogData = new Uint8Array(n * n * 4);
     this.fogTex = new THREE.DataTexture(this.fogData, n, n, THREE.RGBAFormat);
@@ -112,7 +109,7 @@ export class GameView {
       new THREE.MeshBasicMaterial({ map: this.fogTex, transparent: true, depthWrite: false }),
     );
     fog.rotation.x = -Math.PI / 2;
-    fog.position.set(n / 2, 2.3, n / 2);
+    fog.position.set(n / 2, 4.2, n / 2);
     this.setQuality((() => { try { const q = localStorage.getItem('alien-pressure:gfx'); if (q === 'high' || q === 'low') return q; } catch { /* ignore */ } return matchMedia('(pointer: coarse)').matches ? 'low' : 'high'; })(), false);
     try { this.autoCam = localStorage.getItem('alien-pressure:cam') !== 'manual'; } catch { /* ignore */ }
     fog.renderOrder = 5;
@@ -129,6 +126,7 @@ export class GameView {
 
     this.buildTerrain();
     this.buildCover();
+    this.buildHouses();
     this.buildZone();
     this.buildBeacons();
     this.buildBarrels();
@@ -180,6 +178,7 @@ export class GameView {
             m.position.x += (dx / dist) * step;
             m.position.z += (dz / dist) * step;
           }
+          m.position.y += (g.y - m.position.y) * (1 - Math.exp(-14 * dt)); // плавный подъём/спуск по рельефу
           const runA = this.rigs.get(id)?.actions.get('Run');
           if (runA) runA.timeScale = 0.6 + nv * 0.18;
           if (dist > 0.12 && this.rigs.has(id)) this.play(id, 'Run');
@@ -203,6 +202,13 @@ export class GameView {
       if (this.waterTex) { this.waterTex.offset.x += rawDt * 0.03; this.waterTex.offset.y += rawDt * 0.015; }
       this.stepCamera(dt);
       this.controls.update();
+      { // камера и тень не выходят за карту; тень следует за камерой
+        const t = this.controls.target, cx = Math.max(0, Math.min(n, t.x)), cz = Math.max(0, Math.min(n, t.z));
+        if (cx !== t.x || cz !== t.z) { this.camera.position.x += cx - t.x; this.camera.position.z += cz - t.z; t.x = cx; t.z = cz; }
+        this.sun.position.set(t.x + 14, 30, t.z + 8);
+        this.sun.target.position.set(t.x, 0, t.z);
+        this.sun.target.updateMatrixWorld();
+      }
       this.adaptDpr(rawDt);
       if (this.composer) this.composer.render();
       else this.renderer.render(this.scene, this.camera);
@@ -210,10 +216,99 @@ export class GameView {
     loop();
   }
 
+  /** Высота клетки в мире. */
+  private hy(x: number, y: number) {
+    const n = this.state.size;
+    return (this.state.height[Math.max(0, Math.min(n - 1, Math.floor(y)))]?.[Math.max(0, Math.min(n - 1, Math.floor(x)))] ?? 0) * STEP;
+  }
+
+  /** Камень: полное — крупная глыба, половинное — валун. */
+  private makeRock(t: 'half' | 'full', x: number, y: number, hash: number): THREE.Object3D {
+    const g = new THREE.Group();
+    g.position.set(x + 0.5, this.hy(x, y), y + 0.5);
+    g.rotation.y = hash;
+    const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(t === 'full' ? 0.55 : 0.42, 0), new THREE.MeshStandardMaterial({ color: [0x7d7a72, 0x6e6c66, 0x8a867a][hash % 3], roughness: 1, flatShading: true }));
+    rock.scale.set(1.05, t === 'full' ? 1.55 : 0.75, 0.95);
+    rock.position.y = t === 'full' ? 0.62 : 0.26;
+    rock.castShadow = rock.receiveShadow = true;
+    g.add(rock);
+    if (t === 'full') {
+      const small = new THREE.Mesh(new THREE.IcosahedronGeometry(0.28, 0), rock.material);
+      small.position.set(0.3, 0.2, 0.25); small.castShadow = true;
+      g.add(small);
+    }
+    return g;
+  }
+
+  /** Дома: целые (деревня в лесу и у реки) или разрушенные (руины). Полное укрытие, не разрушаются. */
+  private buildHouses() {
+    const ruined = this.state.biome === 'ruins';
+    const walls = [0xcfc3a8, 0xb8a58a, 0xd9cdb4, 0xa79883];
+    this.state.houses.forEach((hs, i) => {
+      const g = new THREE.Group();
+      const w = hs.w * 0.94, d = hs.h * 0.94, H = 1.7;
+      g.position.set(hs.x + hs.w / 2, this.hy(hs.x, hs.y), hs.y + hs.h / 2);
+      const wall = new THREE.MeshStandardMaterial({ color: walls[i % 4], roughness: 1, flatShading: true });
+      const dark = new THREE.MeshStandardMaterial({ color: 0x2a2520, roughness: 1 });
+      const add = (m: THREE.Mesh, px: number, py: number, pz: number) => { m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; g.add(m); };
+      if (!ruined) {
+        add(new THREE.Mesh(new THREE.BoxGeometry(w, H, d), wall), 0, H / 2, 0);
+        const r = Math.hypot(w, d) / 2;
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(r * 1.12, 1.0, 4), new THREE.MeshStandardMaterial({ color: 0x8a3b2a, roughness: 1, flatShading: true }));
+        roof.rotation.y = Math.PI / 4;
+        roof.scale.set(w / (r * Math.SQRT2) * 1.08, 1, d / (r * Math.SQRT2) * 1.08);
+        add(roof, 0, H + 0.5, 0);
+        add(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.8, 0.06), dark), 0, 0.4, d / 2 + 0.02);
+        for (const sx of [-w * 0.3, w * 0.3]) add(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.06), dark), sx, 1.0, d / 2 + 0.02);
+        for (const sz of [-d * 0.28, d * 0.28]) add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.32, 0.32), dark), w / 2 + 0.02, 1.0, sz);
+      } else {
+        // разрушенные стены разной высоты и обломки внутри
+        for (let k = 0; k < hs.w * 2; k++) for (const sz of [-1, 1]) {
+          if (Math.random() < 0.18) continue;
+          const hh = 0.5 + Math.random() * 1.1;
+          add(new THREE.Mesh(new THREE.BoxGeometry(0.46, hh, 0.14), wall), -w / 2 + 0.25 + k * 0.5, hh / 2, (d / 2) * sz);
+        }
+        for (let k = 0; k < hs.h * 2; k++) for (const sx of [-1, 1]) {
+          if (Math.random() < 0.18) continue;
+          const hh = 0.5 + Math.random() * 1.1;
+          add(new THREE.Mesh(new THREE.BoxGeometry(0.14, hh, 0.46), wall), (w / 2) * sx, hh / 2, -d / 2 + 0.25 + k * 0.5);
+        }
+        for (let k = 0; k < 5; k++) add(new THREE.Mesh(new THREE.BoxGeometry(0.3 + Math.random() * 0.3, 0.2 + Math.random() * 0.3, 0.3 + Math.random() * 0.3), dark), (Math.random() - 0.5) * (w - 0.5), 0.15, (Math.random() - 0.5) * (d - 0.5));
+      }
+      this.scene.add(g);
+    });
+  }
+
+  /** Окопы: тёмная яма в кольце мешков с песком. */
+  private syncTrenches() {
+    const live = new Set(this.state.trenches.map(t => `${t.x},${t.y}`));
+    for (const t of this.state.trenches) {
+      const k = `${t.x},${t.y}`;
+      if (this.trenchMeshes.has(k)) continue;
+      const g = new THREE.Group();
+      g.position.set(t.x + 0.5, this.hy(t.x, t.y), t.y + 0.5);
+      const pit = new THREE.Mesh(new THREE.CircleGeometry(0.46, 16), new THREE.MeshBasicMaterial({ color: 0x1c150d }));
+      pit.rotation.x = -Math.PI / 2; pit.position.y = 0.03;
+      g.add(pit);
+      const bag = new THREE.MeshStandardMaterial({ color: 0x9a8a62, roughness: 1 });
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        const sb = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.17, 0.16), bag);
+        sb.position.set(Math.cos(a) * 0.42, 0.09, Math.sin(a) * 0.42);
+        sb.rotation.y = -a + Math.PI / 2;
+        sb.castShadow = true;
+        g.add(sb);
+      }
+      this.scene.add(g);
+      this.trenchMeshes.set(k, g);
+    }
+    for (const [k, g] of this.trenchMeshes) if (!live.has(k)) { this.scene.remove(g); this.trenchMeshes.delete(k); }
+  }
+
   /** Запасной вид: куст (половинное укрытие) или дерево из примитивов. */
   private makePlant(t: 'half' | 'full', x: number, y: number, hash: number): THREE.Object3D {
     const g = new THREE.Group();
-    g.position.set(x + 0.5, 0, y + 0.5);
+    g.position.set(x + 0.5, this.hy(x, y), y + 0.5);
     g.rotation.y = hash;
     if (t === 'half') {
       const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), new THREE.MeshStandardMaterial({ color: 0x3f7a2e, flatShading: true }));
@@ -227,6 +322,38 @@ export class GameView {
       g.add(trunk, crown);
     }
     return g;
+  }
+
+  /** Ступенчатый рельеф: верх каждой клетки на своей высоте и отвесные стены между уровнями. */
+  private buildGround() {
+    const { size: n, height } = this.state;
+    const pos: number[] = [], uvs: number[] = [], cols: number[] = [], idx: number[] = [];
+    const quad = (p: number[][], uv: number[][], c: number[]) => {
+      const i0 = pos.length / 3;
+      p.forEach((v, k) => { pos.push(v[0], v[1], v[2]); uvs.push(uv[k][0], uv[k][1]); cols.push(c[0], c[1], c[2]); });
+      idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
+    };
+    const H = (x: number, y: number) => (x < 0 || y < 0 || x >= n || y >= n ? -1.2 : height[y][x]) * STEP;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const h = H(x, y);
+      const tone = 0.86 + height[y][x] * 0.07 + ((x * 31 + y * 17) % 5) * 0.012;
+      quad([[x, h, y], [x, h, y + 1], [x + 1, h, y + 1], [x + 1, h, y]], [[x / 4, y / 4], [x / 4, (y + 1) / 4], [(x + 1) / 4, (y + 1) / 4], [(x + 1) / 4, y / 4]], [tone, tone, tone]);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nh = H(x + dx, y + dy);
+        if (nh >= h - 0.001) continue;
+        const wx = dx === 1 ? x + 1 : x, wz = dy === 1 ? y + 1 : y;
+        const [ax, az, bx, bz] = dx !== 0 ? [wx, y, wx, y + 1] : [x, wz, x + 1, wz];
+        quad([[ax, h, az], [bx, h, bz], [bx, nh, bz], [ax, nh, az]], [[0, 0], [0.25, 0], [0.25, (h - nh) / 4], [0, (h - nh) / 4]], [1.25, 1.0, 0.72]); // обрыв: тёплый земляной цвет поверх зелёной текстуры
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    this.ground.geometry.dispose();
+    this.ground.geometry = geo;
   }
 
   /** Земля по локации: цвет, трава (инстансы) и анимированная вода. */
@@ -247,6 +374,8 @@ export class GameView {
       gcx.fillStyle = pal.alt[i % 3]; gcx.globalAlpha = 0.18 + Math.random() * 0.22;
       gcx.beginPath(); gcx.arc(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 9, 0, 6.3); gcx.fill();
     }
+    gcx.globalAlpha = 0.22; gcx.strokeStyle = '#000'; gcx.lineWidth = 1; // сетка клеток: 4 клетки на текстуру
+    for (let i = 0; i <= 4; i++) { const q = i * 64 + 0.5; gcx.beginPath(); gcx.moveTo(q, 0); gcx.lineTo(q, 256); gcx.moveTo(0, q); gcx.lineTo(256, q); gcx.stroke(); }
     const gt = new THREE.CanvasTexture(gcv);
     gt.wrapS = gt.wrapT = THREE.RepeatWrapping;
     gt.repeat.set(n / 4, n / 4);
@@ -255,10 +384,11 @@ export class GameView {
     ground.map = gt;
     ground.color.set(0xffffff);
     ground.needsUpdate = true;
+    this.buildGround();
     // дальний план и небо, туман в цвет горизонта
     const outer = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), new THREE.MeshStandardMaterial({ color: pal.outer, roughness: 1 }));
     outer.rotation.x = -Math.PI / 2;
-    outer.position.set(n / 2, -0.03, n / 2);
+    outer.position.set(n / 2, -0.75, n / 2);
     outer.receiveShadow = true;
     this.scene.add(outer);
     const sky = new THREE.Mesh(
@@ -289,7 +419,7 @@ export class GameView {
       const m4 = new THREE.Matrix4(), col = new THREE.Color();
       spots.forEach(([px, pz], i) => {
         const s = 0.7 + Math.random() * 0.9;
-        m4.compose(new THREE.Vector3(px, 0.13 * s, pz), new THREE.Quaternion().setFromEuler(new THREE.Euler((Math.random() - 0.5) * 0.3, Math.random() * 6, (Math.random() - 0.5) * 0.3)), new THREE.Vector3(s, s, s));
+        m4.compose(new THREE.Vector3(px, 0.13 * s + this.hy(Math.floor(px), Math.floor(pz)), pz), new THREE.Quaternion().setFromEuler(new THREE.Euler((Math.random() - 0.5) * 0.3, Math.random() * 6, (Math.random() - 0.5) * 0.3)), new THREE.Vector3(s, s, s));
         blades.setMatrixAt(i, m4);
         blades.setColorAt(i, col.set(dense ? [0x4f8a2a, 0x5f9a34, 0x3f7a22, 0x7bb33f][i % 4] : [0x6b6a3a, 0x7a7340][i % 2]));
       });
@@ -324,25 +454,28 @@ export class GameView {
   }
 
   private buildCover() {
-    const { cover, size } = this.state;
+    const { cover, size, look } = this.state;
     const mat = { half: new THREE.MeshStandardMaterial({ color: 0x6b6254 }), full: new THREE.MeshStandardMaterial({ color: 0x4a4f57 }) };
+    const boxOf = (t: 'half' | 'full', x: number, y: number) => {
+      const h = t === 'half' ? 0.6 : 1.4;
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, h, 0.9), mat[t]);
+      box.position.set(x + 0.5, this.hy(x, y) + h / 2, y + 0.5);
+      box.castShadow = box.receiveShadow = true;
+      return box as THREE.Object3D;
+    };
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
       const t = cover[y][x];
-      if (t === 'none' || this.state.beacons.some(b => b.x === x && b.y === y && !b.done) || this.state.barrels.some(b => b.x === x && b.y === y)) continue;
-      const h = t === 'half' ? 0.6 : 1.4;
-      const hash = (x * 7 + y * 13 + x * y) | 0;
-      const model = spawnCover(t, Math.abs(hash), this.state.biome);
+      const l = look[y][x];
+      if (t === 'none' || l === 'house' || this.state.beacons.some(b => b.x === x && b.y === y && !b.done) || this.state.barrels.some(b => b.x === x && b.y === y)) continue;
+      const hash = Math.abs((x * 7 + y * 13 + x * y) | 0);
+      const placed = (o: THREE.Object3D | null) => { if (o) { o.position.set(x + 0.5, this.hy(x, y), y + 0.5); o.rotation.y = (hash % 4) * (Math.PI / 2); } return o; };
       let m: THREE.Object3D;
-      if (model) {
-        m = model;
-        m.position.set(x + 0.5, 0, y + 0.5);
-        m.rotation.y = (Math.abs(hash) % 4) * (Math.PI / 2);
-      } else if (this.state.biome === 'ruins') {
-        const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, h, 0.9), mat[t]);
-        box.position.set(x + 0.5, h / 2, y + 0.5);
-        box.castShadow = box.receiveShadow = true;
-        m = box;
-      } else m = this.makePlant(t, x, y, Math.abs(hash));
+      if (l === 'tree') m = placed(spawnCover('tree', hash)) ?? this.makePlant('full', x, y, hash);
+      else if (l === 'bush') m = this.makePlant('half', x, y, hash);
+      else if (l === 'rock') m = this.makeRock(t, x, y, hash);
+      else if (l === 'crate') m = placed(spawnCover('crate', hash)) ?? boxOf('half', x, y);
+      else if (l === 'container') m = placed(spawnCover('container', hash)) ?? boxOf('full', x, y);
+      else m = boxOf(t, x, y);
       this.scene.add(m);
       this.coverMeshes.set(`${x},${y}`, m);
     }
@@ -352,7 +485,7 @@ export class GameView {
   private buildBarrels() {
     for (const b of this.state.barrels) {
       const g = new THREE.Group();
-      g.position.set(b.x + 0.5, 0, b.y + 0.5);
+      g.position.set(b.x + 0.5, this.hy(b.x, b.y), b.y + 0.5);
       const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.75, 14), new THREE.MeshStandardMaterial({ color: 0xb03030, roughness: 0.6 }));
       body.position.y = 0.375; body.castShadow = true;
       const band = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.12, 14), new THREE.MeshStandardMaterial({ color: 0xe8c02a }));
@@ -371,7 +504,7 @@ export class GameView {
     const dark = new THREE.MeshStandardMaterial({ color: 0x5a4328, roughness: 1 });
     for (const b of this.state.bridges) {
       const g = new THREE.Group();
-      g.position.set(b.x + 0.5, 0.07, b.y + 0.5);
+      g.position.set(b.x + 0.5, 0.07 + this.hy(b.x, b.y), b.y + 0.5);
       for (let i = 0; i < 4; i++) {
         const plank = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.05, 0.2), i % 2 ? wood : dark);
         plank.position.z = -0.36 + i * 0.24; plank.receiveShadow = plank.castShadow = true;
@@ -388,7 +521,7 @@ export class GameView {
       const k = `${f.x},${f.y}`;
       if (this.fireMeshes.has(k)) continue;
       const g = new THREE.Group();
-      g.position.set(f.x + 0.5, 0, f.y + 0.5);
+      g.position.set(f.x + 0.5, this.hy(f.x, f.y), f.y + 0.5);
       g.userData.phase = Math.random() * 6;
       for (let i = 0; i < 4; i++) {
         const flame = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.7, 6), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffb030 : 0xff5a1a, transparent: true, opacity: 0.9 }));
@@ -404,7 +537,7 @@ export class GameView {
       const k = `${x},${y}`;
       if (!scorched[y][x] || this.scorchMeshes.has(k)) continue;
       const m = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), new THREE.MeshBasicMaterial({ color: 0x050505, transparent: true, opacity: 0.55, depthWrite: false }));
-      m.rotation.x = -Math.PI / 2; m.position.set(x + 0.5, 0.022, y + 0.5);
+      m.rotation.x = -Math.PI / 2; m.position.set(x + 0.5, 0.022 + this.hy(x, y), y + 0.5);
       this.scene.add(m);
       this.scorchMeshes.set(k, m);
     }
@@ -414,7 +547,7 @@ export class GameView {
   private buildBeacons() {
     for (const b of this.state.beacons) {
       const g = new THREE.Group();
-      g.position.set(b.x + 0.5, 0, b.y + 0.5);
+      g.position.set(b.x + 0.5, this.hy(b.x, b.y), b.y + 0.5);
       const base = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.45, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x3a3f46 }));
       base.position.y = 0.25; base.castShadow = true;
       const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3.4, 8), new THREE.MeshBasicMaterial({ color: 0xff3347, transparent: true, opacity: 0.85 }));
@@ -509,7 +642,7 @@ export class GameView {
       if (u.hp <= 0) continue;
       alive.add(u.id);
       let m = this.unitMeshes.get(u.id);
-      const goal = new THREE.Vector3(u.x + 0.5, 0, u.y + 0.5);
+      const goal = new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y), u.y + 0.5);
       const key = `${u.x},${u.y}`, prev = this.lastPos.get(u.id);
       if (prev && prev !== key) { const [px, py] = prev.split(',').map(Number); u.facing = Math.atan2(u.x - px, u.y - py); }
       this.lastPos.set(u.id, key);
@@ -535,13 +668,14 @@ export class GameView {
       if (b.done && m) {
         this.beaconMeshes.delete(`${b.x},${b.y}`);
         this.scene.remove(m);
-        const p = new THREE.Vector3(b.x + 0.5, 0.5, b.y + 0.5);
+        const p = new THREE.Vector3(b.x + 0.5, 0.5 + this.hy(b.x, b.y), b.y + 0.5);
         this.burst(p, 0xffb050, 30, 5, 650);
         this.burst(p, 0x555555, 16, 3, 800);
         sfx('grenade');
       }
     }
     this.syncFire();
+    this.syncTrenches();
     for (const [k, o] of this.barrelMeshes) {
       const [bx, by] = k.split(',').map(Number);
       if (!this.state.barrels.some(b => b.x === bx && b.y === by)) { this.scene.remove(o); this.barrelMeshes.delete(k); }
@@ -552,7 +686,7 @@ export class GameView {
       const k = `${m.x},${m.y}`;
       if (this.mineMeshes.has(k)) continue;
       const g = new THREE.Group();
-      g.position.set(m.x + 0.5, 0, m.y + 0.5);
+      g.position.set(m.x + 0.5, this.hy(m.x, m.y), m.y + 0.5);
       const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.06, 12), new THREE.MeshStandardMaterial({ color: 0x2a2f2a }));
       disc.position.y = 0.04;
       const dot = new THREE.Mesh(new THREE.CircleGeometry(0.09, 10), new THREE.MeshBasicMaterial({ color: 0xff3030 }));
@@ -585,12 +719,14 @@ export class GameView {
 
   /** Экранные координаты клетки (для отладки и тестов). */
   screenOf(x: number, y: number) {
-    const v = new THREE.Vector3(x + 0.5, 0.3, y + 0.5).project(this.camera);
+    const v = new THREE.Vector3(x + 0.5, 0.3 + this.hy(x, y), y + 0.5).project(this.camera);
     const r = this.renderer.domElement.getBoundingClientRect();
     return { x: (v.x * 0.5 + 0.5) * r.width + r.left, y: (-v.y * 0.5 + 0.5) * r.height + r.top };
   }
 
   // --- камера и графика ---
+  /** Переместить камеру в клетку (миникарта), независимо от режима «Камера: авто». */
+  panTo(x: number, y: number) { this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
   focusOn(x: number, y: number) { if (this.autoCam) this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
   unfocus() { this.focus = null; }
   getQuality() { return this.quality; }
@@ -660,7 +796,7 @@ export class GameView {
 
   private ring(x: number, y: number, color: number, r0 = 0.3, r1 = 0.42) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 24), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2; ring.position.set(x + 0.5, 0.02, y + 0.5);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(x + 0.5, this.hy(x, y) + 0.04, y + 0.5);
     this.highlight.add(ring);
   }
 
@@ -686,7 +822,7 @@ export class GameView {
       for (let y = 0; y < s.size; y++) for (let x = 0; x < s.size; x++) {
         if (!canThrow(s, u, x, y)) continue;
         const p = new THREE.Mesh(ag, am);
-        p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, 0.01, y + 0.5);
+        p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, this.hy(x, y) + 0.03, y + 0.5);
         this.highlight.add(p);
       }
       return;
@@ -698,7 +834,7 @@ export class GameView {
       const [x, y] = k.split(',').map(Number);
       if (x === u.x && y === u.y) continue;
       const p = new THREE.Mesh(geo, mat);
-      p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, 0.01, y + 0.5);
+      p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, this.hy(x, y) + 0.03, y + 0.5);
       this.highlight.add(p);
     }
   }
@@ -768,9 +904,9 @@ export class GameView {
     const t = this.state.units.find(u => u.id === r.targetId)!;
     if (isVisible(this.state, a) || isVisible(this.state, t)) this.focusOn((a.x + t.x) / 2, (a.y + t.y) / 2);
     const am = this.unitMeshes.get(a.id);
-    const chest = new THREE.Vector3(t.x + 0.5, 0.85, t.y + 0.5);
+    const chest = new THREE.Vector3(t.x + 0.5, 0.85 + this.hy(t.x, t.y), t.y + 0.5);
     const f = a.facing;
-    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, 0.9, a.y + 0.5 + Math.cos(f) * 0.5);
+    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, 0.9 + this.hy(a.x, a.y), a.y + 0.5 + Math.cos(f) * 0.5);
     if (r.psi) {
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([muzzle, chest]), new THREE.LineBasicMaterial({ color: 0xc58bff }));
       const flash = new THREE.PointLight(0xb36bff, 6, 5);
@@ -819,8 +955,8 @@ export class GameView {
     this.blast.visible = false;
     this.play(u.id, 'Punch', true);
     sfx('throw');
-    const from = new THREE.Vector3(u.x + 0.5, 1.0, u.y + 0.5);
-    const to = new THREE.Vector3(x + 0.5, 0.1, y + 0.5);
+    const from = new THREE.Vector3(u.x + 0.5, 1.0 + this.hy(u.x, u.y), u.y + 0.5);
+    const to = new THREE.Vector3(x + 0.5, 0.1 + this.hy(x, y), y + 0.5);
     const dist = from.distanceTo(to);
     const g = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), new THREE.MeshStandardMaterial({ color: 0x3c4a2a }));
     this.scene.add(g);
@@ -839,16 +975,16 @@ export class GameView {
   /** Взрыв: вспышка, огненный шар, искры, урон над целями. */
   private async explode(res: GrenadeResult) {
     const s = this.state;
-    const to = new THREE.Vector3(res.x + 0.5, 0.1, res.y + 0.5);
+    const to = new THREE.Vector3(res.x + 0.5, 0.1 + this.hy(res.x, res.y), res.y + 0.5);
     sfx('grenade');
     const light = new THREE.PointLight(0xffa040, 40, 14);
-    light.position.set(to.x, 0.8, to.z);
+    light.position.set(to.x, to.y + 0.7, to.z);
     const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.85 }));
-    ball.position.set(to.x, 0.5, to.z);
+    ball.position.set(to.x, to.y + 0.4, to.z);
     this.scene.add(light, ball);
-    this.burst(new THREE.Vector3(to.x, 0.3, to.z), 0xffb050, 30, 5, 650);
-    this.burst(new THREE.Vector3(to.x, 0.3, to.z), 0x555555, 18, 3, 800);
-    for (const b of res.broken) this.burst(new THREE.Vector3(b.x + 0.5, 0.3, b.y + 0.5), 0x8a7a62, 10, 2.5, 600);
+    this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0xffb050, 30, 5, 650);
+    this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0x555555, 18, 3, 800);
+    for (const b of res.broken) this.burst(new THREE.Vector3(b.x + 0.5, 0.3 + this.hy(b.x, b.y), b.y + 0.5), 0x8a7a62, 10, 2.5, 600);
     if (res.alerted.length) this.alertFx(res.alerted);
     for (const h of res.hits) {
       const tu = s.units.find(v => v.id === h.id)!;
@@ -870,9 +1006,9 @@ export class GameView {
   async barrelShotFx(a: Unit, res: GrenadeResult) {
     this.focusOn(res.x, res.y);
     const f = a.facing;
-    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, 0.9, a.y + 0.5 + Math.cos(f) * 0.5);
+    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, 0.9 + this.hy(a.x, a.y), a.y + 0.5 + Math.cos(f) * 0.5);
     this.play(a.id, 'Idle_Shoot', true);
-    await this.fireRound(muzzle, new THREE.Vector3(res.x + 0.5, 0.4, res.y + 0.5), 0, true, true, a.team === 'human');
+    await this.fireRound(muzzle, new THREE.Vector3(res.x + 0.5, 0.4 + this.hy(res.x, res.y), res.y + 0.5), 0, true, true, a.team === 'human');
     await this.explode(res);
     this.syncUnits();
   }
@@ -898,7 +1034,7 @@ export class GameView {
     if (s.aiming !== 'grenade' || !u || s.busy) { this.blast.visible = false; return; }
     const t = this.tileAt(e);
     if (!t || !canThrow(s, u, t.x, t.y)) { this.blast.visible = false; return; }
-    this.blast.position.set(t.x + 0.5, 0.03, t.y + 0.5);
+    this.blast.position.set(t.x + 0.5, this.hy(t.x, t.y) + 0.05, t.y + 0.5);
     this.blast.visible = true;
   }
 
@@ -921,7 +1057,7 @@ export class GameView {
     g.strokeText(text, 64, 44); g.fillText(text, 64, 44);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
     sprite.scale.set(1.6, 0.8, 1);
-    sprite.position.set(x, 1.6 + dy, z);
+    sprite.position.set(x, 1.6 + dy + this.hy(Math.floor(x), Math.floor(z)), z);
     this.scene.add(sprite);
     this.floats.push({ sprite, t: 0 });
   }

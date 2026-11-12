@@ -178,7 +178,7 @@ export function loadMission(): MissionSave | null {
   try {
     const raw = localStorage.getItem(MKEY);
     const m = raw ? (JSON.parse(raw) as MissionSave) : null;
-    if (!m || m.state.status !== 'playing' || !Array.isArray(m.state.barrels) || !Array.isArray(m.state.mines)) return null; // старые сохранения несовместимы
+    if (!m || m.state.status !== 'playing' || !Array.isArray(m.state.barrels) || !Array.isArray(m.state.mines) || !Array.isArray(m.state.height) || m.state.size !== 44) return null; // старые сохранения несовместимы
     m.state.busy = false; m.state.aiming = null; m.state.turning = false; m.state.turn = 'human';
     return m;
   } catch { return null; }
