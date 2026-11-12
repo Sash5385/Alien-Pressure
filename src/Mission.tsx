@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { runAlienTurn } from './game/ai';
-import { aimedShot, bandage, canShootBarrel, checkEnd, digIn, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
+import { aimedShot, bandage, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState } from './game/types';
 import { btn, VERSION } from './ui';
@@ -81,7 +81,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const canFire = (canAct && !!sel && sel.ap > 0 && chance !== null) || barrelOk;
   const canBandage = canAct && !!sel && sel.ap > 0 && s.medkits > 0 &&
     living(s, 'human').some(h => h.bleeding && Math.abs(h.x - sel.x) + Math.abs(h.y - sel.y) <= 1);
-  const canGrenade = canAct && !!sel && sel.ap > 0 && sel.grenades > 0;
+  const canGrenade = canAct && !!sel && sel.ap > 0 && sel.grenades > 0 && sel.stance !== 'prone';
   const toggleGrenade = () => {
     if (!canGrenade) return;
     s.aiming = s.aiming === 'grenade' ? null : 'grenade';
@@ -122,6 +122,15 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const doDig = () => {
     if (!canDig || !sel) return;
     if (digIn(s, sel)) sfx('reload');
+    view.current!.syncUnits();
+    rerender();
+  };
+  const rank = { stand: 0, kneel: 1, prone: 2 } as const;
+  const stanceNow = sel?.stance ?? 'stand';
+  const canStance = (st: 'stand' | 'kneel' | 'prone') => canAct && !!sel && st !== stanceNow && (rank[st] <= rank[stanceNow] || sel.ap > 0);
+  const doStance = (st: 'stand' | 'kneel' | 'prone') => {
+    if (!sel || !setStance(s, sel, st)) return;
+    sfx('click');
     view.current!.syncUnits();
     rerender();
   };
@@ -234,6 +243,16 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
             {[`🎖 ${CLASSES[sel.cls].name}`, `🔫 ${sel.team === 'human' ? WEAPONS[sel.weapon].name : ''} ${sel.ammo}/${sel.maxAmmo}`, ...(sel.armor !== 'none' ? [`🛡 ${ARMORS[sel.armor].name}`] : []), `📦 магазины ${sel.mags}`, `💣 гранаты ${sel.grenades}`, `🩹 аптечки ${s.medkits} (отряд)`].map(t => (
               <span key={t} style={{ border: '1px solid #445', borderRadius: 4, padding: '2px 6px', background: '#0008' }}>{t}</span>
             ))}
+          </div>
+        )}
+        {sel && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 4, pointerEvents: 'auto', alignItems: 'center', fontSize: 12 }}>
+            <span style={{ opacity: 0.7 }}>Стойка:</span>
+            {([['stand', 'Стоя'], ['kneel', 'Колено'], ['prone', 'Лёжа']] as const).map(([st, label]) => (
+              <button key={st} disabled={!canStance(st)} title="Опуститься — 1 AP, встать — бесплатно. Лёжа: +10% меткости, −20% шанс попасть по тебе, гранаты нельзя"
+                style={{ ...btn(stanceNow === st, !canStance(st) && stanceNow !== st), padding: '4px 8px', fontSize: 12 }} onClick={() => doStance(st)}>{label}</button>
+            ))}
+            <span style={{ opacity: 0.5, fontSize: 11 }}>вниз — 1 AP</span>
           </div>
         )}
         {s.turning && <div style={{ color: '#9be86a' }}>Поворот: нажми клетку, куда смотреть бойцу (долгое нажатие на карте делает то же).</div>}

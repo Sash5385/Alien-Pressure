@@ -12,7 +12,8 @@ import { reachable, findPath } from '../game/pathfinding';
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 const SPEED = 3.6; // клеток в секунду (было 6,5 — медленнее по просьбе)
-const STEP_MS = Math.round(1000 / SPEED); // пауза на одну клетку пути, чтобы движение шло без рывков
+const ALIEN_SPEED = 2.2; // пришельцы идут медленнее, чтобы их ход было видно
+const speedOf = (u?: Unit) => (u?.team === 'alien' ? ALIEN_SPEED : SPEED);
 
 interface Float { sprite: THREE.Sprite; t: number }
 
@@ -66,8 +67,8 @@ export class GameView {
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.65;
+    this.renderer.toneMapping = THREE.NeutralToneMapping; // сохраняет цвета и светлее, чем ACES
+    this.renderer.toneMappingExposure = 3.5;
     host.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(0x0b0e0c);
@@ -177,7 +178,7 @@ export class GameView {
           const dx = g.x - m.position.x, dz = g.z - m.position.z, dist = Math.hypot(dx, dz);
           // разгон и торможение; бег ускоряется вместе со скоростью
           const vel = this.vel.get(id) ?? 0;
-          const want = dist > 1.6 ? dist * 5 : dist > 0.04 ? SPEED : 0;
+          const want = dist > 1.6 ? dist * 5 : dist > 0.04 ? speedOf(u) : 0;
           const nv = vel + (want - vel) * (1 - Math.exp(-(want > vel ? 14 : 22) * dt));
           this.vel.set(id, nv);
           if (dist > 0.001) {
@@ -190,6 +191,18 @@ export class GameView {
           if (runA) runA.timeScale = 0.6 + nv * 0.18;
           if (dist > 0.12 && this.rigs.has(id)) this.play(id, 'Run');
           else if (this.anim.get(id) === 'Run') this.play(id, 'Idle');
+        }
+        const sp = this.rigs.get(id);
+        if (sp && u && !this.dying.has(id)) {
+          // стойка: колено — клип Duck, лёжа — модель ложится на живот (плавно)
+          const wantIdle = u.stance === 'kneel' ? 'Duck' : 'Idle';
+          const cur = this.anim.get(id);
+          if ((cur === 'Idle' || cur === 'Duck') && cur !== wantIdle && sp.actions.has(wantIdle)) this.play(id, wantIdle, wantIdle === 'Duck');
+          const tp = u.stance === 'prone' ? 1.45 : 0;
+          sp.inner.rotation.x += (tp - sp.inner.rotation.x) * (1 - Math.exp(-9 * dt));
+          const k = sp.inner.rotation.x / 1.45;
+          sp.inner.position.z = -0.5 * k;
+          sp.inner.position.y = 0.16 * k;
         }
         if (u) { // плавный поворот по кратчайшей дуге
           const d = Math.atan2(Math.sin(u.facing - m.rotation.y), Math.cos(u.facing - m.rotation.y));
@@ -591,7 +604,7 @@ export class GameView {
     next.play();
     if (prev && prev !== next) prev.crossFadeTo(next, 0.22, false);
     this.anim.set(id, name);
-    if (once && name !== 'Death') setTimeout(() => { if (this.anim.get(id) === name) this.play(id, 'Idle'); }, next.getClip().duration * 1000);
+    if (once && name !== 'Death' && name !== 'Duck') setTimeout(() => { if (this.anim.get(id) === name) this.play(id, 'Idle'); }, next.getClip().duration * 1000);
   }
 
   /** glTF-модель из public/models/, а если её нет — примитив. */
@@ -744,10 +757,13 @@ export class GameView {
     if (any) sfx('alert');
   }
 
+  /** Высота ствола/груди над землёй по стойке. */
+  private eye(u: Unit) { return u.stance === 'prone' ? 0.3 : u.stance === 'kneel' ? 0.62 : 0.9; }
+
   async moved(u?: Unit) {
     this.syncUnits();
     if (u && isVisible(this.state, u)) this.focusOn(u.x, u.y);
-    await sleep(STEP_MS);
+    await sleep(Math.round(1000 / speedOf(u)));
   }
 
   /** Экранные координаты клетки (для отладки и тестов). */
@@ -822,7 +838,7 @@ export class GameView {
     const { size: n, vis, seen } = this.state;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
       const i = ((n - 1 - y) * n + x) * 4;
-      this.fogData[i + 3] = vis[y][x] ? 0 : seen[y][x] ? 60 : 150;
+      this.fogData[i + 3] = vis[y][x] ? 0 : seen[y][x] ? 40 : 115;
     }
     this.fogTex.needsUpdate = true;
   }
@@ -937,9 +953,9 @@ export class GameView {
     const t = this.state.units.find(u => u.id === r.targetId)!;
     if (isVisible(this.state, a) || isVisible(this.state, t)) this.focusOn((a.x + t.x) / 2, (a.y + t.y) / 2);
     const am = this.unitMeshes.get(a.id);
-    const chest = new THREE.Vector3(t.x + 0.5, 0.85 + this.hy(t.x, t.y), t.y + 0.5);
+    const chest = new THREE.Vector3(t.x + 0.5, this.eye(t) - 0.05 + this.hy(t.x, t.y), t.y + 0.5);
     const f = a.facing;
-    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, 0.9 + this.hy(a.x, a.y), a.y + 0.5 + Math.cos(f) * 0.5);
+    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, this.eye(a) + this.hy(a.x, a.y), a.y + 0.5 + Math.cos(f) * 0.5);
     if (r.psi) {
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([muzzle, chest]), new THREE.LineBasicMaterial({ color: 0xc58bff }));
       const flash = new THREE.PointLight(0xb36bff, 6, 5);
@@ -1039,7 +1055,7 @@ export class GameView {
   async barrelShotFx(a: Unit, res: GrenadeResult) {
     this.focusOn(res.x, res.y);
     const f = a.facing;
-    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, 0.9 + this.hy(a.x, a.y), a.y + 0.5 + Math.cos(f) * 0.5);
+    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, this.eye(a) + this.hy(a.x, a.y), a.y + 0.5 + Math.cos(f) * 0.5);
     this.play(a.id, 'Idle_Shoot', true);
     await this.fireRound(muzzle, new THREE.Vector3(res.x + 0.5, 0.4 + this.hy(res.x, res.y), res.y + 0.5), 0, true, true, a.team === 'human');
     await this.explode(res);
@@ -1121,7 +1137,7 @@ export class GameView {
     else if (at?.team === 'alien') { if (sel) { s.targetId = at.id; s.targetBarrel = null; } }
     else if (barrelAt(s, x, y)) { if (sel) { s.targetBarrel = { x, y }; s.targetId = null; } }
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
-      s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false;
+      s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false; sel.stance = 'stand';
       for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) { sel.x = px; sel.y = py; await this.moved(); }
       s.busy = false;
       checkEnd(s);

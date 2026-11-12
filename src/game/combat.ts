@@ -1,4 +1,4 @@
-import type { GameState, Unit } from './types';
+import type { GameState, Stance, Unit } from './types';
 
 export interface ShotResult {
   attackerId: number;
@@ -75,7 +75,7 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonu
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
-    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t); // скрытая атака, умения, подавление, высота
+    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
   return Math.round(Math.min(95, Math.max(5, c)));
 }
 
@@ -255,7 +255,7 @@ export interface GrenadeResult {
 
 /** Можно ли кинуть гранату в клетку: дальность и исследованная клетка. */
 export function canThrow(s: GameState, u: Unit, x: number, y: number): boolean {
-  return u.grenades > 0 && u.ap > 0 && x >= 0 && y >= 0 && x < s.size && y < s.size &&
+  return u.grenades > 0 && u.ap > 0 && u.stance !== 'prone' && x >= 0 && y >= 0 && x < s.size && y < s.size &&
     Math.hypot(u.x - x, u.y - y) <= GRENADE_RANGE && s.seen[y][x];
 }
 
@@ -275,7 +275,7 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
   for (const t of living(s)) {
     const d = Math.hypot(t.x - x, t.y - y);
     if (d > BLAST) continue;
-    const dmg = Math.max(1, (d <= 1.0 ? 5 : 3) - t.cut - (s.trenches.some(tr => tr.x === t.x && tr.y === t.y) ? 1 : 0));
+    const dmg = Math.max(1, (d <= 1.0 ? 5 : 3) - t.cut - (s.trenches.some(tr => tr.x === t.x && tr.y === t.y) ? 1 : 0) - (t.stance === 'prone' ? 1 : 0));
     t.hp = Math.max(0, t.hp - dmg);
     const killed = t.hp <= 0;
     hits.push({ id: t.id, dmg, killed });
@@ -514,5 +514,24 @@ export function digIn(s: GameState, u: Unit): boolean {
   u.overwatch = false;
   s.trenches.push({ x: u.x, y: u.y });
   log(s, `${u.name} окапывается.`);
+  return true;
+}
+
+/** Защита цели за счёт стойки: колено −10%, лёжа −20% (вблизи, ближе 3 клеток, всего −5%). */
+const stanceDefense = (a: Unit, t: Unit) =>
+  t.stance === 'kneel' ? 10 : t.stance === 'prone' ? (Math.hypot(a.x - t.x, a.y - t.y) < 3 ? 5 : 20) : 0;
+
+const STANCE_RANK = { stand: 0, kneel: 1, prone: 2 } as const;
+const STANCE_NAME = { stand: 'встаёт', kneel: 'опускается на колено', prone: 'ложится' } as const;
+
+/** Смена стойки: опуститься — 1 AP; встать/приподняться — бесплатно. Лёжа: +10% меткости, −20% шанса попасть по тебе, гранаты бросать нельзя. */
+export function setStance(s: GameState, u: Unit, st: Stance): boolean {
+  const cur = u.stance ?? 'stand';
+  if (st === cur) return false;
+  const down = STANCE_RANK[st] > STANCE_RANK[cur];
+  if (down && u.ap <= 0) return false;
+  if (down) u.ap -= 1;
+  u.stance = st;
+  log(s, `${u.name} ${STANCE_NAME[st]}.`);
   return true;
 }

@@ -7,6 +7,7 @@ export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
 export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container';
 export interface House { x: number; y: number; w: number; h: number; id: number; hp: number }
+export type Stance = 'stand' | 'kneel' | 'prone';
 export type Biome = 'ruins' | 'forest' | 'lake';
 export type Terrain = 'ground' | 'water';
 export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage';
@@ -57,6 +58,7 @@ export interface Unit {
   falloffFrom: number;
   falloff: number;
   cut: number; // снижение урона от попадания (броня)
+  stance: Stance; // стоя / на колене / лёжа
   cls: ClassId;
   abilityUsed: number; // применений умения за миссию
   suppressed: boolean; // подавлен: −25% меткости и −1 AP в свой ход

@@ -69,7 +69,7 @@ export function spawnCover(kind: 'tree' | 'crate' | 'container', variant: number
   return g;
 }
 
-export interface Spawned { obj: THREE.Group; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction> }
+export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction> }
 
 /** Клонирует модель, подгоняет высоту (в клетках) и красит (tint — смешивается с исходным цветом). */
 // Все оружия лежат в модели узлами в руке; показываем только выбранное (пустая строка — без оружия)
@@ -94,5 +94,5 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   const mixer = new THREE.AnimationMixer(inner);
   const actions = new Map<string, THREE.AnimationAction>();
   for (const c of m.clips) actions.set(c.name, mixer.clipAction(c));
-  return { obj, mixer, actions };
+  return { obj, inner, mixer, actions };
 }

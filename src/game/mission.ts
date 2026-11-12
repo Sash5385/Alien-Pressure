@@ -13,7 +13,7 @@ const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
   const w = WEAPONS[s.weapon], ar = ARMORS[s.armor];
   const u: Unit = {
     id: s.id, team: 'human', kind: 'soldier', name: s.name, x, y, hp: 8, maxHp: 8, ap: HUMAN_AP, maxAp: HUMAN_AP, move: 5 + w.move + ar.move,
-    aim: w.aim + ar.aim, ammo: w.ammo, maxAmmo: w.ammo, weapon: s.weapon, armor: s.armor, burst: w.burst, falloffFrom: w.falloffFrom, falloff: w.falloff, cut: ar.cut, mags: 2, grenades: 2 + (tech.grenades ? 1 : 0), facing: Math.PI, cls: s.cls, abilityUsed: 0, suppressed: false, alert: true, homeX: x, homeY: y, dmg: w.dmg, range: w.range, overwatch: false,
+    aim: w.aim + ar.aim, ammo: w.ammo, maxAmmo: w.ammo, weapon: s.weapon, armor: s.armor, burst: w.burst, falloffFrom: w.falloffFrom, falloff: w.falloff, cut: ar.cut, mags: 2, grenades: 2 + (tech.grenades ? 1 : 0), facing: Math.PI, stance: 'stand', cls: s.cls, abilityUsed: 0, suppressed: false, alert: true, homeX: x, homeY: y, dmg: w.dmg, range: w.range, overwatch: false,
     bleeding: false, fracture: s.fracture, morale: 70, panic: false, traits: s.traits, perks: s.perks, bio: s.bio, kills: 0,
   };
   applyTraits(u);
@@ -45,7 +45,7 @@ const alien = (id: number, kind: AlienKind, n: number, x: number, y: number, d: 
     id, team: 'alien', kind, name: kind === 'trooper' ? `${NAMES[kind]} ${n}` : NAMES[kind], x, y,
     hp, maxHp: hp, ap: ALIEN_AP, maxAp: ALIEN_AP, move: b.move!, aim: kind === 'psi' ? 0 : b.aim! + DIFF[d].aim,
     ammo: b.ammo!, maxAmmo: b.ammo!, weapon: 'rifle', armor: 'none', burst: kind === 'sniper' ? 1 : kind === 'trooper' ? 2 : 3,
-    falloffFrom: 6, falloff: kind === 'sniper' ? 1 : 3, cut: 0, cls: 'assault', abilityUsed: 0, suppressed: false, alert: false, homeX: x, homeY: y, mags: 99, grenades: 0, facing: 0, dmg: b.dmg!, range: b.range!, overwatch: false,
+    falloffFrom: 6, falloff: kind === 'sniper' ? 1 : 3, cut: 0, stance: 'stand', cls: 'assault', abilityUsed: 0, suppressed: false, alert: false, homeX: x, homeY: y, mags: 99, grenades: 0, facing: 0, dmg: b.dmg!, range: b.range!, overwatch: false,
     bleeding: false, fracture: false, morale: 100, panic: false, traits: [], perks: [], bio: '', kills: 0,
   };
 };

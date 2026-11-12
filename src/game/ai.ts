@@ -18,6 +18,7 @@ async function patrol(s: GameState, u: Unit, h: AiHooks) {
     if ((x !== u.x || y !== u.y) && Math.hypot(x - u.homeX, y - u.homeY) <= 6) cands.push([x, y]);
   }
   u.ap -= 1;
+  u.stance = 'stand';
   if (!cands.length) return;
   const [tx, ty] = cands[Math.floor(rand(s) * cands.length)];
   for (const [x, y] of findPath(s, u.x, u.y, tx, ty, u.move)) {
@@ -61,6 +62,7 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
         // стрелки дальнего боя окапываются, если рядом нет укрытия
         const covered = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => s.cover[u.y + dy]?.[u.x + dx] && s.cover[u.y + dy][u.x + dx] !== 'none');
         if (u.hp > 0 && u.ap > 0 && ['sniper', 'heavy', 'commander'].includes(u.kind) && !covered && !trenchAt(s, u.x, u.y) && digIn(s, u)) await h.moved(u);
+        else if (u.kind === 'sniper' && u.hp > 0 && u.ap > 0 && u.stance !== 'prone') { u.stance = 'prone'; u.ap -= 1; await h.moved(u); } // снайпер ложится
         continue;
       }
 
@@ -79,6 +81,7 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
       }
       if (!best) break;
       u.ap -= 1;
+      u.stance = 'stand';
       for (const [x, y] of findPath(s, u.x, u.y, best[0], best[1], u.move)) {
         u.x = x; u.y = y;
         await h.moved(u);
