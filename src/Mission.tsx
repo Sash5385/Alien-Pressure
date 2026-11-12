@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { runAlienTurn } from './game/ai';
 import { aimedShot, bandage, coverSource, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
-import type { GameState } from './game/types';
+import type { GameState, Unit } from './game/types';
 import { btn, VERSION } from './ui';
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
@@ -69,7 +69,6 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const [showMap, setShowMap] = useState(true);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
   const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-  const bb = (primary = false, off = false) => ({ ...btn(primary, off), ...(touch ? { minHeight: 46, padding: '10px 12px' } : {}) });
   // автосохранение: в начале хода и после каждого действия игрока
   useEffect(() => { if (s.turn === 'human' && !s.busy && s.status === 'playing') onSave(s); });
   useEffect(() => { if (s.status === 'won') sfx('win'); else if (s.status === 'lost') sfx('lose'); }, [s.status]);
@@ -236,73 +235,117 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   }[s.objective];
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
 
+  const humans = s.units.filter(u => u.team === 'human');
+  const half = Math.ceil(humans.length / 2);
+  const nbBase: React.CSSProperties = { background: '#1e2433', color: '#dfe5f2', border: 0, font: 'inherit' };
+  const OUT = '4px 4px 10px #141926, -4px -4px 10px #2a3348', OUTS = '2px 2px 6px #141926, -2px -2px 6px #2a3348', IN = 'inset 2px 2px 6px #141926, inset -2px -2px 6px #2a3348';
+  const nb = (on = false, off = false): React.CSSProperties => ({
+    ...nbBase, color: on ? '#ffd34d' : '#dfe5f2', borderRadius: 14, boxShadow: on ? IN : OUTS, opacity: off ? 0.45 : 1, fontWeight: 700, fontSize: narrow ? 10 : 13,
+    padding: narrow ? '4px 2px' : '6px 8px', minWidth: narrow ? 0 : 76, width: narrow ? '100%' : undefined, minHeight: 46, cursor: off ? 'default' : 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
+  });
+  const round = (on = false): React.CSSProperties => ({ ...nbBase, width: 46, height: 46, borderRadius: '50%', boxShadow: on ? IN : OUTS, color: on ? '#ffd34d' : '#dfe5f2', fontSize: 18, cursor: 'pointer' });
+  const ab = (label: string, sub: string, on: boolean, off: boolean, click: () => void, title?: string) => (
+    <button key={label} style={nb(on, off)} disabled={off} title={title} onClick={click}>{label}{sub && <small style={{ fontWeight: 500, opacity: 0.7, fontSize: 10 }}>{sub}</small>}</button>
+  );
+  const leftBtns = [
+    ab('Заряд', sel ? `маг. ${sel.mags}` : '', false, !canReload, doReload),
+    ab('Граната', sel ? `${sel.grenades}` : '', s.aiming === 'grenade', !canGrenade, toggleGrenade),
+    ab('Окопаться', '', false, !canDig || !sel, doDig, 'Окоп: укрытие со всех сторон, −1 урон от взрывов'),
+  ];
+  const rightBtns = [
+    ab('Бинт', `${s.medkits}`, false, !canBandage, heal),
+    ab('Overwatch', '', false, !canOw, overwatch),
+    sel ? ab(abilityLabel.replace(/ \(.*\)/, ''), abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, CLASSES[sel.cls].desc) : ab('Умение', '', false, true, () => {}),
+    ...(s.objective === 'sabotage' ? [ab('Взорвать', 'маяк', true, !canCharge, doCharge)] : []),
+  ];
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'absolute', top: 8, left: 8, right: 8, pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
-        <b>Миссия {s.missionNo}</b> · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · в поле зрения: {aliens}
-        <div>{info}</div>
-        {sel && !touch && <div style={{ opacity: 0.8, fontSize: 12 }}>{sel.traits.map(t => TRAITS[t].name).join(', ')} — {sel.bio}</div>}
-        {sel && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, fontSize: 12 }}>
-            {[`🎖 ${CLASSES[sel.cls].name}`, `🔫 ${sel.team === 'human' ? WEAPONS[sel.weapon].name : ''} ${sel.ammo}/${sel.maxAmmo}`, ...(sel.armor !== 'none' ? [`🛡 ${ARMORS[sel.armor].name}`] : []), `📦 магазины ${sel.mags}`, `💣 гранаты ${sel.grenades}`, `🩹 аптечки ${s.medkits} (отряд)`].map(t => (
-              <span key={t} style={{ border: '1px solid #445', borderRadius: 4, padding: '2px 6px', background: '#0008' }}>{t}</span>
+      {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
+      <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? '94vw' : 560, pointerEvents: 'none', textAlign: 'center' }}>
+        <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
+          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}
+        </div>
+      </div>
+      {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (
+        <div key={side as string} style={{ position: 'absolute', top: narrow ? 46 : 8, [side as string]: 8, display: 'flex', flexDirection: 'column', gap: 6, alignItems: side === 'left' ? 'flex-start' : 'flex-end', width: narrow ? '46vw' : undefined }}>
+          {(list as Unit[]).map(u => (
+            <button key={u.id} disabled={u.hp <= 0 || !canAct} onClick={() => pick(u.id)} title={u.traits.map(t => TRAITS[t].name).join(', ')}
+              style={{ ...nbBase, borderRadius: 14, boxShadow: u.id === s.selectedId ? IN : OUTS, color: u.id === s.selectedId ? '#ffd34d' : '#dfe5f2', padding: '6px 10px', fontSize: narrow ? 11 : 12, fontWeight: 700, minWidth: narrow ? 0 : 160, width: narrow ? '100%' : undefined, opacity: u.hp <= 0 ? 0.4 : 1, textDecoration: u.hp <= 0 ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between', cursor: 'pointer', minHeight: touch ? 40 : undefined }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}{u.bleeding ? ' 🩸' : ''}{u.panic ? ' ⚠' : ''}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
+                <span style={{ width: 36, height: 6, borderRadius: 3, boxShadow: IN, position: 'relative' }}><b style={{ position: 'absolute', inset: '0 auto 0 0', width: `${Math.max(0, u.hp) / u.maxHp * 100}%`, borderRadius: 3, background: u.hp / u.maxHp < 0.5 ? '#ff7a7a' : '#6fe39a' }} /></span>
+                <i style={{ fontStyle: 'normal', opacity: 0.7, fontWeight: 500 }}>{u.hp}/{u.maxHp}</i>
+              </span>
+            </button>
+          ))}
+        </div>
+      ))}
+      {/* ——— инфо о бойце и цели, по центру ——— */}
+      <div style={{ position: 'absolute', top: narrow ? 150 : 50, left: '50%', transform: 'translateX(-50%)', width: narrow ? '94vw' : 560, display: 'grid', gap: 5, justifyItems: 'center', textAlign: 'center', pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
+        <div style={{ fontWeight: 700 }}>{info}</div>
+        {sel && !narrow && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', fontSize: 12 }}>
+            {[`🎖 ${CLASSES[sel.cls].name}`, `🔫 ${sel.team === 'human' ? WEAPONS[sel.weapon].name : ''} ${sel.ammo}/${sel.maxAmmo}`, ...(sel.armor !== 'none' ? [`🛡 ${ARMORS[sel.armor].name}`] : []), `📦 ${sel.mags}`, `💣 ${sel.grenades}`, ...(s.medkits > 0 ? [`➕ ${s.medkits}`] : [])].map(t => (
+              <span key={t} style={{ borderRadius: 999, padding: '2px 8px', background: '#1e2433cc' }}>{t}</span>
             ))}
           </div>
         )}
         {sel && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 4, pointerEvents: 'auto', alignItems: 'center', fontSize: 12 }}>
-            <span style={{ opacity: 0.7 }}>Стойка:</span>
+          <div style={{ display: 'flex', gap: 6, pointerEvents: 'auto', alignItems: 'center' }}>
             {([['stand', 'Стоя'], ['kneel', 'Колено'], ['prone', 'Лёжа']] as const).map(([st, label]) => (
               <button key={st} disabled={!canStance(st)} title="Опуститься — 1 AP, встать — бесплатно. Лёжа: +10% меткости, −20% шанс попасть по тебе, гранаты нельзя"
-                style={{ ...btn(stanceNow === st, !canStance(st) && stanceNow !== st), padding: '4px 8px', fontSize: 12 }} onClick={() => doStance(st)}>{label}</button>
+                style={{ ...nb(stanceNow === st, !canStance(st) && stanceNow !== st), minWidth: 0, minHeight: touch ? 40 : 32, padding: '4px 12px', borderRadius: 999, fontSize: 12 }} onClick={() => doStance(st)}>{label}</button>
             ))}
-            <span style={{ opacity: 0.5, fontSize: 11 }}>вниз — 1 AP</span>
           </div>
         )}
         {s.turning && <div style={{ color: '#9be86a' }}>Поворот: нажми клетку, куда смотреть бойцу (долгое нажатие на карте делает то же).</div>}
         {s.aiming === 'grenade' && <div style={{ color: '#ffb36b' }}>Бросок гранаты: кликни клетку в оранжевой зоне (красный круг — радиус взрыва, бьёт и по своим). ПКМ — отмена.</div>}
         {tb && !tgt && <div style={{ color: '#ff8a8a' }}>Цель: взрывоопасная бочка · {barrelOk ? 'попадание 100%, взрыв радиусом 2' : 'нет линии огня'}</div>}
-        {sel && !tgt && !s.aiming && !s.turning && <div style={{ fontSize: 12, opacity: 0.75 }}>Укрытие защищает со стороны, где оно стоит: <span style={{ color: '#3cff7a' }}>зелёная полоска</span> — полное (−40% к попаданию), <span style={{ color: '#ffd34d' }}>жёлтая</span> — половинное (−20%). Зелёные клетки — где можно укрыться.</div>}
+        {!narrow && sel && !tgt && !s.aiming && !s.turning && <div style={{ fontSize: 12, opacity: 0.75 }}>Укрытие защищает со стороны, где оно стоит: <span style={{ color: '#3cff7a' }}>зелёная полоска</span> — полное (−40% к попаданию), <span style={{ color: '#ffd34d' }}>жёлтая</span> — половинное (−20%). Зелёные клетки — где можно укрыться.</div>}
         {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `шанс ${chance}%`}{chance !== null && sel && (() => { const cs = coverSource(s, sel, tgt); return cs ? ` · укрытие −${cs.bonus}% (${cs.trench ? 'окоп' : cs.bonus === 40 ? 'полное' : 'половинное'})` : ' · без укрытия'; })()}</div>}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, pointerEvents: 'auto' }}>
-          {s.units.filter(u => u.team === 'human').map(u => (
-            <button key={u.id} disabled={u.hp <= 0 || !canAct} onClick={() => pick(u.id)}
-              style={{ ...btn(false, u.hp <= 0), padding: '4px 8px', fontSize: 12, border: u.id === s.selectedId ? '1px solid #ffd34d' : '1px solid #556', textDecoration: u.hp <= 0 ? 'line-through' : 'none' }}>
-              {u.name} {u.hp}/{u.maxHp}{u.bleeding ? ' 🩸' : ''}{u.panic ? ' ⚠' : ''}
-            </button>
-          ))}
-          {(!narrow || more) && <>
-          <button style={{ ...btn(s.turning), padding: '4px 8px', fontSize: 12 }} onClick={() => { s.turning = !s.turning; s.aiming = null; rerender(); }}>↻ Поворот</button>
-          {!touch && <span style={{ alignSelf: 'center', fontSize: 11, opacity: 0.6 }}>ПКМ — повернуть бойца · СКМ — сдвиг камеры</span>}
-          {touch && (!narrow || more) && <span style={{ alignSelf: 'center', fontSize: 11, opacity: 0.7 }}>1 палец — двигать карту · 2 пальца — вращать, щипок — масштаб · долгое нажатие — повернуть бойца</span>}
-          <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графика: {view.current?.getQuality() === 'low' ? 'обычная' : 'высокая'}</button>
-          <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручная' : 'авто'}</button>
-          <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>
-          </>}
-          <button style={{ ...btn(showMap), padding: '4px 8px', fontSize: 12 }} onClick={() => setShowMap(!showMap)}>🗺</button>
-          <span style={{ alignSelf: 'center', fontSize: 11, opacity: 0.45 }}>{VERSION}</span>
-          {narrow && <button style={{ ...btn(more), padding: '4px 8px', fontSize: 12 }} onClick={() => setMore(!more)}>⚙</button>}
-        </div>
       </div>
+      {/* ——— низ: миникарта и меню по углам, диск действий по центру ——— */}
       {showMap && (
-        <div style={{ position: 'absolute', right: 8, top: narrow ? 210 : 140 }}>
+        <div style={{ position: 'absolute', left: 8, bottom: narrow ? 150 : 8, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 6 }}>
           <Minimap s={s} narrow={narrow} onPick={(x, y) => view.current?.panTo(x, y)} />
         </div>
       )}
-      <div style={{ position: 'absolute', left: 8, right: 8, bottom: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
-        <div style={{ flex: '1 1 200px', maxHeight: 110, overflow: 'hidden', fontSize: narrow ? 11 : 12, textShadow: '0 1px 2px #000', pointerEvents: 'none' }}>
-          {s.log.slice(narrow ? -2 : -5).map((l, i) => <div key={s.log.length + ':' + i}>{l}</div>)}
+      <div style={{ position: 'absolute', right: 8, bottom: narrow ? 150 : 8, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+        {more && (
+          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, fontSize: 12 }}>
+            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графика: {view.current?.getQuality() === 'low' ? 'обычная' : 'высокая'}</button>
+            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручная' : 'авто'}</button>
+            <button style={nb(false, false)} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>
+            <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палец — двигать карту, 2 — вращать, щипок — масштаб, долгое нажатие — повернуть бойца.' : 'ПКМ — повернуть бойца, СКМ — сдвиг камеры.'}</div>
+            <div style={{ opacity: 0.45, textAlign: 'center' }}>{VERSION}</div>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={round(showMap)} title="Миникарта" onClick={() => setShowMap(!showMap)}>🗺</button>
+          <button style={round(s.turning)} title="Повернуть бойца" onClick={() => { s.turning = !s.turning; s.aiming = null; rerender(); }}>↻</button>
+          <button style={round(more)} title="Настройки" onClick={() => setMore(!more)}>⚙</button>
         </div>
-        <button style={bb(true, !canFire)} disabled={!canFire} onClick={fire}>Огонь{chance !== null ? ` ${chance}%` : tb ? ' по бочке' : ''}</button>
-        <button style={bb(false, !canReload)} disabled={!canReload} onClick={doReload}>Заряд{sel ? ` (${sel.mags})` : ''}</button>
-        {sel && <button style={bb(false, !canDig)} disabled={!canDig} title="Окоп: укрытие со всех сторон, −1 урон от взрывов" onClick={doDig}>Окопаться</button>}
-        {sel && <button style={bb(false, !canAbility)} disabled={!canAbility} title={CLASSES[sel.cls].desc} onClick={doAbility}>{abilityLabel}</button>}
-        <button style={bb(s.aiming === 'grenade', !canGrenade)} disabled={!canGrenade} onClick={toggleGrenade}>Граната{sel ? ` (${sel.grenades})` : ''}</button>
-        {s.objective === 'sabotage' && <button style={bb(true, !canCharge)} disabled={!canCharge} onClick={doCharge}>Взорвать маяк</button>}
-        <button style={bb(false, !canBandage)} disabled={!canBandage} onClick={heal}>Бинт ({s.medkits})</button>
-        <button style={bb(false, !canOw)} disabled={!canOw} onClick={overwatch}>Overwatch</button>
-        <button style={bb(false, !canAct)} disabled={!canAct} onClick={endTurn}>Конец хода</button>
+      </div>
+      <div style={{ position: 'absolute', left: '50%', bottom: 8, transform: 'translateX(-50%)', display: 'grid', gap: 8, justifyItems: 'center', width: narrow ? 'calc(100vw - 16px)' : undefined }}>
+        <div style={{ maxWidth: narrow ? '34vw' : 420, fontSize: narrow ? 9 : 12, textAlign: 'center', textShadow: '0 1px 2px #000', pointerEvents: 'none', maxHeight: narrow ? 42 : 64, overflow: 'hidden' }}>
+          {s.log.slice(narrow ? -1 : -3).map((l, i) => <div key={s.log.length + ':' + i}>{l}</div>)}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: narrow ? 6 : 14 }}>
+          <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? 'calc((100vw - 16px - 84px - 12px) / 2)' : undefined }}>
+            {leftBtns.map((b, i) => <div key={i} style={{ marginBottom: narrow ? 0 : i * 16, minWidth: 0 }}>{b}</div>)}
+          </div>
+          <div style={{ display: 'grid', gap: 8, justifyItems: 'center' }}>
+            <button style={{ ...nb(false, !canAct), color: '#ffd34d', minWidth: narrow ? 84 : 110 }} disabled={!canAct} onClick={endTurn}>Конец хода</button>
+            <button disabled={!canFire} onClick={fire} style={{ width: narrow ? 84 : 104, height: narrow ? 84 : 104, borderRadius: '50%', border: 0, background: 'linear-gradient(145deg,#ffdf74,#e8b32a)', color: '#2b2410', fontWeight: 800, fontSize: narrow ? 14 : 16, font: 'inherit', cursor: canFire ? 'pointer' : 'default', opacity: canFire ? 1 : 0.45, boxShadow: OUT, display: 'grid', placeItems: 'center', alignContent: 'center' }}>
+              <span style={{ fontWeight: 800 }}>ОГОНЬ</span>
+              <small style={{ fontWeight: 600, opacity: 0.75 }}>{chance !== null ? `${chance}%` : tb ? 'бочка' : ''}</small>
+            </button>
+          </div>
+          <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? 'calc((100vw - 16px - 84px - 12px) / 2)' : undefined }}>
+            {rightBtns.map((b, i) => <div key={i} style={{ marginBottom: narrow ? 0 : (rightBtns.length - 1 - i) * 16, minWidth: 0 }}>{b}</div>)}
+          </div>
+        </div>
       </div>
       {s.status !== 'playing' && (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#000a' }}>
