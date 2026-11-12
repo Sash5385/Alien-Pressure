@@ -250,6 +250,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           {(!narrow || more) && <>
           <button style={{ ...btn(s.turning), padding: '4px 8px', fontSize: 12 }} onClick={() => { s.turning = !s.turning; s.aiming = null; rerender(); }}>↻ Поворот</button>
           {!touch && <span style={{ alignSelf: 'center', fontSize: 11, opacity: 0.6 }}>ПКМ — повернуть бойца · СКМ — сдвиг камеры</span>}
+          {touch && (!narrow || more) && <span style={{ alignSelf: 'center', fontSize: 11, opacity: 0.7 }}>1 палец — двигать карту · 2 пальца — вращать, щипок — масштаб · долгое нажатие — повернуть бойца</span>}
           <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графика: {view.current?.getQuality() === 'low' ? 'обычная' : 'высокая'}</button>
           <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручная' : 'авто'}</button>
           <button style={{ ...btn(), padding: '4px 8px', fontSize: 12 }} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>

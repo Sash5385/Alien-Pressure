@@ -67,7 +67,7 @@ export class GameView {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.35;
+    this.renderer.toneMappingExposure = 1.65;
     host.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(0x0b0e0c);
@@ -82,12 +82,15 @@ export class GameView {
     this.controls.maxDistance = 64;
     // ПКМ занят поворотом бойца; сдвиг камеры — средняя кнопка (на тач — двумя пальцами)
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: null as unknown as THREE.MOUSE };
+    // тач: один палец двигает карту, два — поворот и масштаб щипком; сдвиг по земле, а не по экрану
+    this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+    this.controls.screenSpacePanning = false;
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.addEventListener('start', () => { this.focus = null; });
 
-    this.scene.add(new THREE.HemisphereLight(0x8899aa, 0x222018, 0.7));
-    const sun = new THREE.DirectionalLight(0xffe0b0, 1.4);
+    this.scene.add(new THREE.HemisphereLight(0xc2d0e0, 0x5a5040, 1.3));
+    const sun = new THREE.DirectionalLight(0xfff0d0, 2.0);
     this.sun = sun;
     sun.position.set(n, 20, n * 0.2);
     sun.castShadow = true;
@@ -366,9 +369,9 @@ export class GameView {
     const { size: n, biome, terrain, cover } = this.state;
     const ground = this.ground.material as THREE.MeshStandardMaterial;
     const pal = {
-      ruins: { g: '#3a3f33', alt: ['#464b3c', '#2f332a', '#4a4535'], hor: 0x2a3340, top: 0x131b25, outer: 0x1b1f19 },
-      forest: { g: '#2f5226', alt: ['#3a6530', '#264620', '#4a6a2c'], hor: 0x203628, top: 0x0c1f14, outer: 0x142814 },
-      lake: { g: '#35592a', alt: ['#416b33', '#2c4d23', '#52703a'], hor: 0x23415a, top: 0x0f2236, outer: 0x15301f },
+      ruins: { g: '#5a6050', alt: ['#666c58', '#4a4f40', '#6a6450'], hor: 0x50627a, top: 0x2a3a50, outer: 0x2c3128 },
+      forest: { g: '#437a35', alt: ['#508c40', '#386a2c', '#609040'], hor: 0x3c6448, top: 0x1c3c2a, outer: 0x244a22 },
+      lake: { g: '#4a8038', alt: ['#569244', '#3c6e2e', '#68984a'], hor: 0x4474a0, top: 0x203c5a, outer: 0x28522c },
     }[biome];
     // текстура земли: пятна травы/грунта
     const gcv = document.createElement('canvas');
@@ -791,7 +794,7 @@ export class GameView {
       c.setPixelRatio(this.dpr);
       c.setSize(w, h);
       c.addPass(new RenderPass(this.scene, this.camera));
-      c.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.4, 0.5, 0.88));
+      c.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.5, 1.0));
       c.addPass(new OutputPass());
       this.composer = c;
     }
@@ -819,7 +822,7 @@ export class GameView {
     const { size: n, vis, seen } = this.state;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
       const i = ((n - 1 - y) * n + x) * 4;
-      this.fogData[i + 3] = vis[y][x] ? 0 : seen[y][x] ? 95 : 215;
+      this.fogData[i + 3] = vis[y][x] ? 0 : seen[y][x] ? 60 : 150;
     }
     this.fogTex.needsUpdate = true;
   }
