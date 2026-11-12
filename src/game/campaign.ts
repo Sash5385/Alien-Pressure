@@ -26,6 +26,7 @@ export const OBJECTIVE_NAME: Record<Objective, string> = {
   clear: 'Зачистка',
   extract: 'Эвакуация',
   hold: 'Удержание',
+  defend: 'Оборона',
   assassinate: 'Ликвидация',
   sabotage: 'Диверсия',
 };
@@ -114,7 +115,7 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
   if (s.status === 'won') {
     c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : c.objective === 'assassinate' || c.objective === 'sabotage' ? 3 : 2);
     c.missionNo += 1;
-    c.objective = (['clear', 'extract', 'hold', 'assassinate', 'sabotage'] as const)[Math.floor(rand(c) * 5)];
+    c.objective = (['clear', 'extract', 'hold', 'assassinate', 'sabotage', 'defend'] as const)[Math.floor(rand(c) * 6)];
     c.biome = pickBiome(c);
   } else c.over = true;
   if (c.roster.length === 0) c.over = true;

@@ -196,7 +196,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     if (!canAct) return;
     sfx('turnEnemy');
     s.turn = 'alien'; s.busy = true; s.targetId = null; s.aiming = null;
-    if (s.objective === 'hold' && s.turnNo % 2 === 0) reinforce(s);
+    if ((s.objective === 'hold' && s.turnNo % 2 === 0) || s.objective === 'defend') reinforce(s);
     view.current!.syncUnits();
     rerender();
     await runAlienTurn(s, {
@@ -230,6 +230,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     clear: 'зачистка',
     extract: 'эвакуация: все в зелёную зону',
     hold: `удержание ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`,
+    defend: `оборона ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`,
     assassinate: cmd ? `убить командира (HP ${cmd.hp}/${cmd.maxHp})` : 'командир убит',
     sabotage: `маяки ${s.beacons.filter(b => b.done).length}/${s.beacons.length}`,
   }[s.objective];

@@ -33,6 +33,7 @@ export class GameView {
   private rigs = new Map<number, Spawned>();
   private anim = new Map<number, string>();
   private dying = new Set<number>();
+  private corpses = new Map<number, THREE.Object3D>(); // трупы остаются на карте
   private clock = new THREE.Clock();
   private goals = new Map<number, THREE.Vector3>();
   private highlight = new THREE.Group();
@@ -699,9 +700,10 @@ export class GameView {
       if (this.rigs.get(id)?.actions.has('Death')) {
         this.dying.add(id);
         this.play(id, 'Death', true);
-        setTimeout(() => { this.scene.remove(m); this.unitMeshes.delete(id); this.goals.delete(id); this.rigs.delete(id); this.dying.delete(id); }, 1300);
-      } else { this.scene.remove(m); this.unitMeshes.delete(id); this.goals.delete(id); }
+        setTimeout(() => { this.corpses.set(id, m); this.unitMeshes.delete(id); this.goals.delete(id); this.dying.delete(id); }, 1300);
+      } else { m.rotation.z = Math.PI / 2; m.position.y += 0.15; this.corpses.set(id, m); this.unitMeshes.delete(id); this.goals.delete(id); }
     }
+    for (const m of this.corpses.values()) { const cx = Math.floor(m.position.x), cy = Math.floor(m.position.z); m.visible = !!this.state.seen[cy]?.[cx]; }
     for (const [k, m] of this.coverMeshes) {
       const [cx, cy] = k.split(',').map(Number);
       if (this.state.cover[cy][cx] === 'none') {

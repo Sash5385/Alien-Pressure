@@ -10,7 +10,7 @@ export interface House { x: number; y: number; w: number; h: number; id: number;
 export type Stance = 'stand' | 'kneel' | 'prone';
 export type Biome = 'ruins' | 'forest' | 'lake';
 export type Terrain = 'ground' | 'water';
-export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage';
+export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage' | 'defend';
 export type PerkId = 'aim' | 'hp' | 'nerve';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface Tech { armor: boolean; optics: boolean; kits: boolean; grenades: boolean }

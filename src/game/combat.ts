@@ -147,7 +147,7 @@ export function checkEnd(s: GameState) {
   const humans = living(s, 'human');
   if (humans.length === 0) { s.status = 'lost'; return; }
   const z = s.zone;
-  if (s.objective === 'hold') { if (s.turnNo > s.holdTurns) s.status = 'won'; return; }
+  if (s.objective === 'hold' || s.objective === 'defend') { if (s.turnNo > s.holdTurns) s.status = 'won'; return; }
   if (s.objective === 'assassinate') { if (!living(s, 'alien').some(a => a.kind === 'commander')) s.status = 'won'; return; }
   if (s.objective === 'sabotage') { if (s.beacons.length > 0 && s.beacons.every(b => b.done)) s.status = 'won'; return; }
   if (living(s, 'alien').length === 0) s.status = 'won';
