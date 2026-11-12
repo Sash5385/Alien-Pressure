@@ -8,16 +8,19 @@ export const NM = {
   inn: 'inset 2px 2px 6px #141926, inset -2px -2px 6px #2a3348',
 };
 
-/** Кнопка. primary = выбрано/нажато (вдавлена, акцентный цвет). */
+const bevel = 'polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)';
+
+/** Кнопка со скошенными углами. primary = выбрано (акцентная рамка и текст). */
 export const btn = (primary = false, off = false): CSSProperties => ({
-  padding: '10px 14px', border: 0, borderRadius: 14, color: primary ? NM.accent : NM.fg, fontWeight: 700,
-  background: NM.bg, boxShadow: primary ? NM.inn : NM.outS, opacity: off ? 0.45 : 1, font: 'inherit', cursor: off ? 'default' : 'pointer',
+  padding: '10px 16px', border: 0, color: primary ? NM.accent : NM.fg, fontWeight: 700, clipPath: bevel,
+  background: NM.bg,
+  boxShadow: `inset 0 0 0 1px ${primary ? NM.accent : '#2f3a54'}`, opacity: off ? 0.45 : 1, font: 'inherit', cursor: off ? 'default' : 'pointer',
 });
 
-/** Главное действие: выпуклая жёлтая кнопка. */
+/** Главное действие: залитая акцентом кнопка со скошенными углами. */
 export const cta = (off = false): CSSProperties => ({
-  padding: '12px 20px', border: 0, borderRadius: 14, color: '#2b2410', fontWeight: 800, font: 'inherit',
-  background: 'linear-gradient(145deg,#ffdf74,#e8b32a)', boxShadow: NM.out, opacity: off ? 0.45 : 1, cursor: off ? 'default' : 'pointer',
+  padding: '12px 22px', border: 0, color: '#1a1405', fontWeight: 800, font: 'inherit', clipPath: bevel,
+  background: NM.accent, opacity: off ? 0.45 : 1, cursor: off ? 'default' : 'pointer',
 });
 
 export const VERSION = `v${__APP_VERSION__}`;
