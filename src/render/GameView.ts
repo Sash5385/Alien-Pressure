@@ -12,6 +12,8 @@ import { reachable, findPath } from '../game/pathfinding';
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 const SPEED = 3.6; // клеток в секунду (было 6,5 — медленнее по просьбе)
+const BULLET_SPEED = 18; // клеток/с: пулю видно в полёте (было 60)
+const BURST_GAP = 190; // мс между патронами очереди (было 75)
 const ALIEN_SPEED = 2.2; // пришельцы идут медленнее, чтобы их ход было видно
 const speedOf = (u?: Unit) => (u?.team === 'alien' ? ALIEN_SPEED : SPEED);
 
@@ -762,6 +764,7 @@ export class GameView {
 
   async moved(u?: Unit) {
     this.syncUnits();
+    if (u && u.team === 'alien' && !isVisible(this.state, u)) return; // в тумане не ждём: игрок этого не видит
     if (u && isVisible(this.state, u)) this.focusOn(u.x, u.y);
     await sleep(Math.round(1000 / speedOf(u)));
   }
@@ -925,7 +928,7 @@ export class GameView {
     const core = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfff0b0 }));
     core.position.copy(pos);
     this.scene.add(light, core);
-    void this.tween(75, k => { core.scale.setScalar(1 + k * 0.6); light.intensity = 10 * (1 - k); }).then(() => {
+    void this.tween(140, k => { core.scale.setScalar(1 + k * 0.6); light.intensity = 10 * (1 - k); }).then(() => {
       this.scene.remove(light, core);
       core.geometry.dispose();
     });
@@ -940,7 +943,7 @@ export class GameView {
     bullet.position.copy(from);
     bullet.lookAt(to);
     this.scene.add(bullet);
-    await this.tween(Math.max(60, (from.distanceTo(to) / 60) * 1000), k => bullet.position.lerpVectors(from, to, k));
+    await this.tween(Math.max(260, (from.distanceTo(to) / BULLET_SPEED) * 1000), k => bullet.position.lerpVectors(from, to, k));
     this.scene.remove(bullet);
     bullet.geometry.dispose();
     this.burst(to, hit ? 0xff5533 : 0xffd27a, hit ? 14 : 8, hit ? 2.6 : 1.8);
@@ -963,11 +966,12 @@ export class GameView {
       this.scene.add(line, flash);
       sfx('psi');
       this.floatText(t.x + 0.5, t.y + 0.5, r.hit ? 'давление' : 'устоял', r.hit ? '#ff6b6b' : '#c9ced3');
-      await sleep(450);
+      await sleep(800);
       this.scene.remove(line, flash);
       line.geometry.dispose();
       return;
     }
+    if (!r.reaction) await sleep(a.team === 'alien' ? 450 : 150); // пауза на прицеливание: стрелок успевает повернуться
     this.play(a.id, 'Idle_Shoot', true);
     const rounds = a.burst;
     const shots: Promise<void>[] = [];
@@ -979,7 +983,7 @@ export class GameView {
         to.z += (Math.random() - 0.5) * (last ? 1.6 : 1.1);
         to.y = 0.15 + Math.random() * 0.9;
       }
-      shots.push(this.fireRound(muzzle, to, i * 75, last && r.hit, last, a.team === 'human'));
+      shots.push(this.fireRound(muzzle, to, i * BURST_GAP, last && r.hit, last, a.team === 'human'));
     }
     if (am) { am.position.x -= Math.sin(f) * 0.07; am.position.z -= Math.cos(f) * 0.07; } // отдача
     await Promise.all(shots);
@@ -992,7 +996,7 @@ export class GameView {
     if (r.broken) this.floatText(t.x + 0.5, t.y + 0.5, 'укрытие', '#ffd34d', 0.5);
     if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
     if (r.killed) setTimeout(() => sfx('death'), 120);
-    await sleep(r.reaction ? 120 : 180);
+    await sleep(r.reaction ? 300 : 550);
   }
 
   /** Бросок гранаты: дуга, взрыв, урон по площади. */
