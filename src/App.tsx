@@ -5,7 +5,7 @@ import { DIFF } from './game/difficulty';
 import { createMission } from './game/mission';
 import type { Difficulty, GameState } from './game/types';
 import { Mission } from './Mission';
-import { btn, BUILD, VERSION } from './ui';
+import { btn, BUILD, cta, VERSION } from './ui';
 
 type Screen_ = 'menu' | 'camp' | 'mission';
 
@@ -60,12 +60,12 @@ export function App() {
       <h1 style={{ margin: '24px 0 0', fontSize: 32 }}>Alien Pressure <span style={{ fontSize: 14, opacity: 0.6, fontWeight: 400 }}>{VERSION}</span></h1>
       <p style={{ margin: 0, opacity: 0.8 }}>Подпольный отряд землян против пришельцев. Кровь, паника, патроны на счёт.</p>
       {midSave && saved && !saved.over && (
-        <button style={btn(true)} onClick={() => { setC(midSave.before); setMission({ state: midSave.state, deployed: midSave.deployed, before: midSave.before, run: Date.now() }); setScreen('mission'); }}>
+        <button style={cta()} onClick={() => { setC(midSave.before); setMission({ state: midSave.state, deployed: midSave.deployed, before: midSave.before, run: Date.now() }); setScreen('mission'); }}>
           Продолжить миссию {midSave.before.missionNo} (ход {midSave.state.turnNo})
         </button>
       )}
       {saved && !saved.over && (
-        <button style={btn(true)} onClick={() => setScreen('camp')}>
+        <button style={cta()} onClick={() => setScreen('camp')}>
           Продолжить: миссия {saved.missionNo}, бойцов {saved.roster.length}
         </button>
       )}

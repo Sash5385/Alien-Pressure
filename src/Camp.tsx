@@ -5,9 +5,9 @@ import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
 import { ARMORS, WEAPONS } from './game/weapons';
-import { btn } from './ui';
+import { btn, cta, NM } from './ui';
 
-const panel: React.CSSProperties = { background: '#161b1f', border: '1px solid #2c343b', borderRadius: 8, padding: 12 };
+const panel: React.CSSProperties = { background: NM.bg, boxShadow: NM.out, borderRadius: 18, padding: 14 };
 
 export function Camp({ c, onChange, onStart, onMenu }: {
   c: Campaign;
@@ -38,7 +38,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
           <b>Мемориал</b>
           {c.fallen.map((f, i) => <div key={i}>{f.name} — миссия {f.mission}</div>)}
         </div>
-        <button style={btn(true)} onClick={onMenu}>В меню</button>
+        <button style={cta()} onClick={onMenu}>В меню</button>
       </Screen>
     );
   }
@@ -49,7 +49,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         <h1 style={{ margin: 0, fontSize: 22 }}>Подпольная база</h1>
         <span>Следующая миссия: {c.missionNo} — {OBJECTIVE_NAME[c.objective]} · {BIOME_NAME[c.biome]}</span>
         <span>Сложность: {DIFF[c.difficulty].label}</span>
-        <b style={{ color: '#ffd34d' }}>Трофеи: {c.scrap}</b>
+        <b style={{ color: NM.accent }}>Трофеи: {c.scrap}</b>
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
         <span style={{ opacity: 0.7 }}>Размер карты:</span>
@@ -62,7 +62,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         const max = maxHpOf(s, c.tech);
         const on = ids.includes(s.id);
         return (
-          <div key={s.id} style={{ ...panel, borderColor: on ? '#ffd34d' : '#2c343b' }}>
+          <div key={s.id} style={{ ...panel, boxShadow: on ? NM.inn : NM.out }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
               <b style={{ flex: '1 1 140px' }}>{RANKS[s.rank]} {s.name}</b>
               <span>HP {Math.max(1, max - s.hpLoss)}/{max}{s.fracture ? ' · перелом' : ''}</span>
@@ -135,7 +135,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         <div style={{ fontSize: 13, opacity: 0.7 }}>Павшие: {c.fallen.map(f => f.name).join(', ')}</div>
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button style={btn(true, ids.length === 0)} disabled={ids.length === 0} onClick={() => onStart(ids)}>
+        <button style={cta(ids.length === 0)} disabled={ids.length === 0} onClick={() => onStart(ids)}>
           В миссию ({ids.length}/{DEPLOY})
         </button>
         <button style={btn()} onClick={onMenu}>В меню</button>
@@ -146,8 +146,8 @@ export function Camp({ c, onChange, onStart, onMenu }: {
 
 export function Screen({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: 16, display: 'grid', gap: 12 }}>{children}</div>
+    <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', color: NM.fg, background: NM.bg, fontFamily: "system-ui, sans-serif", fontSize: 14 }}>
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: 16, display: 'grid', gap: 14 }}>{children}</div>
     </div>
   );
 }

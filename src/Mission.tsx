@@ -3,7 +3,7 @@ import { runAlienTurn } from './game/ai';
 import { aimedShot, bandage, coverSource, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState, Unit } from './game/types';
-import { btn, VERSION } from './ui';
+import { btn, cta, NM, VERSION } from './ui';
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
 import { GameView } from './render/GameView';
@@ -348,12 +348,12 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         </div>
       </div>
       {s.status !== 'playing' && (
-        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#000a' }}>
-          <div style={{ textAlign: 'center' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#0b0f18cc' }}>
+          <div style={{ textAlign: 'center', background: NM.bg, boxShadow: NM.out, borderRadius: 22, padding: '24px 32px', maxWidth: 'calc(100vw - 32px)' }}>
             <h1 style={{ margin: 0 }}>{s.status === 'won' ? 'Зачистка завершена' : 'Отряд уничтожен'}</h1>
             <p>Ходов: {s.turnNo} · выжило: {living(s, 'human').length}/{s.units.filter(u => u.team === 'human').length}</p>
-            {s.status === 'lost' && <button style={{ ...btn(true), marginRight: 8 }} onClick={() => onExit(s, true)}>Повторить миссию</button>}
-            <button style={btn(s.status === 'won')} onClick={leave}>{s.status === 'won' ? 'В лагерь' : 'Дальше (отряд потерян)'}</button>
+            {s.status === 'lost' && <button style={{ ...cta(), marginRight: 8 }} onClick={() => onExit(s, true)}>Повторить миссию</button>}
+            <button style={s.status === 'won' ? cta() : btn()} onClick={leave}>{s.status === 'won' ? 'В лагерь' : 'Дальше (отряд потерян)'}</button>
           </div>
         </div>
       )}
