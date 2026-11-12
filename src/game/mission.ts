@@ -56,6 +56,7 @@ export interface MissionOpts {
   missionNo: number;
   objective: Objective;
   biome: Biome;
+  size?: 44 | 64;
   soldiers: Soldier[];
   tech: Tech;
 }
@@ -132,7 +133,7 @@ function genMap(rng: { rng: number }, biome: Biome, n: number, missionNo: number
         }
         if (!ok) continue;
         for (let yy = y0; yy < y0 + h; yy++) for (let xx = x0; xx < x0 + w; xx++) { cover[yy][xx] = 'full'; look[yy][xx] = 'house'; height[yy][xx] = lo; }
-        houses.push({ x: x0, y: y0, w, h });
+        houses.push({ x: x0, y: y0, w, h, id: houses.length, hp: 6 });
         return;
       }
     };
@@ -195,7 +196,7 @@ function genMap(rng: { rng: number }, biome: Biome, n: number, missionNo: number
 
 export function createMission(o: MissionOpts): GameState {
   const rng = { rng: o.rng };
-  const n = MAP_SIZE, cx = n >> 1;
+  const n = o.size ?? MAP_SIZE, cx = n >> 1;
   const zone: Zone | null = o.objective === 'extract'
     ? { x: rand(rng) < 0.5 ? 0 : n - 3, y: 0, w: 3, h: 3 } : null;
   const { cover, terrain, height, look, houses, bridges } = genMap(rng, o.biome, n, o.missionNo, zone);
@@ -222,6 +223,10 @@ export function createMission(o: MissionOpts): GameState {
   if (o.objective === 'sabotage') kinds = base.slice(0, 7);
   if (o.objective === 'assassinate') kinds = [...base.slice(0, 6), 'commander'];
 
+  if (n >= 64) { // большая карта: меньше пришельцев, но они дальше друг от друга
+    const pure = kinds.filter(k => k !== 'commander');
+    kinds = [...Array.from({ length: Math.round(pure.length * 0.75) }, (_, i) => pure[i % pure.length]), ...kinds.filter(k => k === 'commander')];
+  }
   const reach = reachSet({ cover, terrain, height }, n);
   const hold = o.objective === 'hold';
   let spots: [number, number][] = [];

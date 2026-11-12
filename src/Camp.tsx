@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CLASS_IDS, CLASSES } from './game/classes';
-import { buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
+import { setMapSize, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
@@ -50,6 +50,12 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         <span>Следующая миссия: {c.missionNo} — {OBJECTIVE_NAME[c.objective]} · {BIOME_NAME[c.biome]}</span>
         <span>Сложность: {DIFF[c.difficulty].label}</span>
         <b style={{ color: '#ffd34d' }}>Трофеи: {c.scrap}</b>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
+        <span style={{ opacity: 0.7 }}>Размер карты:</span>
+        {([44, 64] as const).map(n => (
+          <button key={n} style={{ ...btn(c.mapSize === n), padding: '4px 10px', fontSize: 12 }} onClick={() => act(x => setMapSize(x, n))}>{n === 44 ? 'Средняя 44×44' : 'Большая 64×64'}</button>
+        ))}
       </div>
 
       {c.roster.map(s => {

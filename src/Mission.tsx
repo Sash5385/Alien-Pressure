@@ -15,7 +15,7 @@ import { ARMORS, WEAPONS } from './game/weapons';
 /** Миникарта: рельеф, укрытия, туман войны, бойцы и видимые пришельцы; клик — перенос камеры. */
 function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick: (x: number, y: number) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const px = 3;
+  const px = s.size <= 44 ? 3 : 2;
   useEffect(() => {
     const c = ref.current;
     if (!c) return;

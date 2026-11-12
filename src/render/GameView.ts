@@ -48,6 +48,9 @@ export class GameView {
   private beaconMeshes = new Map<string, THREE.Object3D>();
   private mineMeshes = new Map<string, THREE.Object3D>();
   private trenchMeshes = new Map<string, THREE.Object3D>();
+  private bridgeMeshes = new Map<string, THREE.Object3D>();
+  private houseMeshes = new Map<number, { g: THREE.Object3D; hs: { x: number; y: number; w: number; h: number } }>();
+  private waterMat?: THREE.MeshStandardMaterial;
   private barrelMeshes = new Map<string, THREE.Object3D>();
   private fireMeshes = new Map<string, THREE.Group>();
   private scorchMeshes = new Map<string, THREE.Object3D>();
@@ -276,6 +279,7 @@ export class GameView {
         for (let k = 0; k < 5; k++) add(new THREE.Mesh(new THREE.BoxGeometry(0.3 + Math.random() * 0.3, 0.2 + Math.random() * 0.3, 0.3 + Math.random() * 0.3), dark), (Math.random() - 0.5) * (w - 0.5), 0.15, (Math.random() - 0.5) * (d - 0.5));
       }
       this.scene.add(g);
+      this.houseMeshes.set(hs.id, { g, hs });
     });
   }
 
@@ -444,7 +448,7 @@ export class GameView {
     this.waterTex.wrapS = this.waterTex.wrapT = THREE.RepeatWrapping;
     const water = new THREE.InstancedMesh(
       new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshStandardMaterial({ map: this.waterTex, color: 0xaad4ff, transparent: true, opacity: 0.85, roughness: 0.15, metalness: 0.25, emissive: 0x0a2236 }),
+      (this.waterMat = new THREE.MeshStandardMaterial({ map: this.waterTex, color: 0xaad4ff, transparent: true, opacity: 0.85, roughness: 0.15, metalness: 0.25, emissive: 0x0a2236 })),
       tiles.length,
     );
     const m4 = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
@@ -511,6 +515,7 @@ export class GameView {
         g.add(plank);
       }
       this.scene.add(g);
+      this.bridgeMeshes.set(`${b.x},${b.y}`, g);
     }
   }
 
@@ -672,6 +677,30 @@ export class GameView {
         this.burst(p, 0xffb050, 30, 5, 650);
         this.burst(p, 0x555555, 16, 3, 800);
         sfx('grenade');
+      }
+    }
+    // разрушенные дома (обломки) и мосты (вода)
+    for (const [id, h] of this.houseMeshes) {
+      if (this.state.houses.some(x => x.id === id)) continue;
+      this.scene.remove(h.g);
+      this.houseMeshes.delete(id);
+      this.burst(new THREE.Vector3(h.hs.x + h.hs.w / 2, this.hy(h.hs.x, h.hs.y) + 0.6, h.hs.y + h.hs.h / 2), 0xb8a98a, 40, 4, 900);
+      sfx('grenade');
+      for (let yy = h.hs.y; yy < h.hs.y + h.hs.h; yy++) for (let xx = h.hs.x; xx < h.hs.x + h.hs.w; xx++) {
+        const rk = this.makeRock('half', xx, yy, xx * 3 + yy);
+        this.scene.add(rk);
+        this.coverMeshes.set(`${xx},${yy}`, rk);
+      }
+    }
+    for (const [k, g] of this.bridgeMeshes) {
+      const [bx, by] = k.split(',').map(Number);
+      if (this.state.bridges.some(b => b.x === bx && b.y === by)) continue;
+      this.scene.remove(g);
+      this.bridgeMeshes.delete(k);
+      if (this.waterMat) {
+        const pl = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.waterMat);
+        pl.rotation.x = -Math.PI / 2; pl.position.set(bx + 0.5, 0.03, by + 0.5);
+        this.scene.add(pl);
       }
     }
     this.syncFire();

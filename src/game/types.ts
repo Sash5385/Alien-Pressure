@@ -6,7 +6,7 @@ export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper';
 export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
 export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container';
-export interface House { x: number; y: number; w: number; h: number }
+export interface House { x: number; y: number; w: number; h: number; id: number; hp: number }
 export type Biome = 'ruins' | 'forest' | 'lake';
 export type Terrain = 'ground' | 'water';
 export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage';

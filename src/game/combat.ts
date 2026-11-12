@@ -294,6 +294,24 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
       if (s.cover[cy][cx] === 'half' && s.look[cy][cx] !== 'rock' && Math.hypot(cx - x, cy - y) <= 1.5) { s.cover[cy][cx] = 'none'; broken.push({ x: cx, y: cy }); }
     }
   }
+  // дома рядом со взрывом получают урон и обрушиваются; мосты рушатся
+  for (const hs of [...s.houses]) {
+    let dmin = 99;
+    for (let yy = hs.y; yy < hs.y + hs.h; yy++) for (let xx = hs.x; xx < hs.x + hs.w; xx++) dmin = Math.min(dmin, Math.hypot(xx - x, yy - y));
+    if (dmin > 1.7) continue;
+    hs.hp -= dmin <= 1.0 ? 3 : 2;
+    if (hs.hp <= 0) {
+      for (let yy = hs.y; yy < hs.y + hs.h; yy++) for (let xx = hs.x; xx < hs.x + hs.w; xx++) { s.cover[yy][xx] = 'half'; s.look[yy][xx] = 'rock'; }
+      s.houses = s.houses.filter(v => v.id !== hs.id);
+      log(s, 'Дом обрушился!');
+    }
+  }
+  const fallen = s.bridges.filter(b => Math.hypot(b.x - x, b.y - y) <= 1.3);
+  if (fallen.length) {
+    s.bridges = s.bridges.filter(b => !fallen.includes(b));
+    for (const b of fallen) s.terrain[b.y][b.x] = 'water';
+    log(s, 'Мост разрушен!');
+  }
   const names = hits.map(h => `${s.units.find(v => v.id === h.id)!.name} −${h.dmg}${h.killed ? ' (убит)' : ''}`).join(', ');
   log(s, `${label}: ${names || 'никого'}.`);
   checkEnd(s);
@@ -416,7 +434,8 @@ export function triggerMine(s: GameState, u: Unit): GrenadeResult | null {
 /** Поджечь клетку (не воду, не укрытие, не выжженное). */
 export function igniteTile(s: GameState, x: number, y: number, ttl: number): boolean {
   if (x < 0 || y < 0 || x >= s.size || y >= s.size) return false;
-  if (s.terrain[y][x] === 'water' || s.cover[y][x] !== 'none' || s.scorched[y][x] || s.fires.some(f => f.x === x && f.y === y)) return false;
+  const burnable = s.look[y][x] === 'tree' || s.look[y][x] === 'bush'; // деревья и кусты горят
+  if (s.terrain[y][x] === 'water' || (s.cover[y][x] !== 'none' && !burnable) || s.scorched[y][x] || s.fires.some(f => f.x === x && f.y === y)) return false;
   s.fires.push({ x, y, ttl });
   return true;
 }
@@ -461,7 +480,10 @@ export function tickFire(s: GameState) {
     if (s.biome !== 'ruins') {
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (rand(s) < 0.3) igniteTile(s, f.x + dx, f.y + dy, 3);
     }
-    if (f.ttl <= 0) { s.scorched[f.y][f.x] = true; }
+    if (f.ttl <= 0) {
+      s.scorched[f.y][f.x] = true;
+      if (s.look[f.y][f.x] === 'tree' || s.look[f.y][f.x] === 'bush') { s.cover[f.y][f.x] = 'none'; s.look[f.y][f.x] = ''; log(s, 'Дерево сгорело.'); }
+    }
   }
   s.fires = s.fires.filter(f => f.ttl > 0);
   checkEnd(s);

@@ -1,4 +1,4 @@
-import { alienSees, canPsi, hitChance, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
+import { alienSees, canPsi, digIn, hitChance, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 import type { GrenadeResult } from './combat';
@@ -58,6 +58,9 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
       if (options.length) {
         const t = options[0].t;
         await h.shot(u.kind === 'psi' ? psiAttack(s, u, t) : shoot(s, u, t));
+        // стрелки дальнего боя окапываются, если рядом нет укрытия
+        const covered = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => s.cover[u.y + dy]?.[u.x + dx] && s.cover[u.y + dy][u.x + dx] !== 'none');
+        if (u.hp > 0 && u.ap > 0 && ['sniper', 'heavy', 'commander'].includes(u.kind) && !covered && !trenchAt(s, u.x, u.y) && digIn(s, u)) await h.moved(u);
         continue;
       }
 
@@ -71,7 +74,7 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
         const seen = humans.some(t => score(s, ghost, t) !== null);
         const cov = [[1, 0], [-1, 0], [0, 1], [0, -1]]
           .some(([dx, dy]) => s.cover[y + dy]?.[x + dx] && s.cover[y + dy][x + dx] !== 'none');
-        const sc = ideal(u, near) - (seen ? 3 : 0) - (cov ? 1.5 : 0);
+        const sc = ideal(u, near) - (seen ? 3 : 0) - (cov ? 1.5 : 0) - s.height[y][x] * (u.kind === 'sniper' ? 1.5 : 0.7); // снайперы тянутся на высоту
         if (sc < bestScore) { bestScore = sc; best = [x, y]; }
       }
       if (!best) break;

@@ -11,6 +11,7 @@ export interface Campaign {
   missionNo: number;
   objective: Objective;
   biome: Biome;
+  mapSize: 44 | 64; // размер карты миссий
   roster: Soldier[];
   fallen: { name: string; mission: number }[];
   scrap: number;
@@ -49,7 +50,7 @@ function mkSoldier(c: Campaign, name: string, bio: string, cls?: ClassId): Soldi
 
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Campaign {
   const c: Campaign = {
-    v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', biome: 'ruins', roster: [], fallen: [], scrap: 3,
+    v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', biome: 'ruins', mapSize: 44, roster: [], fallen: [], scrap: 3,
     tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg'], armors: ['none'],
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
@@ -130,6 +131,7 @@ export function load(): Campaign | null {
     c.objective ??= 'clear';
     c.tech.grenades ??= false;
     c.biome ??= 'ruins';
+    c.mapSize ??= 44;
     c.weapons ??= ['rifle', 'smg'];
     c.armors ??= ['none'];
     for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; s.weapon ??= 'rifle'; s.armor ??= 'none'; s.cls ??= 'assault'; }
@@ -178,7 +180,7 @@ export function loadMission(): MissionSave | null {
   try {
     const raw = localStorage.getItem(MKEY);
     const m = raw ? (JSON.parse(raw) as MissionSave) : null;
-    if (!m || m.state.status !== 'playing' || !Array.isArray(m.state.barrels) || !Array.isArray(m.state.mines) || !Array.isArray(m.state.height) || m.state.size !== 44) return null; // старые сохранения несовместимы
+    if (!m || m.state.status !== 'playing' || !Array.isArray(m.state.barrels) || !Array.isArray(m.state.mines) || !Array.isArray(m.state.height) || (m.state.size !== 44 && m.state.size !== 64)) return null; // старые сохранения несовместимы
     m.state.busy = false; m.state.aiming = null; m.state.turning = false; m.state.turn = 'human';
     return m;
   } catch { return null; }
@@ -191,5 +193,10 @@ export function setClass(c: Campaign, soldierId: number, cls: ClassId): string |
   const s = c.roster.find(x => x.id === soldierId);
   if (!s) return 'Недоступно.';
   s.cls = cls;
+  return null;
+}
+
+export function setMapSize(c: Campaign, size: 44 | 64): string | null {
+  c.mapSize = size;
   return null;
 }
