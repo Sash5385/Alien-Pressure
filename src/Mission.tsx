@@ -6,7 +6,7 @@ import type { GameState, Unit } from './game/types';
 import { btn, cta, NM, VERSION } from './ui';
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
-import { GameView } from './render/GameView';
+import { GameView, WEATHER_NAME, weatherOf } from './render/GameView';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
@@ -66,6 +66,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const s = state.current;
   if (import.meta.env.DEV) Object.assign(window, { __s: s, __view: view.current });
   const [more, setMore] = useState(false);
+  const [showLog, setShowLog] = useState(false);
   const [showMap, setShowMap] = useState(true);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
   const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -264,7 +265,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
       <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? '94vw' : 560, pointerEvents: 'none', textAlign: 'center' }}>
         <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
-          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}
+          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{weatherOf(s.missionNo, s.biome) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[weatherOf(s.missionNo, s.biome)]}` : ''}
         </div>
       </div>
       {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (
@@ -312,10 +313,16 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         </div>
       )}
       <div style={{ position: 'absolute', right: 8, bottom: narrow ? 150 : 8, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+        {showLog && (
+          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, width: narrow ? 'calc(100vw - 16px)' : 340, maxHeight: 260, overflowY: 'auto', fontSize: 12, lineHeight: 1.45, pointerEvents: 'auto' }}>
+            {[...s.log].reverse().slice(0, 60).map((l, i) => <div key={i} style={{ opacity: l.startsWith('—') ? 0.55 : 1, borderTop: l.startsWith('—') ? '1px solid #2a3348' : undefined, paddingTop: l.startsWith('—') ? 4 : 0 }}>{l}</div>)}
+          </div>
+        )}
         {more && (
           <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, fontSize: 12 }}>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графика: {view.current?.getQuality() === 'low' ? 'обычная' : 'высокая'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручная' : 'авто'}</button>
+            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setWeatherOn(!v.isWeatherOn()); rerender(); }}>Погода: {view.current?.isWeatherOn() === false ? 'выкл' : 'вкл'}</button>
             <button style={nb(false, false)} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>
             <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палец — двигать карту, 2 — вращать, щипок — масштаб, долгое нажатие — повернуть бойца.' : 'ПКМ — повернуть бойца, СКМ — сдвиг камеры.'}</div>
             <div style={{ opacity: 0.45, textAlign: 'center' }}>{VERSION}</div>
@@ -324,6 +331,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={round(showMap)} title="Миникарта" onClick={() => setShowMap(!showMap)}>🗺</button>
           <button style={round(s.turning)} title="Повернуть бойца" onClick={() => { s.turning = !s.turning; s.aiming = null; rerender(); }}>↻</button>
+          <button style={round(showLog)} title="Журнал боя" onClick={() => setShowLog(!showLog)}>📜</button>
           <button style={round(more)} title="Настройки" onClick={() => setMore(!more)}>⚙</button>
         </div>
       </div>
@@ -347,6 +355,9 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           </div>
         </div>
       </div>
+      {view.current?.hover && s.turn === 'human' && !s.busy && (
+        <div style={{ position: 'fixed', left: Math.min(view.current.hover.sx + 16, window.innerWidth - 220), top: view.current.hover.sy + 18, ...nbBase, borderRadius: 10, boxShadow: OUTS, padding: '4px 10px', fontSize: 12, fontWeight: 700, pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 5 }}>{view.current.hover.text}</div>
+      )}
       {s.status !== 'playing' && (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#0b0f18cc' }}>
           <div style={{ textAlign: 'center', background: NM.bg, boxShadow: NM.out, borderRadius: 22, padding: '24px 32px', maxWidth: 'calc(100vw - 32px)' }}>

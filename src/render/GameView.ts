@@ -5,7 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
-import { barrelAt, BLAST, type GrenadeResult, canThrow, checkEnd, faceToward, isVisible, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { barrelAt, BLAST, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isVisible, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, type Sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
@@ -18,6 +18,10 @@ const ALIEN_SPEED = 2.2; // пришельцы идут медленнее, чт
 const speedOf = (u?: Unit) => (u?.team === 'alien' ? ALIEN_SPEED : SPEED);
 
 interface Float { sprite: THREE.Sprite; t: number }
+export type Weather = 'clear' | 'rain' | 'fog' | 'dusk';
+export const WEATHER_NAME: Record<Weather, string> = { clear: 'ясно', rain: '☔ дождь', fog: '🌫 туман', dusk: '🌆 сумерки' };
+/** Погода миссии: чисто визуальная, зависит от номера миссии и локации. */
+export const weatherOf = (missionNo: number, biome: string): Weather => (['clear', 'clear', 'rain', 'fog', 'clear', 'dusk'] as const)[(missionNo * 7 + (biome === 'forest' ? 3 : biome === 'lake' ? 6 : 0)) % 6];
 
 export class GameView {
   private renderer: THREE.WebGLRenderer;
@@ -101,7 +105,8 @@ export class GameView {
     this.controls.dampingFactor = 0.08;
     this.controls.addEventListener('start', () => { this.focus = null; });
 
-    this.scene.add(new THREE.HemisphereLight(0xc2d0e0, 0x5a5040, 1.3));
+    this.hemi = new THREE.HemisphereLight(0xc2d0e0, 0x5a5040, 1.3);
+    this.scene.add(this.hemi);
     const sun = new THREE.DirectionalLight(0xfff0d0, 2.0);
     this.sun = sun;
     sun.position.set(n, 20, n * 0.2);
@@ -144,6 +149,7 @@ export class GameView {
     this.scene.add(this.blast);
 
     this.buildTerrain();
+    this.applyWeather();
     this.buildCover();
     this.buildHouses();
     this.buildZone();
@@ -181,6 +187,7 @@ export class GameView {
       this.raf = requestAnimationFrame(loop);
       const rawDt = this.clock.getDelta();
       const dt = Math.min(0.05, rawDt);
+      this.stepRain(dt);
       for (const [id, m] of this.unitMeshes) {
         const g = this.goals.get(id);
         const u = this.state.units.find(v => v.id === id);
@@ -820,6 +827,71 @@ export class GameView {
   panTo(x: number, y: number) { this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
   focusOn(x: number, y: number) { if (this.autoCam) this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
   unfocus() { this.focus = null; }
+  /* ---------- погода, следы, подсказки ---------- */
+  private hemi!: THREE.HemisphereLight;
+  private weatherOn = (() => { try { return localStorage.getItem('alien-pressure:weather') !== 'off'; } catch { return true; } })();
+  private rain: THREE.LineSegments | null = null;
+  private decals: THREE.Mesh[] = [];
+  private pathLine: THREE.Line | null = null;
+  hover: { sx: number; sy: number; text: string } | null = null;
+  getWeather(): Weather { return weatherOf(this.state.missionNo, this.state.biome); }
+  isWeatherOn() { return this.weatherOn; }
+  setWeatherOn(on: boolean) {
+    this.weatherOn = on;
+    try { localStorage.setItem('alien-pressure:weather', on ? 'on' : 'off'); } catch { /* ignore */ }
+    this.applyWeather();
+  }
+  private baseFog: { color: number; near: number; far: number } | null = null;
+  private applyWeather() {
+    const fog = this.scene.fog as THREE.Fog;
+    if (!this.baseFog) this.baseFog = { color: fog.color.getHex(), near: fog.near, far: fog.far };
+    const w = this.weatherOn ? this.getWeather() : 'clear';
+    fog.color.set(this.baseFog.color); fog.near = this.baseFog.near; fog.far = this.baseFog.far;
+    this.renderer.toneMappingExposure = 3.5; this.sun.color.set(0xfff0d0); this.sun.intensity = 2.0; this.hemi.intensity = 1.3;
+    if (this.rain) { this.scene.remove(this.rain); this.rain.geometry.dispose(); this.rain = null; }
+    if (w === 'fog') { fog.color.lerp(new THREE.Color(0x9aa6a2), 0.7); fog.near = 6; fog.far = 46; }
+    if (w === 'dusk') { this.renderer.toneMappingExposure = 2.7; this.sun.color.set(0xff9a60); this.sun.intensity = 1.5; this.hemi.intensity = 0.9; fog.color.lerp(new THREE.Color(0x4a3a50), 0.5); }
+    if (w === 'rain') {
+      this.renderer.toneMappingExposure = 3.0; this.hemi.intensity = 1.0; this.sun.intensity = 1.3; fog.color.lerp(new THREE.Color(0x6a7480), 0.6); fog.near = 14; fog.far = 70;
+      const n = 1600, pos = new Float32Array(n * 6);
+      for (let i = 0; i < n; i++) {
+        const x = (Math.random() - 0.5) * 60, y = Math.random() * 26, z = (Math.random() - 0.5) * 60;
+        pos.set([x, y, z, x - 0.05, y - 0.7, z], i * 6);
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      this.rain = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xbcd0ff, transparent: true, opacity: 0.35 }));
+      this.rain.frustumCulled = false;
+      this.scene.add(this.rain);
+    }
+  }
+  private stepRain(dt: number) {
+    const r = this.rain; if (!r) return;
+    const a = (r.geometry.getAttribute('position') as THREE.BufferAttribute), arr = a.array as Float32Array;
+    for (let i = 0; i < arr.length; i += 6) {
+      const fall = 26 * dt;
+      arr[i + 1] -= fall; arr[i + 4] -= fall;
+      if (arr[i + 4] < 0) { arr[i + 1] += 26; arr[i + 4] += 26; }
+    }
+    a.needsUpdate = true;
+    r.position.set(this.controls.target.x, 0, this.controls.target.z);
+  }
+  /** Тёмное пятно на земле: след от пули (промах), кровь (попадание, труп). */
+  private decal(x: number, z: number, color: number, r: number, opacity = 0.6) {
+    const m = new THREE.Mesh(new THREE.CircleGeometry(r, 10), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x, this.hy(Math.floor(x), Math.floor(z)) + 0.03, z);
+    this.scene.add(m);
+    this.decals.push(m);
+    if (this.decals.length > 80) { const o = this.decals.shift()!; this.scene.remove(o); o.geometry.dispose(); (o.material as THREE.Material).dispose(); }
+  }
+  private clearPath() { if (this.pathLine) { this.scene.remove(this.pathLine); this.pathLine.geometry.dispose(); this.pathLine = null; } }
+  private setHover(h: { sx: number; sy: number; text: string } | null) {
+    const o = this.hover;
+    const same = (!o && !h) || (o && h && o.text === h.text && Math.hypot(o.sx - h.sx, o.sy - h.sy) < 14);
+    if (same) return;
+    this.hover = h; this.onChange();
+  }
+
   getQuality() { return this.quality; }
   getAutoCam() { return this.autoCam; }
   setAutoCam(on: boolean) {
@@ -1014,6 +1086,8 @@ export class GameView {
     this.scene.remove(bullet);
     bullet.geometry.dispose();
     this.burst(to, hit ? 0xff5533 : 0xffd27a, hit ? 14 : 8, hit ? 2.6 : 1.8);
+    if (hit) this.decal(to.x + (Math.random() - 0.5) * 0.3, to.z + (Math.random() - 0.5) * 0.3, 0x5a0e0e, 0.14 + Math.random() * 0.1, 0.55);
+    else this.decal(to.x + (Math.random() - 0.5) * 0.5, to.z + (Math.random() - 0.5) * 0.5, 0x1a1a14, 0.07 + Math.random() * 0.05, 0.7);
     if (last && !hit) sfx('miss');
   }
 
@@ -1065,7 +1139,7 @@ export class GameView {
     if (r.broken) this.floatText(t.x + 0.5, t.y + 0.5, 'укрытие', '#ffd34d', 0.5);
     if (r.wound) sfx('wound');
     if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
-    if (r.killed) setTimeout(() => sfx('death'), 120);
+    if (r.killed) { setTimeout(() => sfx('death'), 120); this.decal(t.x + 0.5, t.y + 0.5, 0x4a0808, 0.42, 0.65); }
     await sleep(r.reaction ? 300 : 550);
   }
 
@@ -1152,15 +1226,42 @@ export class GameView {
     return hit ? { x: Math.floor(hit.point.x), y: Math.floor(hit.point.z) } : null;
   }
 
-  /** Радиус взрыва под курсором в режиме гранаты. */
+  /** Наведение: радиус гранаты; иначе путь до клетки и шанс попадания по пришельцу. */
   private onHover(e: PointerEvent) {
     const s = this.state;
     const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
-    if (s.aiming !== 'grenade' || !u || s.busy) { this.blast.visible = false; return; }
+    this.clearPath();
+    if (e.pointerType === 'touch' || !u || s.busy || s.turn !== 'human' || s.status !== 'playing' || s.turning) { this.blast.visible = false; this.setHover(null); return; }
     const t = this.tileAt(e);
-    if (!t || !canThrow(s, u, t.x, t.y)) { this.blast.visible = false; return; }
-    this.blast.position.set(t.x + 0.5, this.hy(t.x, t.y) + 0.05, t.y + 0.5);
-    this.blast.visible = true;
+    if (s.aiming === 'grenade') {
+      this.setHover(null);
+      if (!t || !canThrow(s, u, t.x, t.y)) { this.blast.visible = false; return; }
+      this.blast.position.set(t.x + 0.5, this.hy(t.x, t.y) + 0.05, t.y + 0.5);
+      this.blast.visible = true;
+      return;
+    }
+    this.blast.visible = false;
+    if (!t) { this.setHover(null); return; }
+    const sx = e.clientX, sy = e.clientY;
+    const at = s.units.find(v => v.hp > 0 && v.x === t.x && v.y === t.y && isVisible(s, v));
+    if (at?.team === 'alien') {
+      const ch = hitChance(s, u, at);
+      const cs = ch !== null ? coverSource(s, u, at) : null;
+      this.setHover({ sx, sy, text: ch === null ? `${at.name} · нет линии огня` : `${at.name} · шанс ${ch}%${cs ? ` · укрытие −${cs.bonus}%` : ''}` });
+      return;
+    }
+    if (!at && u.ap > 0 && reachable(s, u.x, u.y, moveRange(u)).has(`${t.x},${t.y}`)) {
+      const path = findPath(s, u.x, u.y, t.x, t.y, moveRange(u));
+      if (path.length) {
+        const pts = [new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) + 0.12, u.y + 0.5), ...path.map(([x, y]) => new THREE.Vector3(x + 0.5, this.hy(x, y) + 0.12, y + 0.5))];
+        this.pathLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xffd34d }));
+        this.scene.add(this.pathLine);
+        const cov = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => (s.cover[t.y + dy]?.[t.x + dx] ?? 'none') !== 'none');
+        this.setHover({ sx, sy, text: `${path.length} кл. · −1 AP${cov ? ' · есть укрытие' : ''}` });
+        return;
+      }
+    }
+    this.setHover(null);
   }
 
   /** ПКМ: повернуть выбранного бойца к клетке (бесплатно); в режиме гранаты — отмена. */
