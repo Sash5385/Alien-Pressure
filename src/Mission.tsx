@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { runAlienTurn } from './game/ai';
-import { aimedShot, bandage, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
+import { aimedShot, bandage, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState, Unit } from './game/types';
 import { btn, cta, NM, VERSION } from './ui';
@@ -76,7 +76,9 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   useEffect(() => { if (s.status === 'won') sfx('win'); else if (s.status === 'lost') sfx('lose'); }, [s.status]);
   const sel = s.units.find(u => u.id === s.selectedId && u.hp > 0);
   const tgt = s.units.find(u => u.id === s.targetId && u.hp > 0);
-  const chance = sel && tgt ? hitChance(s, sel, tgt) : null;
+  const direct = sel && tgt ? hitChance(s, sel, tgt) : null;
+  const peek = sel && tgt && direct === null ? peekTile(s, sel, tgt) : null;
+  const chance = direct ?? peek?.chance ?? null;
   const canAct = !!view.current && s.turn === 'human' && !s.busy && s.status === 'playing';
   const tb = s.targetBarrel;
   const barrelOk = canAct && !!sel && !!tb && canShootBarrel(s, sel, tb.x, tb.y);
@@ -174,7 +176,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     }
     if (!canFire || !sel || !tgt) return;
     s.busy = true;
-    const r = shoot(s, sel, tgt);
+    const r = (direct === null ? peekShot(s, sel, tgt) : null) ?? shoot(s, sel, tgt);
     sel.overwatch = false;
     rerender();
     await view.current!.shotFx(r);
@@ -332,7 +334,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         {s.aiming === 'grenade' && <div style={{ color: '#ffb36b' }}>Бросок гранаты: кликни клетку в оранжевой зоне (красный круг — радиус взрыва, бьёт и по своим). ПКМ — отмена.</div>}
         {tb && !tgt && <div style={{ color: '#ff8a8a' }}>Цель: взрывоопасная бочка · {barrelOk ? 'попадание 100%, взрыв радиусом 2' : 'нет линии огня'}</div>}
         {!narrow && sel && !tgt && !s.aiming && !s.turning && <div style={{ fontSize: 12, opacity: 0.75 }}>Укрытие защищает со стороны, где оно стоит: <span style={{ color: '#3cff7a' }}>зелёная полоска</span> — полное (−40% к попаданию), <span style={{ color: '#ffd34d' }}>жёлтая</span> — половинное (−20%). Зелёные клетки — где можно укрыться.</div>}
-        {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `шанс ${chance}%`}{chance !== null && sel && (() => { const cs = coverSource(s, sel, tgt); return cs ? ` · укрытие −${cs.bonus}% (${cs.trench ? 'окоп' : cs.bonus === 40 ? 'полное' : 'половинное'})` : ' · без укрытия'; })()}</div>}
+        {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `${peek ? 'стрейф из-за укрытия' : 'шанс'} ${chance}%`}{direct !== null && sel && (() => { const cs = coverSource(s, sel, tgt); return cs ? ` · укрытие −${cs.bonus}% (${cs.trench ? 'окоп' : cs.bonus === 40 ? 'полное' : 'половинное'})` : ' · без укрытия'; })()}</div>}
       </div>
       {/* ——— низ: миникарта и меню по углам, диск действий по центру ——— */}
       {showMap && (
@@ -375,7 +377,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <div style={{ display: 'grid', gap: 8, justifyItems: 'center' }}>
             <button style={{ ...nb(false, !canAct), color: '#ffd34d', minWidth: narrow ? 84 : 110 }} disabled={!canAct} onClick={endTurn}>Конец хода</button>
             <button disabled={!canFire} onClick={fire} style={{ width: narrow ? 84 : 104, height: narrow ? 84 : 104, borderRadius: '50%', border: 0, background: 'linear-gradient(145deg,#ffdf74,#e8b32a)', color: '#2b2410', fontWeight: 800, fontSize: narrow ? 14 : 16, font: 'inherit', cursor: canFire ? 'pointer' : 'default', opacity: canFire ? 1 : 0.45, boxShadow: OUT, display: 'grid', placeItems: 'center', alignContent: 'center' }}>
-              <span style={{ fontWeight: 800 }}>ОГОНЬ</span>
+              <span style={{ fontWeight: 800 }}>{peek ? 'ВЫГЛЯНУТЬ' : 'ОГОНЬ'}</span>
               <small style={{ fontWeight: 600, opacity: 0.75 }}>{chance !== null ? `${chance}%` : tb ? 'бочка' : ''}</small>
             </button>
           </div>

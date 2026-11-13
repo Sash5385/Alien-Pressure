@@ -258,7 +258,7 @@ export function createMission(o: MissionOpts): GameState {
   const humans = o.soldiers.map((s, i) => defend ? (dKind === 'house' ? human(s, cx + [-3, 3, 0, 0, -3, 3, -2, 2][i % 8], cx + [0, 0, -3, 3, 2, -2, 3, -3][i % 8], o.tech) : human(s, cx - 2 + (i % 3) * 2, cx - 1 + (i >> 1 & 1) * 2, o.tech)) : human(s, cx - 3 + i * 2, n - 2, o.tech));
 
   const base: AlienKind[] = ['trooper', 'trooper', 'sniper', 'trooper', 'heavy', 'trooper', 'trooper', 'sniper'];
-  let kinds: AlienKind[] = base.slice(0, 7);
+  let kinds: AlienKind[] = base.slice(0, 6);
   if (o.missionNo >= 3) kinds.push('trooper');
   if (o.missionNo >= 5) kinds.push('trooper', 'heavy');
   if (o.missionNo >= 7) kinds.push('sniper', 'trooper');
@@ -311,7 +311,7 @@ export function createMission(o: MissionOpts): GameState {
     [chosen[j], chosen[chosen.length - 1]] = [chosen[chosen.length - 1], chosen[j]];
   }
   let tn = 0;
-  const aliens = kinds.slice(0, chosen.length).map((k, i) => alien(1000 + i, k, k === 'trooper' ? ++tn : 0, chosen[i][0], chosen[i][1], o.difficulty));
+  const aliens = kinds.slice(0, chosen.length).map((k, i) => { const a = alien(1000 + i, k, k === 'trooper' ? ++tn : 0, chosen[i][0], chosen[i][1], o.difficulty); a.grp = i % Math.max(1, centers.length); return a; });
 
   const bossU = o.boss ? aliens.find(a => a.kind === 'commander') : undefined;
   if (bossU) { bossU.maxHp = bossU.hp = Math.round((11 + o.missionNo) * DIFF[o.difficulty].hp); bossU.cut = 1; bossU.name = 'Тиран'; bossU.dmg = [3, 6]; bossU.ap = bossU.maxAp = 3; }
@@ -363,6 +363,7 @@ export function reinforce(s: GameState) {
     const id = Math.max(...s.units.map(u => u.id)) + 1;
     const rn = alien(id, kind, s.units.filter(u => u.kind === 'trooper').length + 1, x, y, s.difficulty);
     rn.alert = true;
+    rn.grp = 100 + s.turnNo * 10 + Math.floor(k / 2); // волна делится на пары
     s.units.push(rn);
   }
   log(s, s.objective === 'defend' ? `Волна пришельцев: ${wave}!` : 'Подкрепление пришельцев!');

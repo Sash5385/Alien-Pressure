@@ -15,6 +15,7 @@ export interface ShotResult {
   melee?: boolean;
   flank?: boolean;
   downed?: boolean;
+  peek?: { x: number; y: number }; // стрелок выглянул из укрытия в эту клетку и вернулся
   broken?: { x: number; y: number };
 }
 
@@ -168,6 +169,32 @@ export function checkEnd(s: GameState) {
   if (s.objective === 'sabotage') { if (s.beacons.length > 0 && s.beacons.every(b => b.done)) s.status = 'won'; return; }
   if (living(s, 'alien').length === 0) s.status = 'won';
   else if (s.objective === 'extract' && z && humans.every(h => h.x >= z.x && h.x < z.x + z.w && h.y >= z.y && h.y < z.y + z.h)) s.status = 'won';
+}
+
+/** Стрейф: если прямой линии огня нет, боец на шаг в сторону выглядывает из-за укрытия, стреляет и возвращается. */
+export function peekTile(s: GameState, a: Unit, t: Unit): { x: number; y: number; chance: number } | null {
+  if (a.ammo <= 0 || a.hp <= 0 || t.hp <= 0 || a.team === t.team || a.down) return null;
+  let best: { x: number; y: number; chance: number } | null = null;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const x = a.x + dx, y = a.y + dy;
+    if (x < 0 || y < 0 || x >= s.size || y >= s.size || s.cover[y][x] !== 'none' || s.terrain[y][x] === 'water') continue;
+    if (Math.abs(s.height[y][x] - s.height[a.y][a.x]) > 1 || s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) continue;
+    if (Math.hypot(x - t.x, y - t.y) > Math.hypot(a.x - t.x, a.y - t.y) + 0.3) continue; // назад не выглядывают
+    if (dx && dy && (s.cover[a.y][x] === 'full' || s.cover[y][a.x] === 'full')) continue; // по диагонали сквозь угол не выглянуть
+    const c = hitChance(s, { ...a, x, y }, t);
+    if (c !== null && (!best || c > best.chance)) best = { x, y, chance: Math.max(5, c - 5) };
+  }
+  return best;
+}
+export function peekShot(s: GameState, a: Unit, t: Unit): ShotResult | null {
+  const pk = peekTile(s, a, t);
+  if (!pk) return null;
+  const home = { x: a.x, y: a.y }, homeFace = a.facing;
+  a.x = pk.x; a.y = pk.y;
+  const r = shoot(s, a, t);
+  a.x = home.x; a.y = home.y;
+  if (a.hp > 0) a.facing = homeFace;
+  return { ...r, peek: { x: pk.x, y: pk.y } };
 }
 
 /** Ближний бой: цель в соседней клетке. 1 AP, без патронов, тихо (шум в радиусе 3). */

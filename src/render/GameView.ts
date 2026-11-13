@@ -5,7 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
-import { alienReactions, barrelAt, BLAST, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { alienReactions, barrelAt, BLAST, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
@@ -1214,6 +1214,13 @@ export class GameView {
     const a = this.state.units.find(u => u.id === r.attackerId)!;
     const t = this.state.units.find(u => u.id === r.targetId)!;
     if (isVisible(this.state, a) || isVisible(this.state, t)) this.focusOn((a.x + t.x) / 2, (a.y + t.y) / 2);
+    const home = { x: a.x, y: a.y, face: a.facing };
+    if (r.peek) { // стрейф: шаг из-за укрытия, выстрел, возврат
+      this.goals.set(a.id, new THREE.Vector3(r.peek.x + 0.5, this.hy(r.peek.x, r.peek.y), r.peek.y + 0.5));
+      a.x = r.peek.x; a.y = r.peek.y; a.facing = Math.atan2(t.x - a.x, t.y - a.y);
+      this.play(a.id, 'Run');
+      await sleep(Math.round(700 / speedOf(a)));
+    }
     const am = this.unitMeshes.get(a.id);
     const chest = new THREE.Vector3(t.x + 0.5, this.eye(t) - 0.05 + this.hy(t.x, t.y), t.y + 0.5);
     const f = a.facing;
@@ -1260,6 +1267,12 @@ export class GameView {
     if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
     if (r.killed) { setTimeout(() => sfx('death'), 120); this.decal(t.x + 0.5, t.y + 0.5, 0x4a0808, 0.42, 0.65); }
     await sleep(r.reaction ? 300 : 550);
+    if (r.peek) { // назад за укрытие
+      a.x = home.x; a.y = home.y; a.facing = home.face;
+      this.goals.set(a.id, new THREE.Vector3(a.x + 0.5, this.hy(a.x, a.y), a.y + 0.5));
+      this.play(a.id, 'Run');
+      await sleep(Math.round(700 / speedOf(a)));
+    }
   }
 
   /** Бросок гранаты: дуга, взрыв, урон по площади. */
@@ -1411,6 +1424,8 @@ export class GameView {
     const at = s.units.find(v => v.hp > 0 && v.x === t.x && v.y === t.y && isVisible(s, v));
     if (at?.team === 'alien') {
       const ch = hitChance(s, u, at);
+      const pk = ch === null ? peekTile(s, u, at) : null;
+      if (pk) { this.setHover({ sx, sy, text: `${at.name} · стрейф ${pk.chance}%` }); return; }
       const cs = ch !== null ? coverSource(s, u, at) : null;
       this.setHover({ sx, sy, text: ch === null ? `${at.name} · нет линии огня` : `${at.name} · шанс ${ch}%${cs ? ` · укрытие −${cs.bonus}%` : ch !== null && isFlanked(s, u, at) ? ' · фланг +10%' : ''}` });
       return;

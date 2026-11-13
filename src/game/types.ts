@@ -79,6 +79,8 @@ export interface Unit {
   perks: PerkId[];
   bio: string;
   kills: number;
+  grp?: number; // тактическая группа пришельцев
+  retreatUntil?: number; // до какого хода держит оборону после отхода
   down?: boolean; // тяжело ранен: лежит, можно поднять
   bleedOut?: number; // ходов до смерти
   revived?: boolean; // уже падал в этой миссии

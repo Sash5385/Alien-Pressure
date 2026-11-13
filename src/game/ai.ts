@@ -1,4 +1,4 @@
-import { alienSees, canPsi, digIn, hitChance, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
+import { alienSees, canPsi, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 import type { GrenadeResult } from './combat';
@@ -32,24 +32,71 @@ async function patrol(s: GameState, u: Unit, h: AiHooks) {
   }
 }
 
-/** Привлекательность цели: для обычной атаки — шанс попадания, для псионика — слабая мораль. */
+/** Привлекательность цели: шанс попадания (прямой или из-за укрытия «стрейфом»), для псионика — слабая мораль. */
 function score(s: GameState, u: Unit, t: Unit): number | null {
   if (u.kind === 'psi') return canPsi(u, t) ? 100 - t.morale : null;
-  return hitChance(s, u, t);
+  const c = hitChance(s, u, t);
+  if (c !== null) return c;
+  return peekTile(s, u, t)?.chance ?? null;
 }
 
 /** Желаемая дистанция до ближайшего бойца: снайпер и псионик держатся на расстоянии. */
 const ideal = (u: Unit, near: number) =>
   u.kind === 'sniper' ? Math.abs(near - 10) : u.kind === 'psi' ? Math.abs(near - 7) : near;
 
-/** ИИ: атакует лучшую цель, иначе идёт к клетке с обзором/укрытием на подходящей дистанции. */
+const hasCover = (s: GameState, x: number, y: number) =>
+  [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => s.cover[y + dy]?.[x + dx] && s.cover[y + dy][x + dx] !== 'none') || trenchAt(s, x, y) !== undefined && !!trenchAt(s, x, y);
+
+/** Тактическая группа: общее решение на ход (штурм / отход с боем / оборона), фокус огня, прикрывающий. */
+interface Grp { members: Unit[]; ratio: number; mode: 'assault' | 'retreat' | 'hold'; focus?: number; rear?: number }
+
+function planGroups(s: GameState): Map<number, Grp> {
+  const out = new Map<number, Grp>();
+  const all = s.units.filter(u => u.team === 'alien');
+  const humans = living(s, 'human');
+  for (const g of new Set(all.map(u => u.grp).filter((x): x is number => x !== undefined))) {
+    const mem = all.filter(u => u.grp === g);
+    const alive = mem.filter(u => u.hp > 0);
+    if (!alive.length) continue;
+    const ratio = alive.reduce((a, u) => a + u.hp, 0) / mem.reduce((a, u) => a + u.maxHp, 0);
+    const cx = alive.reduce((a, u) => a + u.x, 0) / alive.length, cy = alive.reduce((a, u) => a + u.y, 0) / alive.length;
+    const near = humans.filter(h => Math.hypot(h.x - cx, h.y - cy) <= 14).length;
+    const engaged = alive.some(u => u.alert) && near > 0;
+    const boss = alive.some(u => u.kind === 'commander');
+    const holding = alive.some(u => (u.retreatUntil ?? -1) >= s.turnNo);
+    let mode: Grp['mode'] = 'assault';
+    if (holding) mode = 'hold';
+    else if (engaged && !boss && mem.length > 1 && ((ratio < 0.5 && near >= alive.length) || ratio < 0.34)) {
+      mode = 'retreat';
+      alive.forEach(u => { u.retreatUntil = s.turnNo + 3; });
+      log(s, 'Группа пришельцев отступает с боем.');
+    }
+    // фокус огня: боец, по которому группа попадает лучше всего (слабых добиваем)
+    let focus: number | undefined, fs = -1;
+    for (const h of humans) {
+      let sum = 0;
+      for (const m of alive) sum += hitChance(s, m, h) ?? 0;
+      sum += (10 - h.hp) * 2 + (h.down ? -50 : 0);
+      if (sum > fs && sum > 0) { fs = sum; focus = h.id; }
+    }
+    const rear = mode === 'retreat' ? [...alive].sort((a, b) => b.aim - a.aim)[0]?.id : undefined;
+    out.set(g, { members: alive, ratio, mode, focus, rear });
+  }
+  return out;
+}
+
+/** ИИ: группы действуют сообща: фокус огня, перебежки под прикрытием, отход с боем, окопы и укрытия. */
 export async function runAlienTurn(s: GameState, h: AiHooks) {
   s.revealed = [];
-  for (const h of living(s, 'human')) h.suppressed = false;
+  for (const hu of living(s, 'human')) hu.suppressed = false;
   for (const a of living(s, 'alien')) a.overwatch = false;
+  const groups = planGroups(s);
   for (const u of living(s, 'alien')) {
     u.ap = Math.max(1, u.maxAp - (u.suppressed ? 1 : 0));
-    for (let i = 0; i < 3 && u.hp > 0 && u.ap > 0 && s.status === 'playing'; i++) {
+    const g = u.grp !== undefined ? groups.get(u.grp) : undefined;
+    const idx = g ? g.members.indexOf(u) : 0;
+    let shots = 0, retreated = false;
+    for (let i = 0; i < 4 && u.hp > 0 && u.ap > 0 && s.status === 'playing'; i++) {
       if (!u.alert && alienSees(s, u)) h.alerted?.(raiseAlert(s, u.x, u.y, 8));
       if (!u.alert) { await patrol(s, u, h); if (!u.alert) break; continue; }
       const humans = living(s, 'human');
@@ -57,21 +104,56 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
       const options = humans
         .map(t => ({ t, c: score(s, u, t) }))
         .filter((e): e is { t: Unit; c: number } => e.c !== null)
-        .sort((a, b) => b.c - a.c);
+        .sort((a, b) => (b.c + (b.t.id === g?.focus ? 20 : 0)) - (a.c + (a.t.id === g?.focus ? 20 : 0)));
+      const near = humans.length ? Math.min(...humans.map(t => Math.hypot(t.x - u.x, t.y - u.y))) : 99;
+      const mode = u.kind === 'commander' ? 'assault' : g?.mode ?? 'assault';
+
+      // ——— отход с боем: стреляем и отходим, один боец прикрывает ———
+      if (mode === 'retreat') {
+        if (g?.rear === u.id && u.ap >= 1) {
+          if (options.length && options[0].c >= 25 && shots < 2) { shots++; await h.shot(shoot2(s, u, options[0].t)); continue; }
+          u.overwatch = true; u.ap = 0; await h.moved(u); break;
+        }
+        if (!retreated && options.length && options[0].c >= 25 && u.ap >= 2 && shots === 0) { shots++; await h.shot(shoot2(s, u, options[0].t)); continue; }
+        if (!retreated) {
+          const spot = retreatSpot(s, u, humans);
+          if (spot) {
+            retreated = true; u.ap -= 1; u.stance = 'stand';
+            for (const [x, y] of findPath(s, u.x, u.y, spot[0], spot[1], u.move)) {
+              u.x = x; u.y = y;
+              await h.moved(u);
+              const mr = triggerMine(s, u);
+              if (mr) await h.blast?.(mr);
+              for (const r of reactions(s, u)) await h.shot(r);
+              if (u.hp <= 0 || s.status !== 'playing') break;
+            }
+            continue;
+          }
+        }
+        if (options.length && shots < 2) { shots++; await h.shot(shoot2(s, u, options[0].t)); continue; }
+        break;
+      }
+
       if (options.length) {
         const t = options[0].t;
         // тяжёлые и снайперы прижимают огнём, когда попасть трудно
         const sup = ['heavy', 'sniper', 'commander'].includes(u.kind) && u.ammo >= 2 && options[0].c < 35 && !t.suppressed ? suppress(s, u, t) : null;
         if (sup) { await h.shot(sup); continue; }
-        await h.shot(u.kind === 'psi' ? psiAttack(s, u, t) : shoot(s, u, t));
+        await h.shot(shoot2(s, u, t));
         // стрелки дальнего боя окапываются, если рядом нет укрытия
-        const covered = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => s.cover[u.y + dy]?.[u.x + dx] && s.cover[u.y + dy][u.x + dx] !== 'none');
-        if (u.hp > 0 && u.ap > 0 && ['sniper', 'heavy', 'commander'].includes(u.kind) && !covered && !trenchAt(s, u.x, u.y) && digIn(s, u)) await h.moved(u);
+        const covered = hasCover(s, u.x, u.y);
+        if (u.hp > 0 && u.ap > 0 && ['sniper', 'heavy', 'commander', 'trooper'].includes(u.kind) && !covered && !trenchAt(s, u.x, u.y) && (u.kind !== 'trooper' || mode === 'hold') && digIn(s, u)) await h.moved(u);
         else if (u.kind === 'sniper' && u.hp > 0 && u.ap > 0 && u.stance !== 'prone') { u.stance = 'prone'; u.ap -= 1; await h.moved(u); } // снайпер ложится
         continue;
       }
 
-      if (u.ap === 1 && u.ammo > 0 && u.kind !== 'psi' && rand(s) < 0.2) { // последнее действие: встать на overwatch
+      // ——— нет целей ———
+      if (mode === 'hold') { // после отхода: занять укрытие/окоп и ждать
+        if (!hasCover(s, u.x, u.y) && !trenchAt(s, u.x, u.y) && digIn(s, u)) { await h.moved(u); continue; }
+        u.overwatch = u.ammo > 0; u.ap = 0; await h.moved(u); break;
+      }
+      const bound = g && g.members.length >= 2 && near < 20 && (idx + s.turnNo) % 2 === 0; // перебежки: половина группы прикрывает
+      if (u.ap === 1 && u.ammo > 0 && u.kind !== 'psi' && (bound || rand(s) < 0.2)) { // последнее действие: встать на overwatch
         u.overwatch = true; u.ap = 0;
         await h.moved(u);
         break;
@@ -82,11 +164,11 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
         const [x, y] = k.split(',').map(Number);
         if (x === u.x && y === u.y) continue;
         const ghost = { ...u, x, y };
-        const near = Math.min(...humans.map(t => Math.hypot(t.x - x, t.y - y)));
+        const nearT = Math.min(...humans.map(t => Math.hypot(t.x - x, t.y - y)));
         const seen = humans.some(t => score(s, ghost, t) !== null);
-        const cov = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-          .some(([dx, dy]) => s.cover[y + dy]?.[x + dx] && s.cover[y + dy][x + dx] !== 'none');
-        const sc = ideal(u, near) - (seen ? 3 : 0) - (cov ? 1.5 : 0) - s.height[y][x] * (u.kind === 'sniper' ? 1.5 : 0.7) - (trenchAt(s, x, y) ? 2 : 0); // снайперы тянутся на высоту, любой пришелец охотно занимает окоп
+        const flank = humans.some(t => hitChance(s, ghost, t) !== null && isFlanked(s, ghost, t));
+        const cov = hasCover(s, x, y);
+        const sc = ideal(u, nearT) - (seen ? 3 : 0) - (cov ? (bound ? 3.5 : 1.5) : 0) - (flank && idx % 2 === 1 ? 2.5 : 0) - s.height[y][x] * (u.kind === 'sniper' ? 1.5 : 0.7) - (trenchAt(s, x, y) ? 2 : 0);
         if (sc < bestScore) { bestScore = sc; best = [x, y]; }
       }
       if (!best) break;
@@ -102,4 +184,26 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
       }
     }
   }
+}
+
+/** Выстрел: прямой, а если линии нет — стрейфом из-за укрытия. */
+function shoot2(s: GameState, u: Unit, t: Unit): ShotResult {
+  if (u.kind === 'psi') return psiAttack(s, u, t);
+  if (hitChance(s, u, t) === null) { const r = peekShot(s, u, t); if (r) return r; }
+  return shoot(s, u, t);
+}
+
+/** Куда отходить: дальше от бойцов, к укрытию и к точке сбора. */
+function retreatSpot(s: GameState, u: Unit, humans: Unit[]): [number, number] | null {
+  if (!humans.length) return null;
+  const here = Math.min(...humans.map(t => Math.hypot(t.x - u.x, t.y - u.y)));
+  let best: [number, number] | null = null, bs = -Infinity;
+  for (const k of reachable(s, u.x, u.y, u.move).keys()) {
+    const [x, y] = k.split(',').map(Number);
+    const d = Math.min(...humans.map(t => Math.hypot(t.x - x, t.y - y)));
+    if (d < here + 1.5) continue;
+    const sc = d + (hasCover(s, x, y) ? 3 : 0) - Math.hypot(x - u.homeX, y - u.homeY) * 0.15 + (humans.some(t => hitChance(s, { ...u, x, y }, t) !== null) ? -2 : 1);
+    if (sc > bs) { bs = sc; best = [x, y]; }
+  }
+  return best;
 }
