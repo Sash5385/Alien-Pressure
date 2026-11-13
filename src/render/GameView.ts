@@ -2,12 +2,15 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
 import { alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
+import { sway, tickWind, windBlast } from './wind';
+import { Leaves } from './leaves';
 import { reachable, findPath } from '../game/pathfinding';
 import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
 
@@ -40,6 +43,9 @@ export class GameView {
   private fogTex!: THREE.DataTexture;
   private unitMeshes = new Map<number, THREE.Object3D>();
   private rigs = new Map<number, Spawned>();
+  private leaves: Leaves | null = null;
+  private recoil = new Map<number, number>();
+  private treeSpots: { x: number; z: number; y: number; k: string }[] = [];
   private anim = new Map<number, string>();
   private dying = new Set<number>();
   private corpses = new Map<number, THREE.Object3D>(); // трупы остаются на карте
@@ -156,6 +162,7 @@ export class GameView {
     this.buildTerrain();
     this.applyWeather();
     this.buildCover();
+    this.leaves = new Leaves(this.scene, (x, z) => this.hy(x, z));
     this.buildHouses();
     this.buildZone();
     this.buildBeacons();
@@ -193,6 +200,8 @@ export class GameView {
       const rawDt = this.clock.getDelta();
       const dt = Math.min(0.05, rawDt);
       this.stepRain(dt);
+      tickWind(this.clock.elapsedTime);
+      if (this.leaves) { const tr = this.treeSpots.filter(t => this.coverMeshes.has(t.k)); this.leaves.ambient(dt, this.controls.target.x, this.controls.target.z, tr); this.leaves.update(dt); }
       for (const [id, m] of this.unitMeshes) {
         const g = this.goals.get(id);
         const u = this.state.units.find(v => v.id === id);
@@ -210,10 +219,11 @@ export class GameView {
             m.position.z += (dz / dist) * step;
           }
           m.position.y += (g.y - m.position.y) * (1 - Math.exp(-14 * dt)); // плавный подъём/спуск по рельефу
-          const runA = this.rigs.get(id)?.actions.get('Run');
+          const runA = this.rigs.get(id)?.actions.get(this.anim.get(id) === 'Run_Gun' ? 'Run_Gun' : 'Run');
           if (runA) runA.timeScale = 0.6 + nv * 0.18;
-          if (dist > 0.12 && this.rigs.has(id)) this.play(id, 'Run');
-          else if (this.anim.get(id) === 'Run') this.play(id, 'Idle');
+          const rn = this.rigs.get(id)?.actions.has('Run_Gun') && this.rigs.get(id)?.armed ? 'Run_Gun' : 'Run';
+          if (dist > 0.12 && this.rigs.has(id)) this.play(id, rn);
+          else if (this.anim.get(id) === 'Run' || this.anim.get(id) === 'Run_Gun') this.play(id, 'Idle');
         }
         const sp = this.rigs.get(id);
         if (sp && u && !this.dying.has(id)) {
@@ -221,11 +231,18 @@ export class GameView {
           const wantIdle = u.stance === 'kneel' && sp.actions.has('Kneel') ? 'Kneel' : u.stance === 'kneel' ? 'Duck' : 'Idle';
           const cur = this.anim.get(id);
           if ((cur === 'Idle' || cur === 'Duck' || cur === 'Kneel') && cur !== wantIdle && sp.actions.has(wantIdle)) this.play(id, wantIdle, wantIdle === 'Duck');
-          const tp = u.stance === 'prone' ? 1.45 : 0;
+          const mv = this.vel.get(id) ?? 0;
+          const tp = u.stance === 'prone' ? 1.45 : Math.min(0.1, mv * 0.022); // бегущий боец слегка наклоняется вперёд
           sp.inner.rotation.x += (tp - sp.inner.rotation.x) * (1 - Math.exp(-9 * dt));
-          const k = sp.inner.rotation.x / 1.45;
+          const k = Math.max(0, sp.inner.rotation.x - 0.1) / 1.35;
+          const tt0 = this.clock.elapsedTime, idle = mv < 0.05;
+          const br = idle ? Math.sin(tt0 * 1.9 + id * 1.7) : 0; // дыхание и перенос веса в покое
+          sp.inner.scale.setScalar(sp.baseScale * (1 + br * 0.006));
+          sp.inner.rotation.z += ((idle ? Math.sin(tt0 * 0.9 + id) * 0.02 : 0) - sp.inner.rotation.z) * (1 - Math.exp(-4 * dt));
           sp.inner.position.z = -0.5 * k;
           sp.inner.position.y = 0.16 * k;
+          const rc = this.recoil.get(id) ?? 0; // отдача при выстреле
+          if (rc > 0) { sp.inner.position.z -= rc * 0.05; sp.inner.position.y += rc * 0.012; this.recoil.set(id, Math.max(0, rc - dt * 9)); }
         }
         if (u) { // плавный поворот по кратчайшей дуге
           const d = Math.atan2(Math.sin(u.facing - m.rotation.y), Math.cos(u.facing - m.rotation.y));
@@ -233,7 +250,7 @@ export class GameView {
         }
         if (sp?.armBase) { sp.arms.forEach((b, i) => b.quaternion.copy(sp.armBase![i])); sp.armBase = undefined; } // микшер пишет кости только при смене позы
         this.rigs.get(id)?.mixer.update(dt * TS);
-        if (sp && u && !this.dying.has(id)) this.proneArms(sp, sp.inner.rotation.x / 1.45);
+        if (sp && u && !this.dying.has(id)) this.proneArms(sp, Math.max(0, sp.inner.rotation.x - 0.1) / 1.35);
       }
       const tt = this.clock.elapsedTime;
       for (const g of this.fireMeshes.values()) g.children.forEach((c, i) => { c.scale.y = 0.7 + 0.55 * Math.abs(Math.sin(tt * 9 + (g.userData.phase as number) + i)); });
@@ -462,7 +479,8 @@ export class GameView {
       for (let i = 0; i < k; i++) if (Math.random() < (dense ? 0.8 : 0.35)) spots.push([x + Math.random(), y + Math.random()]);
     }
     if (spots.length) {
-      const blades = new THREE.InstancedMesh(new THREE.ConeGeometry(0.05, 0.3, 4), new THREE.MeshStandardMaterial({ roughness: 1 }), spots.length);
+      const bladeMat = new THREE.MeshStandardMaterial({ roughness: 1 }); sway(bladeMat, { amp: 0.07, h: 1 });
+      const blades = new THREE.InstancedMesh(new THREE.ConeGeometry(0.05, 0.3, 4), bladeMat, spots.length);
       const m4 = new THREE.Matrix4(), col = new THREE.Color();
       spots.forEach(([px, pz], i) => {
         const s = 0.7 + Math.random() * 0.9;
@@ -523,6 +541,11 @@ export class GameView {
       else if (l === 'crate') m = placed(spawnCover('crate', hash)) ?? boxOf('half', x, y);
       else if (l === 'container') m = placed(spawnCover('container', hash)) ?? boxOf('full', x, y);
       else m = boxOf(t, x, y);
+      if (l === 'tree' || l === 'bush') { // качается верх; деревья — источник листвы
+        const gy = this.hy(x, y), tall = l === 'tree';
+        m.traverse(o => { const mm = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined; if (mm) for (const q of Array.isArray(mm) ? mm : [mm]) sway(q, { amp: tall ? 0.05 : 0.025, h: tall ? 2.0 : 0.7, ground: gy }); });
+        if (tall) this.treeSpots.push({ x: x + 0.5, z: y + 0.5, y: gy, k: `${x},${y}` });
+      }
       this.scene.add(m);
       this.coverMeshes.set(`${x},${y}`, m);
     }
@@ -1047,6 +1070,11 @@ export class GameView {
       c.addPass(new RenderPass(this.scene, this.camera));
       c.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.5, 1.0));
       c.addPass(new OutputPass());
+      c.addPass(new ShaderPass({ // цветокоррекция: лёгкая S-кривая, насыщенность и виньетка
+        uniforms: { tDiffuse: { value: null } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ vec4 c = texture2D(tDiffuse, vUv); float d = distance(vUv, vec2(0.5)); c.rgb *= 1.0 - smoothstep(0.45, 0.95, d) * 0.3; float l = dot(c.rgb, vec3(0.299, 0.587, 0.114)); c.rgb = mix(vec3(l), c.rgb, 1.12); c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), 0.22); gl_FragColor = c; }',
+      }));
       this.composer = c;
     }
     if (save) { try { localStorage.setItem('alien-pressure:gfx', q); } catch { /* ignore */ } }
@@ -1270,6 +1298,7 @@ export class GameView {
     const shots: Promise<void>[] = [];
     for (let i = 0; i < rounds; i++) {
       const last = i === rounds - 1;
+      this.recoil.set(a.id, 1);
       const to = chest.clone();
       if (!(last && r.hit)) {
         to.x += (Math.random() - 0.5) * (last ? 1.6 : 1.1);
@@ -1332,6 +1361,7 @@ export class GameView {
     const s = this.state;
     const to = new THREE.Vector3(res.x + 0.5, 0.1 + this.hy(res.x, res.y), res.y + 0.5);
     sfx('grenade');
+    { const pw = Math.min(2, 0.7 + (res.r ?? 1.5) * 0.4); windBlast(to.x, to.z, pw); this.leaves?.burst(to.x, to.z, this.treeSpots.filter(t => this.coverMeshes.has(t.k)), pw); }
     const light = new THREE.PointLight(0xffa040, 40, 14);
     light.position.set(to.x, to.y + 0.7, to.z);
     const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.85 }));

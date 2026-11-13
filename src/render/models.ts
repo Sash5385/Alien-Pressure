@@ -69,7 +69,7 @@ export function spawnCover(kind: 'tree' | 'crate' | 'container', variant: number
   return g;
 }
 
-export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction>; arms: THREE.Object3D[]; armBase?: THREE.Quaternion[] }
+export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction>; arms: THREE.Object3D[]; armBase?: THREE.Quaternion[]; baseScale: number; armed: boolean }
 
 const LEGS = /^(Hips|Body|UpperLeg|LowerLeg|Foot|Root|PoleTarget)/;
 const DUCK_T = 0.4; // кадр клипа Duck с согнутыми ногами
@@ -171,5 +171,5 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   if (name === 'Soldier') addGear(inner, mixer, actions.get('Idle'));
   const arms: THREE.Object3D[] = [];
   inner.traverse(o => { if (/^UpperArm[._]?[LR]$/.test(o.name)) arms.push(o); });
-  return { obj, inner, mixer, actions, arms };
+  return { obj, inner, mixer, actions, arms, baseScale: inner.scale.x, armed: !!weapon };
 }
