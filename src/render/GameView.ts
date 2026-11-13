@@ -44,6 +44,9 @@ export class GameView {
   private unitMeshes = new Map<number, THREE.Object3D>();
   private rigs = new Map<number, Spawned>();
   private leaves: Leaves | null = null;
+  private middle = false;
+  /** Колесо зажато / отпущено: в реальном времени пока зажато — время стоит. */
+  onMiddle?: (down: boolean) => void;
   private recoil = new Map<number, number>();
   private gaze = new Map<number, { tid: number; until: number }>();
   private treeSpots: { x: number; z: number; y: number; k: string }[] = [];
@@ -108,8 +111,8 @@ export class GameView {
     this.controls.maxPolarAngle = Math.PI / 2.2;
     this.controls.minDistance = 6;
     this.controls.maxDistance = 64;
-    // ПКМ занят поворотом бойца; сдвиг камеры — средняя кнопка (на тач — двумя пальцами)
-    this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: null as unknown as THREE.MOUSE };
+    // мышь: ЛКМ с зажимом — сдвиг карты, ПКМ с зажимом — вращение, колесо — масштаб; обычные клики остаются действиями
+    this.controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: null as unknown as THREE.MOUSE, RIGHT: THREE.MOUSE.ROTATE };
     // тач: один палец двигает карту, два — поворот и масштаб щипком; сдвиг по земле, а не по экрану
     this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
     this.controls.screenSpacePanning = false;
@@ -178,6 +181,7 @@ export class GameView {
     let longFired = false;
     const cancelLp = () => { if (lp) { clearTimeout(lp); lp = undefined; } };
     el.addEventListener('pointerdown', e => {
+      if (e.button === 1) { e.preventDefault(); this.middle = true; this.onMiddle?.(true); }
       this.down = { x: e.clientX, y: e.clientY };
       longFired = false;
       cancelLp();
@@ -185,7 +189,10 @@ export class GameView {
     });
     el.addEventListener('pointermove', e => { if (lp && Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y) >= 8) cancelLp(); });
     el.addEventListener('pointercancel', cancelLp);
+    const midUp = () => { if (this.middle) { this.middle = false; this.onMiddle?.(false); } };
+    addEventListener('blur', midUp);
     el.addEventListener('pointerup', e => {
+      if (e.button === 1) midUp();
       cancelLp();
       if (longFired) { longFired = false; return; }
       if (Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y) >= 5) return;

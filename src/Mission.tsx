@@ -59,6 +59,13 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     loadModels().then(() => {
       if (dead) return;
       view.current = new GameView(host.current!, state.current, rerender);
+      let wasPaused = false; // зажатое колесо мыши: время стоит, пока держишь
+      view.current.onMiddle = down => {
+        const rt = state.current.rt;
+        if (!rt) return;
+        if (down) { wasPaused = rt.paused; rt.paused = true; } else { rt.paused = wasPaused; }
+        rerender();
+      };
       rerender();
     });
     return () => { dead = true; view.current?.dispose(); view.current = null; };
@@ -451,7 +458,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
                 {UI_NAMES.map((n, i) => <button key={n} style={{ ...nb(i === uiIdx, false), minWidth: 0, minHeight: 34, padding: '4px 8px', width: 'auto', fontSize: 12, borderRadius: 10 }} onClick={() => { setUiIdx(i); saveUi(i); }}>{n}</button>)}
               </div>
             </div>
-            <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палец — двигать карту, 2 — вращать, щипок — масштаб, долгое нажатие — повернуть бойца.' : 'ПКМ — повернуть бойца, СКМ — сдвиг камеры.'}</div>
+            <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палец — двигать карту, 2 — вращать, щипок — масштаб, долгое нажатие — повернуть бойца.' : 'ЛКМ с зажимом — двигать карту, ПКМ с зажимом — вращать, колесо — масштаб, зажатое колесо — пауза (в реальном времени). Клик ПКМ — повернуть бойца.'}</div>
             <div style={{ opacity: 0.45, textAlign: 'center' }}>{VERSION}</div>
           </div>
         )}
