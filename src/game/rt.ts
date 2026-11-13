@@ -1,5 +1,5 @@
 import { alienIter, planGroups, type AiHooks, type AiSt, type Grp } from './ai';
-import { checkEnd, hitChance, humanPulse, isVisible, living, log, moveRange, peekShot, peekTile, reload, shoot, type ShotResult, updateVision } from './combat';
+import { checkEnd, hitChance, humanPulse, isVisible, living, log, peekShot, peekTile, reload, shoot, type ShotResult, updateVision } from './combat';
 import { reinforce } from './mission';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
@@ -7,6 +7,8 @@ import { WEAPONS } from './weapons';
 
 /** Реальное время. 1 AP пошагового режима = CD_PER_AP секунд ожидания; «ход» (волны, кровь, огонь) = TURN_SECS секунд. */
 export const CD_PER_AP = 2.4;
+/** Скорость бега в клетках в секунду (совпадает с GameView). */
+export const RUN_SPEED = 3.6;
 export const TURN_SECS = 9;
 
 export interface RtHooks extends AiHooks {
@@ -80,9 +82,11 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
     if (u.dest.x === u.x && u.dest.y === u.y) { u.dest = undefined; return; }
     const path = findPath(s, u.x, u.y, u.dest.x, u.dest.y, 80);
     if (!path.length) { u.dest = undefined; return; }
+    const step = Math.hypot(path[0][0] - u.x, path[0][1] - u.y);
     [u.x, u.y] = path[0]; u.stance = 'stand'; u.overwatch = false;
-    u.cd = CD_PER_AP / Math.max(1, moveRange(u)); u.ap = 0; u.busyRt = true;
-    void hooks.step(u).catch(() => {}).finally(() => { u.busyRt = false; });
+    // следующий шаг назначается раньше, чем боец дойдёт до клетки, поэтому бег непрерывный (без остановок на каждой клетке)
+    u.cd = step * 0.8 / RUN_SPEED; u.ap = 0;
+    void hooks.step(u).catch(() => {});
     if (path.length === 1) u.dest = undefined;
     return;
   }

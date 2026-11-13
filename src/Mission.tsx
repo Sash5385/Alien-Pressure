@@ -14,6 +14,9 @@ import { BIOME_NAME } from './game/difficulty';
 import { ARMORS, WEAPONS } from './game/weapons';
 
 /** Миникарта: рельеф, укрытия, туман войны, бойцы и видимые пришельцы; клик — перенос камеры. */
+const UI_SCALES = [0.8, 0.9, 1, 1.15, 1.3];
+const UI_NAMES = ['XS', 'S', 'M', 'L', 'XL'];
+
 function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick: (x: number, y: number) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const px = s.size <= 44 ? 3 : 2;
@@ -69,8 +72,12 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const [more, setMore] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showMap, setShowMap] = useState(true);
-  const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
-  const lift = typeof window !== 'undefined' && window.innerWidth < 1400; // на средних экранах угловые блоки поднимаем над диском
+  const [uiIdx, setUiIdx] = useState(() => { try { const v = Number(localStorage.getItem('alien-pressure:ui')); return v >= 0 && v < UI_SCALES.length && localStorage.getItem('alien-pressure:ui') !== null ? v : 2; } catch { return 2; } });
+  const z = UI_SCALES[uiIdx];
+  const vwE = (typeof window !== 'undefined' ? window.innerWidth : 1280) / z; // ширина интерфейса с учётом размера
+  const vw = (n: number) => `calc(${n} * 1vw / ${z})`;
+  const narrow = vwE < 600;
+  const lift = vwE < 1400; // на средних экранах угловые блоки поднимаем над диском
   const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   // автосохранение: в начале хода и после каждого действия игрока
   useEffect(() => { if (s.status === 'playing' && (s.rt ? s.rt.paused : s.turn === 'human' && !s.busy)) onSave(s); });
@@ -344,7 +351,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     ...(sel?.cls === 'engineer' ? [it('☁', 'Дым', '', !!s.smokeMode && s.aiming === 'grenade', !canGrenade, toggleSmoke, 'Дымовая 3×3 на 2 хода, тратит гранату')] : []),
     it('👁', 'Осмотр', '', !!s.lookMode, !sel, toggleLook, 'Осмотр: подсветить зону обзора и дальность выбранного бойца (без траты AP)'),
   ];
-  const fan = !narrow && typeof window !== 'undefined' && window.innerWidth >= 900;
+  const fan = !narrow && vwE >= 900;
   const cornerBottom = fan ? 262 : lift ? (narrow ? 215 : 150) : 8;
   const txt = (i: Item) => <button key={i.label} style={nb(i.on, i.off)} disabled={i.off} title={i.title} onClick={i.click}>{i.label}{i.sub && <small style={{ fontWeight: 500, opacity: 0.7, fontSize: 10 }}>{i.sub}</small>}</button>;
   const FR = 150, FC = 70;
@@ -375,14 +382,16 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
+      <style>{'.hud>*{pointer-events:auto}'}</style>
+      <div className="hud" style={{ position: 'absolute', left: 0, top: 0, width: `${100 / z}%`, height: `${100 / z}%`, transform: `scale(${z})`, transformOrigin: '0 0', pointerEvents: 'none' }}>
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
-      <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? '94vw' : 560, pointerEvents: 'none', textAlign: 'center' }}>
+      <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? vw(94) : 560, pointerEvents: 'none', textAlign: 'center' }}>
         <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
           Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
         </div>
       </div>
       {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (
-        <div key={side as string} style={{ position: 'absolute', top: narrow ? 46 : 8, [side as string]: 8, display: 'flex', flexDirection: 'column', gap: 6, alignItems: side === 'left' ? 'flex-start' : 'flex-end', width: narrow ? '46vw' : undefined }}>
+        <div key={side as string} style={{ position: 'absolute', top: narrow ? 46 : 8, [side as string]: 8, display: 'flex', flexDirection: 'column', gap: 6, alignItems: side === 'left' ? 'flex-start' : 'flex-end', width: narrow ? vw(46) : undefined }}>
           {(list as Unit[]).map(u => (
             <button key={u.id} disabled={u.hp <= 0 || !canAct} onClick={() => pick(u.id)} title={u.traits.map(t => TRAITS[t].name).join(', ')}
               style={{ ...nbBase, borderRadius: 14, boxShadow: u.id === s.selectedId ? `${OUTS}, 0 0 0 2px ${AC}` : OUTS, color: '#f2f6ff', padding: '6px 10px', fontSize: narrow ? 11 : 12, fontWeight: 700, minWidth: narrow ? 0 : 160, width: narrow ? '100%' : undefined, opacity: u.hp <= 0 ? 0.4 : 1, textDecoration: u.hp <= 0 ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between', cursor: 'pointer', minHeight: touch ? 40 : undefined }}>
@@ -396,7 +405,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         </div>
       ))}
       {/* ——— инфо о бойце и цели, по центру ——— */}
-      <div style={{ position: 'absolute', top: narrow ? 150 : 50, left: '50%', transform: 'translateX(-50%)', width: narrow ? '94vw' : 560, display: 'grid', gap: 5, justifyItems: 'center', textAlign: 'center', pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
+      <div style={{ position: 'absolute', top: narrow ? 150 : 50, left: '50%', transform: 'translateX(-50%)', width: narrow ? vw(94) : 560, display: 'grid', gap: 5, justifyItems: 'center', textAlign: 'center', pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
         <div style={{ fontWeight: 700 }}>{info}</div>
         {sel && !narrow && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', fontSize: 12 }}>
@@ -429,16 +438,22 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       )}
       <div style={{ position: 'absolute', right: 8, bottom: cornerBottom, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
         {showLog && (
-          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, width: narrow ? 'calc(100vw - 16px)' : 340, maxHeight: 260, overflowY: 'auto', fontSize: 12, lineHeight: 1.45, pointerEvents: 'auto' }}>
+          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, width: narrow ? `calc(${vw(100)} - 16px)` : 340, maxHeight: 260, overflowY: 'auto', fontSize: 12, lineHeight: 1.45, pointerEvents: 'auto' }}>
             {[...s.log].reverse().slice(0, 60).map((l, i) => <div key={i} style={{ opacity: l.startsWith('—') ? 0.55 : 1, borderTop: l.startsWith('—') ? '1px solid #2a3348' : undefined, paddingTop: l.startsWith('—') ? 4 : 0 }}>{l}</div>)}
           </div>
         )}
         {more && (
-          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, fontSize: 12 }}>
+          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, fontSize: 12, maxHeight: `calc(100vh / ${z} - 90px)`, overflowY: 'auto' }}>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графика: {view.current?.getQuality() === 'low' ? 'обычная' : 'высокая'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручная' : 'авто'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setWeatherOn(!v.isWeatherOn()); rerender(); }}>Погода: {view.current?.isWeatherOn() === false ? 'выкл' : 'вкл'}</button>
             <button style={nb(false, false)} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>
+            <div style={{ display: 'grid', gap: 4 }}>
+              <span style={{ opacity: 0.7, fontSize: 11 }}>Размер интерфейса</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {UI_NAMES.map((n, i) => <button key={n} style={{ ...nb(i === uiIdx, false), minWidth: 0, minHeight: 34, padding: '4px 8px', width: 'auto', fontSize: 12, borderRadius: 10 }} onClick={() => { setUiIdx(i); try { localStorage.setItem('alien-pressure:ui', String(i)); } catch { /* ignore */ } }}>{n}</button>)}
+              </div>
+            </div>
             <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палец — двигать карту, 2 — вращать, щипок — масштаб, долгое нажатие — повернуть бойца.' : 'ПКМ — повернуть бойца, СКМ — сдвиг камеры.'}</div>
             <div style={{ opacity: 0.45, textAlign: 'center' }}>{VERSION}</div>
           </div>
@@ -451,17 +466,17 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <button style={round(more)} title="Настройки" onClick={() => setMore(!more)}>⚙</button>
         </div>
       </div>
-      <div style={{ position: 'absolute', left: '50%', bottom: 8, transform: 'translateX(-50%)', display: 'grid', gap: 8, justifyItems: 'center', width: narrow ? 'calc(100vw - 16px)' : undefined, pointerEvents: 'none' }}>
-        <div style={{ maxWidth: narrow ? '34vw' : 420, fontSize: narrow ? 9 : 12, textAlign: 'center', textShadow: '0 1px 2px #000', pointerEvents: 'none', maxHeight: narrow ? 42 : 64, overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', left: '50%', bottom: 8, transform: 'translateX(-50%)', display: 'grid', gap: 8, justifyItems: 'center', width: narrow ? `calc(${vw(100)} - 16px)` : undefined, pointerEvents: 'none' }}>
+        <div style={{ maxWidth: narrow ? vw(34) : 420, fontSize: narrow ? 9 : 12, textAlign: 'center', textShadow: '0 1px 2px #000', pointerEvents: 'none', maxHeight: narrow ? 42 : 64, overflow: 'hidden' }}>
           {s.log.slice(narrow ? -1 : -3).map((l, i) => <div key={s.log.length + ':' + i}>{l}</div>)}
         </div>
         {fan ? <div style={{ pointerEvents: 'auto' }}>{rtOrEnd}</div> : (
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: narrow ? 6 : 14, pointerEvents: 'auto' }}>
-            <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? 'calc((100vw - 16px - 84px - 12px) / 2)' : undefined }}>
+            <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? `calc((${vw(100)} - 16px - 84px - 12px) / 2)` : undefined }}>
               {[bigL, ...itemsL].map((b, i) => <div key={i} style={{ minWidth: 0 }}>{txt(b)}</div>)}
             </div>
             <div style={{ display: 'grid', gap: 8, justifyItems: 'center' }}>{rtOrEnd}{fireBtn(narrow ? 84 : 104)}</div>
-            <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? 'calc((100vw - 16px - 84px - 12px) / 2)' : undefined }}>
+            <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? `calc((${vw(100)} - 16px - 84px - 12px) / 2)` : undefined }}>
               {itemsR.map((b, i) => <div key={i} style={{ minWidth: 0 }}>{txt(b)}</div>)}
             </div>
           </div>
@@ -481,6 +496,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           </div>
         </div>
       </>)}
+      </div>
       {view.current?.hover && s.turn === 'human' && (s.rt || !s.busy) && (
         <div style={{ position: 'fixed', left: Math.min(view.current.hover.sx + 16, window.innerWidth - 220), top: view.current.hover.sy + 18, ...nbBase, borderRadius: 10, boxShadow: OUTS, padding: '4px 10px', fontSize: 12, fontWeight: 700, pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 5 }}>{view.current.hover.text}</div>
       )}
