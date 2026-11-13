@@ -13,6 +13,8 @@ import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
 
 let TS = 1; // масштаб времени (реальный режим: ×0.5 / ×1)
 export const setTimeScale = (x: number) => { TS = x; };
+const PRONE_AXIS = 1, PRONE_ANG = -1.45; // руки лёжа: ось (в системе модели) и угол
+
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms / TS));
 const SPEED = 3.6; // клеток в секунду (было 6,5 — медленнее по просьбе)
 const BULLET_SPEED = 18; // клеток/с: пулю видно в полёте (было 60)
@@ -216,9 +218,9 @@ export class GameView {
         const sp = this.rigs.get(id);
         if (sp && u && !this.dying.has(id)) {
           // стойка: колено — клип Duck, лёжа — модель ложится на живот (плавно)
-          const wantIdle = u.stance === 'kneel' ? 'Duck' : 'Idle';
+          const wantIdle = u.stance === 'kneel' && sp.actions.has('Kneel') ? 'Kneel' : u.stance === 'kneel' ? 'Duck' : 'Idle';
           const cur = this.anim.get(id);
-          if ((cur === 'Idle' || cur === 'Duck') && cur !== wantIdle && sp.actions.has(wantIdle)) this.play(id, wantIdle, wantIdle === 'Duck');
+          if ((cur === 'Idle' || cur === 'Duck' || cur === 'Kneel') && cur !== wantIdle && sp.actions.has(wantIdle)) this.play(id, wantIdle, wantIdle === 'Duck');
           const tp = u.stance === 'prone' ? 1.45 : 0;
           sp.inner.rotation.x += (tp - sp.inner.rotation.x) * (1 - Math.exp(-9 * dt));
           const k = sp.inner.rotation.x / 1.45;
@@ -229,7 +231,9 @@ export class GameView {
           const d = Math.atan2(Math.sin(u.facing - m.rotation.y), Math.cos(u.facing - m.rotation.y));
           m.rotation.y += d * (1 - Math.exp(-14 * dt));
         }
+        if (sp?.armBase) { sp.arms.forEach((b, i) => b.quaternion.copy(sp.armBase![i])); sp.armBase = undefined; } // микшер пишет кости только при смене позы
         this.rigs.get(id)?.mixer.update(dt * TS);
+        if (sp && u && !this.dying.has(id)) this.proneArms(sp, sp.inner.rotation.x / 1.45);
       }
       const tt = this.clock.elapsedTime;
       for (const g of this.fireMeshes.values()) g.children.forEach((c, i) => { c.scale.y = 0.7 + 0.55 * Math.abs(Math.sin(tt * 9 + (g.userData.phase as number) + i)); });
@@ -614,8 +618,24 @@ export class GameView {
     this.scene.add(m);
   }
 
+  /** Лёжа: руки вытянуты вперёд вдоль тела, ствол смотрит по направлению взгляда. */
+  private proneArms(sp: Spawned, k: number) {
+    if (k < 0.02 || !sp.arms.length) return;
+    sp.inner.updateWorldMatrix(true, false);
+    const iq = sp.inner.getWorldQuaternion(new THREE.Quaternion());
+    sp.armBase = sp.arms.map(b => b.quaternion.clone());
+    for (const b of sp.arms) {
+      const pq = b.parent!.getWorldQuaternion(new THREE.Quaternion());
+      const axis = new THREE.Vector3(PRONE_AXIS, 0, 0).applyQuaternion(iq);
+      const dq = new THREE.Quaternion().setFromAxisAngle(axis, PRONE_ANG * k);
+      b.quaternion.premultiply(pq).premultiply(dq).premultiply(pq.clone().invert()); // локально: pq⁻¹·dq·pq·q
+      b.updateMatrixWorld(true);
+    }
+  }
+
   private play(id: number, name: string, once = false) {
     const r = this.rigs.get(id);
+    if (name === 'Idle_Shoot' && r?.actions.has('KneelShoot') && this.state.units.find(v => v.id === id)?.stance === 'kneel') name = 'KneelShoot';
     const next = r?.actions.get(name);
     if (!r || !next) return;
     const prevName = this.anim.get(id);

@@ -69,7 +69,30 @@ export function spawnCover(kind: 'tree' | 'crate' | 'container', variant: number
   return g;
 }
 
-export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction> }
+export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction>; arms: THREE.Object3D[]; armBase?: THREE.Quaternion[] }
+
+const LEGS = /^(Hips|Body|UpperLeg|LowerLeg|Foot|Root|PoleTarget)/;
+const DUCK_T = 0.4; // кадр клипа Duck с согнутыми ногами
+const nodeOf = (t: THREE.KeyframeTrack) => t.name.slice(0, t.name.lastIndexOf('.'));
+/** Один кадр клипа (в момент time) как статичные треки. */
+function frozen(clip: THREE.AnimationClip, time: number, keep: (node: string) => boolean): THREE.KeyframeTrack[] {
+  return clip.tracks.filter(t => keep(nodeOf(t))).map(t => {
+    const v = Array.from((t as unknown as { createInterpolant(): { evaluate(t: number): ArrayLike<number> } }).createInterpolant().evaluate(time));
+    return new (t.constructor as new (n: string, ti: ArrayLike<number>, v: ArrayLike<number>) => THREE.KeyframeTrack)(t.name, [0], v);
+  });
+}
+/** Позы «оружие вперёд»: стоя (Idle), на колене (Kneel, KneelShoot с ногами из Duck). */
+function aimClips(clips: THREE.AnimationClip[]): THREE.AnimationClip[] {
+  const shoot = clips.find(c => c.name === 'Idle_Shoot'), duck = clips.find(c => c.name === 'Duck');
+  if (!shoot) return [];
+  const out = [new THREE.AnimationClip('IdleAim', 1, frozen(shoot, 0, () => true))];
+  if (duck) {
+    const legs = frozen(duck, DUCK_T, n => LEGS.test(n));
+    out.push(new THREE.AnimationClip('Kneel', 1, [...frozen(shoot, 0, n => !LEGS.test(n)), ...legs]));
+    out.push(new THREE.AnimationClip('KneelShoot', shoot.duration, [...shoot.tracks.filter(t => !LEGS.test(nodeOf(t))), ...legs]));
+  }
+  return out;
+}
 
 /** Клонирует модель, подгоняет высоту (в клетках) и красит (tint — смешивается с исходным цветом). */
 // Все оружия лежат в модели узлами в руке; показываем только выбранное (пустая строка — без оружия)
@@ -94,5 +117,10 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   const mixer = new THREE.AnimationMixer(inner);
   const actions = new Map<string, THREE.AnimationAction>();
   for (const c of m.clips) actions.set(c.name, mixer.clipAction(c));
-  return { obj, inner, mixer, actions };
+  if (weapon) { // с оружием: стоя и на колене ствол направлен вперёд
+    for (const c of aimClips(m.clips)) { const a = mixer.clipAction(c); a.timeScale = c.name === 'KneelShoot' ? 1 : 0; actions.set(c.name === 'IdleAim' ? 'Idle' : c.name, a); }
+  }
+  const arms: THREE.Object3D[] = [];
+  inner.traverse(o => { if (/^UpperArm[._]?[LR]$/.test(o.name)) arms.push(o); });
+  return { obj, inner, mixer, actions, arms };
 }
