@@ -10,9 +10,9 @@ interface Loaded { scene: THREE.Object3D; clips: THREE.AnimationClip[]; height: 
 const cache = new Map<ModelName, Loaded>();
 
 /** Грузит glTF из public/models/. Не найденные файлы просто пропускаются — сцена использует примитивы. */
-export async function loadModels(): Promise<void> {
+export async function loadModels(covers = true): Promise<void> {
   const loader = new GLTFLoader();
-  await Promise.all([loadCovers(), ...NAMES.map(async n => {
+  await Promise.all([covers ? loadCovers() : Promise.resolve(), ...NAMES.map(async n => {
     if (cache.has(n)) return;
     try {
       const g = await loader.loadAsync(`${import.meta.env.BASE_URL}models/Character_${n}.gltf`);
@@ -117,7 +117,7 @@ diffuseColor.rgb=cc;`);
 }
 
 /** Снаряжение: разгрузка с магазинами и гранатами на груди, сапёрная лопатка на бедре. Крепится к костям. */
-function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE.AnimationAction) {
+function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE.AnimationAction, armor = 'none') {
   if (aim) { aim.play(); mixer.update(0); }
   const bone = (n: string) => inner.getObjectByName(n);
   const torso = bone('Torso'), hips = bone('Hips');
@@ -137,6 +137,19 @@ function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE
     const g = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), grn); g.scale.set(1, 1.25, 1); g.position.set(x, 1.1, 0.23); g.castShadow = true; inner.add(g); items.push({ o: g, host: torso });
     items.push(box(0.03, 0.05, 0.03, met, x, 1.25, 0.24, torso));
   }
+  // броня: бронежилет — накладка на грудь, пластины — ещё наплечники и поясница, экзоскелет — каркас на ногах
+  const plate = mat(armor === 'exo' ? 0x5b6470 : 0x2c3036, 0.6), steel = mat(0x7d8794, 0.4);
+  if (armor !== 'none') {
+    items.push(box(0.5, 0.38, 0.07, plate, 0, 1.02, 0.27, torso));
+    items.push(box(0.5, 0.3, 0.07, plate, 0, 1.0, -0.27, torso));
+  }
+  if (armor === 'plate' || armor === 'exo') {
+    for (const x of [-0.36, 0.36]) items.push(box(0.2, 0.12, 0.3, plate, x, 1.28, 0, torso));
+    items.push(box(0.56, 0.14, 0.4, plate, 0, 0.72, 0, hips));
+  }
+  if (armor === 'exo') {
+    for (const x of [-0.19, 0.19]) { items.push(box(0.1, 0.5, 0.1, steel, x, 0.45, 0.14, hips)); items.push(box(0.18, 0.12, 0.14, plate, x, 0.2, 0.12, hips)); }
+  }
   // лопатка на левом бедре: черенок и штык
   items.push(box(0.05, 0.5, 0.05, wood, 0.37, 0.7, -0.02, hips));
   items.push(box(0.17, 0.2, 0.025, met, 0.37, 0.4, -0.02, hips));
@@ -145,7 +158,7 @@ function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE
   if (aim) aim.stop();
 }
 
-export function spawnModel(name: ModelName, height: number, tint?: number, weapon = 'AK'): Spawned | null {
+export function spawnModel(name: ModelName, height: number, tint?: number, weapon = 'AK', armor = 'none'): Spawned | null {
   const m = cache.get(name);
   if (!m) return null;
   const obj = new THREE.Group();
@@ -168,7 +181,7 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   if (weapon) { // с оружием: стоя и на колене ствол направлен вперёд
     for (const c of aimClips(m.clips)) { const a = mixer.clipAction(c); a.timeScale = c.name === 'KneelShoot' ? 1 : 0; actions.set(c.name === 'IdleAim' ? 'Idle' : c.name, a); }
   }
-  if (name === 'Soldier') addGear(inner, mixer, actions.get('Idle'));
+  if (name === 'Soldier') addGear(inner, mixer, actions.get('Idle'), armor);
   const arms: THREE.Object3D[] = [];
   inner.traverse(o => { if (/^UpperArm[._]?[LR]$/.test(o.name)) arms.push(o); });
   const neck = inner.getObjectByName('Neck') ?? undefined, torso = inner.getObjectByName('Torso') ?? undefined;

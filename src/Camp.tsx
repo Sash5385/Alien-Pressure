@@ -6,7 +6,7 @@ import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
 import { ARMORS, WEAPONS } from './game/weapons';
 import { btn, cta, glass, NM, UI_NAMES, UI_SCALES, useUiSize } from './ui';
-import { Silhouette } from './Silhouette';
+import { SoldierView } from './SoldierView';
 import { DEFEND_KINDS } from './game/mission';
 
 const HEX = 'polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)';
@@ -125,7 +125,6 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         if (!s) return null;
         const max = maxHpOf(s, c.tech), on = ids.includes(s.id);
         const w = WEAPONS[s.weapon], ar = ARMORS[s.armor];
-        const kit = true;
         const grenades = 2 + (c.tech.grenades ? 1 : 0) + (s.cls === 'engineer' ? 1 : 0);
         const hex = (k: 'weapon' | 'armor' | 'cls' | null, icon: string, lab: string, val: string, side: 'l' | 'r', dx: number) => (
           <div style={{ display: 'flex', flexDirection: narrow ? 'column' : side === 'l' ? 'row' : 'row-reverse', alignItems: 'center', gap: narrow ? 4 : 10, transform: narrow ? undefined : `translateX(${side === 'l' ? dx : -dx}px)`, cursor: k ? 'pointer' : 'default' }}
@@ -156,7 +155,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
                 {hex('cls', '⚔', 'Класс', CLASSES[s.cls].name, 'l', 0)}
               </div>
               <div style={{ position: 'relative', display: 'grid', justifyItems: 'center' }}>
-                <Silhouette weapon={s.weapon} armor={s.armor} grenades={grenades} mags={2} kit={kit} width={narrow ? 96 : 150} />
+                <SoldierView weapon={s.weapon} armor={s.armor} width={narrow ? 130 : 210} height={narrow ? 230 : 380} />
                 <div style={{ width: narrow ? 120 : 190, height: 30, borderRadius: '50%', background: 'radial-gradient(ellipse,#7ee0ff55 -20%,transparent 70%)', marginTop: -14 }} />
               </div>
               <div style={{ display: 'grid', gap: narrow ? 10 : 26 }}>

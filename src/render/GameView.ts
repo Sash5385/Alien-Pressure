@@ -754,7 +754,7 @@ export class GameView {
     const gun = u.team === 'human'
       ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'ShortCannon', mortar: 'ShortCannon', ags: 'ShortCannon' }[u.weapon]
       : { soldier: '', trooper: 'AK', sniper: 'Sniper_2', psi: '', heavy: 'ShortCannon', commander: 'Revolver' }[u.kind];
-    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun);
+    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor);
     if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
     this.rigs.set(u.id, sp);
     this.play(u.id, 'Idle');
