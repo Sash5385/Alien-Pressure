@@ -3,7 +3,7 @@ import { runAlienTurn } from './game/ai';
 import { aimedShot, bandage, canLaunch, LAUNCH, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState, Unit } from './game/types';
-import { btn, cta, NM, VERSION } from './ui';
+import { btn, cta, glass, VERSION } from './ui';
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
 import { GameView, setTimeScale, WEATHER_NAME, weatherOf, type Weather } from './render/GameView';
@@ -486,7 +486,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       )}
       {s.status !== 'playing' && (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#0b0f18cc' }}>
-          <div style={{ textAlign: 'center', background: NM.bg, boxShadow: NM.out, borderRadius: 22, padding: '24px 32px', maxWidth: 'calc(100vw - 32px)' }}>
+          <div style={{ textAlign: 'center', ...glass, borderRadius: 22, padding: '24px 32px', maxWidth: 'calc(100vw - 32px)' }}>
             <h1 style={{ margin: 0 }}>{s.status === 'won' ? 'Зачистка завершена' : 'Отряд уничтожен'}</h1>
             <p>Ходов: {s.turnNo} · выжило: {living(s, 'human').length}/{s.units.filter(u => u.team === 'human').length}</p>
             {s.status === 'lost' && <button style={{ ...cta(), marginRight: 8 }} onClick={() => onExit(s, true)}>Повторить миссию</button>}

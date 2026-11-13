@@ -5,12 +5,12 @@ import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
 import { ARMORS, WEAPONS } from './game/weapons';
-import { btn, cta, NM } from './ui';
+import { btn, cta, glass, NM } from './ui';
 import { Silhouette } from './Silhouette';
 import { DEFEND_KINDS } from './game/mission';
 
 const HEX = 'polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)';
-const panel: React.CSSProperties = { background: NM.bg, boxShadow: NM.out, borderRadius: 18, padding: 14 };
+const panel: React.CSSProperties = { ...glass, borderRadius: 18, padding: 14 };
 
 export function Camp({ c, onChange, onStart, onMenu }: {
   c: Campaign;
@@ -65,7 +65,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
           <svg aria-hidden="true" style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: 34 }} viewBox="0 0 300 34" preserveAspectRatio="none">
             {c.options.map((_, i) => {
               const x = ((i + 0.5) / c.options.length) * 300;
-              return <path key={i} d={`M150 0 Q150 20 ${x} 34`} stroke="#2f3a54" strokeWidth="2" fill="none" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />;
+              return <path key={i} d={`M150 0 Q150 20 ${x} 34`} stroke="rgba(255,255,255,.3)" strokeWidth="2" fill="none" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />;
             })}
           </svg>
           <div style={{ position: 'absolute', left: '50%', top: -4, transform: 'translateX(-50%)', width: 14, height: 14, clipPath: HEX, background: NM.accent }} title="База" />
@@ -102,8 +102,8 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         const hex = (k: 'weapon' | 'armor' | 'cls' | null, icon: string, lab: string, val: string, side: 'l' | 'r', dx: number) => (
           <div style={{ display: 'flex', flexDirection: narrow ? 'column' : side === 'l' ? 'row' : 'row-reverse', alignItems: 'center', gap: narrow ? 4 : 10, transform: narrow ? undefined : `translateX(${side === 'l' ? dx : -dx}px)`, cursor: k ? 'pointer' : 'default' }}
             role={k ? 'button' : undefined} tabIndex={k ? 0 : undefined} onClick={() => k && setOpen(open === k ? null : k)} onKeyDown={e => { if (k && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(open === k ? null : k); } }}>
-            <div style={{ width: 62, height: 70, flex: 'none', clipPath: HEX, background: open === k && k ? NM.accent : '#2f3a54', display: 'grid', placeItems: 'center' }}>
-              <div style={{ width: 58, height: 66, clipPath: HEX, background: NM.bg, display: 'grid', placeItems: 'center', fontSize: 22 }}>{icon}</div>
+            <div style={{ width: 62, height: 70, flex: 'none', clipPath: HEX, background: open === k && k ? NM.accent : NM.line, display: 'grid', placeItems: 'center' }}>
+              <div style={{ width: 58, height: 66, clipPath: HEX, background: NM.solid, display: 'grid', placeItems: 'center', fontSize: 22 }}>{icon}</div>
             </div>
             <div style={{ textAlign: narrow ? 'center' : side === 'l' ? 'left' : 'right', minWidth: 0, fontSize: narrow ? 11 : undefined }}>
               <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: NM.dim }}>{lab}</div>
@@ -129,7 +129,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
               </div>
               <div style={{ position: 'relative', display: 'grid', justifyItems: 'center' }}>
                 <Silhouette weapon={s.weapon} armor={s.armor} grenades={grenades} mags={2} kit={kit} width={narrow ? 96 : 150} />
-                <div style={{ width: narrow ? 120 : 190, height: 30, borderRadius: '50%', background: 'radial-gradient(ellipse,#ffd34d55 -20%,transparent 70%)', marginTop: -14 }} />
+                <div style={{ width: narrow ? 120 : 190, height: 30, borderRadius: '50%', background: 'radial-gradient(ellipse,#7ee0ff55 -20%,transparent 70%)', marginTop: -14 }} />
               </div>
               <div style={{ display: 'grid', gap: narrow ? 10 : 26 }}>
                 {hex(null, '💣', 'Гранаты', `× ${grenades}`, 'r', 0)}
@@ -205,7 +205,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
 
 export function Screen({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', color: NM.fg, background: NM.bg, fontFamily: "system-ui, sans-serif", fontSize: 14 }}>
+    <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', color: NM.fg, background: NM.bg, backgroundAttachment: 'fixed', fontFamily: "system-ui, sans-serif", fontSize: 14 }}>
       <div style={{ maxWidth: 720, margin: '0 auto', padding: 16, display: 'grid', gap: 14 }}>{children}</div>
     </div>
   );

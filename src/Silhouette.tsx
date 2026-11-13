@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import type { ArmorId, WeaponId } from './game/types';
 
-const GEAR = '#8fa0c4', SIL = '#0f1420', ACC = '#ffd34d';
+const GEAR = '#8fa0c4', SIL = '#0f1420', ACC = '#7ee0ff';
 
 /** Силуэт бойца с навешенными бронёй, оружием и амуницией. */
 export function Silhouette({ weapon, armor, grenades, mags, kit, width = 200 }: {
