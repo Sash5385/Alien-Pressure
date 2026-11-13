@@ -45,6 +45,7 @@ export class GameView {
   private rigs = new Map<number, Spawned>();
   private leaves: Leaves | null = null;
   private recoil = new Map<number, number>();
+  private gaze = new Map<number, { tid: number; until: number }>();
   private treeSpots: { x: number; z: number; y: number; k: string }[] = [];
   private anim = new Map<number, string>();
   private dying = new Set<number>();
@@ -246,11 +247,11 @@ export class GameView {
         }
         if (u) { // плавный поворот по кратчайшей дуге
           const d = Math.atan2(Math.sin(u.facing - m.rotation.y), Math.cos(u.facing - m.rotation.y));
-          m.rotation.y += d * (1 - Math.exp(-14 * dt));
+          m.rotation.y += d * (1 - Math.exp(-10 * dt));
         }
-        if (sp?.armBase) { sp.arms.forEach((b, i) => b.quaternion.copy(sp.armBase![i])); sp.armBase = undefined; } // микшер пишет кости только при смене позы
+        if (sp?.modBase) { sp.mod.forEach((b, i) => b.quaternion.copy(sp.modBase![i])); sp.modBase = undefined; } // микшер пишет кости только при смене позы
         this.rigs.get(id)?.mixer.update(dt * TS);
-        if (sp && u && !this.dying.has(id)) this.proneArms(sp, Math.max(0, sp.inner.rotation.x - 0.1) / 1.35);
+        if (sp && u && !this.dying.has(id)) { sp.modBase = sp.mod.map(b => b.quaternion.clone()); const pk = Math.max(0, sp.inner.rotation.x - 0.1) / 1.35; this.proneArms(sp, pk); this.lookAtTarget(sp, m, u, id, dt, pk); }
       }
       const tt = this.clock.elapsedTime;
       for (const g of this.fireMeshes.values()) g.children.forEach((c, i) => { c.scale.y = 0.7 + 0.55 * Math.abs(Math.sin(tt * 9 + (g.userData.phase as number) + i)); });
@@ -641,12 +642,56 @@ export class GameView {
     this.scene.add(m);
   }
 
+  /** Куда смотрит боец: цель выстрела, цель приказа, иначе ближайший заметный враг. */
+  private gazePoint(u: Unit, m: THREE.Object3D): THREE.Vector3 | null {
+    const s = this.state, now = this.clock.elapsedTime;
+    const g = this.gaze.get(u.id);
+    let t: Unit | undefined;
+    if (g && g.until > now) t = s.units.find(v => v.id === g.tid && v.hp > 0);
+    if (!t && u.team === 'human' && u.atk !== undefined) t = s.units.find(v => v.id === u.atk && v.hp > 0);
+    if (!t) {
+      let best = u.team === 'human' ? 100 : 81;
+      for (const v of s.units) {
+        if (v.hp <= 0 || v.team === u.team) continue;
+        if (u.team === 'human' && !isVisible(s, v)) continue;
+        const d = (v.x - u.x) ** 2 + (v.y - u.y) ** 2;
+        if (d < best) { best = d; t = v; }
+      }
+    }
+    const tm = t && this.unitMeshes.get(t.id);
+    return tm ? tm.position : null;
+  }
+
+  /** Поворот головы и корпуса к цели: голова идёт первой, корпус за ней, ствол следом. */
+  private lookAtTarget(sp: Spawned, m: THREE.Object3D, u: Unit, id: number, dt: number, pk: number) {
+    if (!sp.neck || !sp.torso) return;
+    const tp = pk < 0.05 && !u.down ? this.gazePoint(u, m) : null;
+    let want = 0;
+    if (tp) {
+      const d = Math.atan2(tp.x - m.position.x, tp.z - m.position.z) - m.rotation.y;
+      const dl = Math.atan2(Math.sin(d), Math.cos(d));
+      if (Math.abs(dl) < 2.4) want = dl;
+    }
+    const kq = 1 - Math.exp(-9 * dt);
+    sp.look += (want - sp.look) * kq;
+    sp.body += (want - sp.body) * (1 - Math.exp(-5 * dt));
+    const iq = sp.inner.getWorldQuaternion(new THREE.Quaternion());
+    const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(iq);
+    const yaw = (b: THREE.Object3D, ang: number) => {
+      const pq = b.parent!.getWorldQuaternion(new THREE.Quaternion());
+      b.quaternion.premultiply(pq).premultiply(new THREE.Quaternion().setFromAxisAngle(axis, ang)).premultiply(pq.clone().invert());
+      b.updateMatrixWorld(true);
+    };
+    yaw(sp.torso, Math.max(-0.45, Math.min(0.45, sp.body * 0.4)));
+    yaw(sp.neck, Math.max(-0.9, Math.min(0.9, sp.look * 0.8 - sp.body * 0.3)));
+    void id;
+  }
+
   /** Лёжа: руки вытянуты вперёд вдоль тела, ствол смотрит по направлению взгляда. */
   private proneArms(sp: Spawned, k: number) {
     if (k < 0.02 || !sp.arms.length) return;
     sp.inner.updateWorldMatrix(true, false);
     const iq = sp.inner.getWorldQuaternion(new THREE.Quaternion());
-    sp.armBase = sp.arms.map(b => b.quaternion.clone());
     for (const b of sp.arms) {
       const pq = b.parent!.getWorldQuaternion(new THREE.Quaternion());
       const axis = new THREE.Vector3(PRONE_AXIS, 0, 0).applyQuaternion(iq);
@@ -1293,6 +1338,7 @@ export class GameView {
     if (!r.reaction) await sleep(a.team === 'alien' ? 450 : 150); // пауза на прицеливание: стрелок успевает повернуться
     // звук выстрела по оружию: автомат/ПП/дробовик/снайперка; у пришельцев — по типу
     const variant = a.team === 'human' ? a.weapon : a.kind === 'sniper' ? 'sniper' : a.kind === 'heavy' || a.kind === 'commander' ? 'shotgun' : undefined;
+    this.gaze.set(a.id, { tid: t.id, until: this.clock.elapsedTime + 2 });
     this.play(a.id, 'Idle_Shoot', true);
     const rounds = a.burst;
     const shots: Promise<void>[] = [];

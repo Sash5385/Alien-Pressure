@@ -69,7 +69,7 @@ export function spawnCover(kind: 'tree' | 'crate' | 'container', variant: number
   return g;
 }
 
-export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction>; arms: THREE.Object3D[]; armBase?: THREE.Quaternion[]; baseScale: number; armed: boolean }
+export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction>; arms: THREE.Object3D[]; mod: THREE.Object3D[]; modBase?: THREE.Quaternion[]; neck?: THREE.Object3D; torso?: THREE.Object3D; look: number; body: number; baseScale: number; armed: boolean }
 
 const LEGS = /^(Hips|Body|UpperLeg|LowerLeg|Foot|Root|PoleTarget)/;
 const DUCK_T = 0.4; // кадр клипа Duck с согнутыми ногами
@@ -171,5 +171,6 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   if (name === 'Soldier') addGear(inner, mixer, actions.get('Idle'));
   const arms: THREE.Object3D[] = [];
   inner.traverse(o => { if (/^UpperArm[._]?[LR]$/.test(o.name)) arms.push(o); });
-  return { obj, inner, mixer, actions, arms, baseScale: inner.scale.x, armed: !!weapon };
+  const neck = inner.getObjectByName('Neck') ?? undefined, torso = inner.getObjectByName('Torso') ?? undefined;
+  return { obj, inner, mixer, actions, arms, mod: [...arms, ...(neck ? [neck] : []), ...(torso ? [torso] : [])], neck, torso, look: 0, body: 0, baseScale: inner.scale.x, armed: !!weapon };
 }
