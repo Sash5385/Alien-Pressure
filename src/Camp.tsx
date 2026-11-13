@@ -7,6 +7,7 @@ import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
 import { ARMORS, WEAPONS } from './game/weapons';
 import { btn, cta, NM } from './ui';
 import { Silhouette } from './Silhouette';
+import { DEFEND_KINDS } from './game/mission';
 
 const HEX = 'polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)';
 const panel: React.CSSProperties = { background: NM.bg, boxShadow: NM.out, borderRadius: 18, padding: 14 };
@@ -69,11 +70,11 @@ export function Camp({ c, onChange, onStart, onMenu }: {
           </svg>
           <div style={{ position: 'absolute', left: '50%', top: -4, transform: 'translateX(-50%)', width: 14, height: 14, clipPath: HEX, background: NM.accent }} title="База" />
           {c.options.map((o, i) => {
-            const on = c.objective === o.objective && c.biome === o.biome && c.boss === o.boss && c.risky === o.risky;
+            const on = c.objective === o.objective && c.biome === o.biome && c.boss === o.boss && c.risky === o.risky && (c.variant ?? 0) === (o.variant ?? 0);
             return (
               <button key={i} onClick={() => act(x => chooseOption(x, i))} style={{ ...btn(on), padding: '10px 8px', display: 'grid', gap: 3, justifyItems: 'center', textAlign: 'center', fontSize: 12 }}>
                 <span style={{ fontSize: 22 }}>{o.boss ? '☠' : { clear: '⚔', extract: '🚁', hold: '🛡', defend: '🏠', assassinate: '🎯', sabotage: '💣' }[o.objective]}</span>
-                <b style={{ fontSize: 13 }}>{o.boss ? 'Босс: Тиран' : OBJECTIVE_NAME[o.objective]}</b>
+                <b style={{ fontSize: 13 }}>{o.boss ? 'Босс: Тиран' : o.objective === 'defend' ? `Оборона: ${DEFEND_KINDS[o.variant ?? 0].name}` : OBJECTIVE_NAME[o.objective]}</b>
                 <span style={{ opacity: 0.75 }}>{BIOME_NAME[o.biome]}</span>
                 <span style={{ color: NM.accent }}>{o.boss ? 'награда +4' : o.risky ? 'риск: +2 врага, награда +3' : 'стандарт'}</span>
               </button>

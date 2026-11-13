@@ -11,6 +11,9 @@ export function Silhouette({ weapon, armor, grenades, mags, kit, width = 200 }: 
     rifle: <><rect x="18" y="-4" width="124" height="8" rx="2" /><rect x="0" y="-6" width="26" height="12" rx="3" /><rect x="62" y="4" width="9" height="20" rx="1" /><rect x="100" y="-8" width="22" height="4" /></>,
     smg: <><rect x="38" y="-4" width="78" height="8" rx="2" /><rect x="22" y="-6" width="20" height="12" rx="3" /><rect x="66" y="4" width="8" height="26" rx="1" /></>,
     shotgun: <><rect x="14" y="-4" width="132" height="7" rx="3" /><rect x="0" y="-6" width="24" height="12" rx="4" /><rect x="70" y="3" width="30" height="7" rx="3" /></>,
+    launcher: <><rect x="0" y="-9" width="128" height="14" rx="6" /><rect x="116" y="-12" width="26" height="20" rx="4" /><rect x="50" y="5" width="9" height="16" rx="1" /></>,
+    mortar: <><rect x="30" y="-6" width="100" height="11" rx="4" /><path d="M56 5 L38 34 M104 5 L122 34" stroke={GEAR} strokeWidth="3" /><rect x="26" y="32" width="104" height="5" rx="2" /></>,
+    ags: <><rect x="10" y="-5" width="122" height="12" rx="3" /><circle cx="70" cy="16" r="14" /><path d="M40 7 L26 34 M100 7 L116 34" stroke={GEAR} strokeWidth="3" /></>,
     sniper: <><rect x="10" y="-3" width="150" height="6" rx="2" /><rect x="-6" y="-6" width="30" height="12" rx="3" /><rect x="60" y="-12" width="34" height="8" rx="3" /><path d="M40 3 L30 18 M120 3 L128 18" stroke={GEAR} strokeWidth="2" /></>,
   };
   return (

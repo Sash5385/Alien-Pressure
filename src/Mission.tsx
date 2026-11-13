@@ -1,12 +1,12 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { runAlienTurn } from './game/ai';
-import { aimedShot, bandage, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
+import { aimedShot, bandage, canLaunch, LAUNCH, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState, Unit } from './game/types';
 import { btn, cta, NM, VERSION } from './ui';
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
-import { GameView, WEATHER_NAME, weatherOf } from './render/GameView';
+import { GameView, WEATHER_NAME, weatherOf, type Weather } from './render/GameView';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
@@ -76,19 +76,20 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   useEffect(() => { if (s.status === 'won') sfx('win'); else if (s.status === 'lost') sfx('lose'); }, [s.status]);
   const sel = s.units.find(u => u.id === s.selectedId && u.hp > 0);
   const tgt = s.units.find(u => u.id === s.targetId && u.hp > 0);
+  const wl = sel ? WEAPONS[sel.weapon].launch : undefined;
   const direct = sel && tgt ? hitChance(s, sel, tgt) : null;
   const peek = sel && tgt && direct === null ? peekTile(s, sel, tgt) : null;
   const chance = direct ?? peek?.chance ?? null;
   const canAct = !!view.current && s.turn === 'human' && !s.busy && s.status === 'playing';
   const tb = s.targetBarrel;
   const barrelOk = canAct && !!sel && !!tb && canShootBarrel(s, sel, tb.x, tb.y);
-  const canFire = (canAct && !!sel && sel.ap > 0 && chance !== null) || barrelOk;
+  const canFire = wl ? canAct && !!sel && sel.ap >= LAUNCH[wl].ap && sel.ammo >= LAUNCH[wl].rounds : (canAct && !!sel && sel.ap > 0 && chance !== null) || barrelOk;
   const canBandage = canAct && !!sel && sel.ap > 0 && s.medkits > 0 &&
     living(s, 'human').some(h => h.bleeding && Math.abs(h.x - sel.x) + Math.abs(h.y - sel.y) <= 1);
   const canGrenade = canAct && !!sel && sel.ap > 0 && sel.grenades > 0 && sel.stance !== 'prone';
   const toggleGrenade = () => {
     if (!canGrenade) return;
-    s.smokeMode = false;
+    s.smokeMode = false; s.launch = undefined;
     s.aiming = s.aiming === 'grenade' && !s.smokeMode ? null : 'grenade';
     s.targetId = null;
     view.current!.syncUnits();
@@ -97,7 +98,14 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const toggleSmoke = () => {
     if (!canGrenade) return;
     const on = s.aiming === 'grenade' && s.smokeMode;
-    s.smokeMode = !on; s.aiming = on ? null : 'grenade'; s.targetId = null;
+    s.launch = undefined; s.smokeMode = !on; s.aiming = on ? null : 'grenade'; s.targetId = null;
+    view.current!.syncUnits(); rerender();
+  };
+  const canUgl = canAct && !!sel && (sel.ugl ?? 0) > 0 && sel.ap >= 1 && !wl;
+  const toggleUgl = () => {
+    if (!canUgl) return;
+    const on = s.aiming === 'grenade' && s.launch === 'ugl';
+    s.launch = on ? undefined : 'ugl'; s.smokeMode = false; s.aiming = on ? null : 'grenade'; s.targetId = null;
     view.current!.syncUnits(); rerender();
   };
   const canMeleeNow = canAct && !!sel && !!tgt && canMelee(sel, tgt);
@@ -161,7 +169,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     view.current!.syncUnits();
     rerender();
   };
-  const canOw = canAct && !!sel && sel.ap > 0 && sel.ammo > 0 && !sel.overwatch;
+  const canOw = canAct && !!sel && sel.ap > 0 && sel.ammo > 0 && !sel.overwatch && !wl;
 
   const fire = async () => {
     if (barrelOk && sel && tb) {
@@ -171,6 +179,19 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       if (res) await view.current!.barrelShotFx(sel, res);
       s.busy = false;
       view.current!.syncUnits();
+      rerender();
+      return;
+    }
+    if (wl && sel) { // гранатомёт/миномёт/АГС: по цели или выбор клетки
+      if (!canFire) return;
+      if (tgt && canLaunch(s, sel, tgt.x, tgt.y, wl)) {
+        s.launch = wl; s.targetId = null;
+        await view.current!.launchAt(sel, tgt.x, tgt.y);
+      } else {
+        const on = s.aiming === 'grenade' && s.launch === wl;
+        s.launch = on ? undefined : wl; s.smokeMode = false; s.aiming = on ? null : 'grenade'; s.targetId = null;
+        view.current!.syncUnits();
+      }
       rerender();
       return;
     }
@@ -286,6 +307,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     ab('Overwatch', '', false, !canOw, overwatch),
     sel ? ab(abilityLabel.replace(/ \(.*\)/, ''), abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, CLASSES[sel.cls].desc) : ab('Умение', '', false, true, () => {}),
     ...(s.objective === 'sabotage' ? [ab('Взорвать', 'маяк', true, !canCharge, doCharge)] : []),
+    ...(sel && (sel.ugl ?? 0) > 0 && !wl ? [ab('Подствольник', `${sel.ugl}`, s.aiming === 'grenade' && s.launch === 'ugl', !canUgl, toggleUgl, 'Граната из подствольника: дальность 2–10, радиус 1,2, 1 AP')] : []),
     ...(downedAlly ? [ab('Поднять', downedAlly.name, true, !canAct, doRevive)] : []),
     ...(sel?.cls === 'engineer' ? [ab('Дымовая', '3×3, 2 хода', !!s.smokeMode && s.aiming === 'grenade', !canGrenade, toggleSmoke, 'Дым закрывает обзор и линию огня. Тратит гранату')] : []),
   ];
@@ -295,7 +317,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
       <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? '94vw' : 560, pointerEvents: 'none', textAlign: 'center' }}>
         <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
-          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{weatherOf(s.missionNo, s.biome) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[weatherOf(s.missionNo, s.biome)]}` : ''}
+          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
         </div>
       </div>
       {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (
@@ -331,7 +353,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           </div>
         )}
         {s.turning && <div style={{ color: '#9be86a' }}>Поворот: нажми клетку, куда смотреть бойцу (долгое нажатие на карте делает то же).</div>}
-        {s.aiming === 'grenade' && <div style={{ color: '#ffb36b' }}>Бросок гранаты: кликни клетку в оранжевой зоне (красный круг — радиус взрыва, бьёт и по своим). ПКМ — отмена.</div>}
+        {s.aiming === 'grenade' && s.launch && <div style={{ color: '#ffb36b' }}>{LAUNCH[s.launch].name}: кликни клетку в оранжевой зоне (дальность {LAUNCH[s.launch].min}–{LAUNCH[s.launch].range}, радиус {LAUNCH[s.launch].r}; есть разброс, бьёт и по своим). ПКМ — отмена.</div>}
+        {s.aiming === 'grenade' && !s.launch && <div style={{ color: '#ffb36b' }}>Бросок гранаты: кликни клетку в оранжевой зоне (красный круг — радиус взрыва, бьёт и по своим). ПКМ — отмена.</div>}
         {tb && !tgt && <div style={{ color: '#ff8a8a' }}>Цель: взрывоопасная бочка · {barrelOk ? 'попадание 100%, взрыв радиусом 2' : 'нет линии огня'}</div>}
         {!narrow && sel && !tgt && !s.aiming && !s.turning && <div style={{ fontSize: 12, opacity: 0.75 }}>Укрытие защищает со стороны, где оно стоит: <span style={{ color: '#3cff7a' }}>зелёная полоска</span> — полное (−40% к попаданию), <span style={{ color: '#ffd34d' }}>жёлтая</span> — половинное (−20%). Зелёные клетки — где можно укрыться.</div>}
         {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `${peek ? 'стрейф из-за укрытия' : 'шанс'} ${chance}%`}{direct !== null && sel && (() => { const cs = coverSource(s, sel, tgt); return cs ? ` · укрытие −${cs.bonus}% (${cs.trench ? 'окоп' : cs.bonus === 40 ? 'полное' : 'половинное'})` : ' · без укрытия'; })()}</div>}
@@ -377,8 +400,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <div style={{ display: 'grid', gap: 8, justifyItems: 'center' }}>
             <button style={{ ...nb(false, !canAct), color: '#ffd34d', minWidth: narrow ? 84 : 110 }} disabled={!canAct} onClick={endTurn}>Конец хода</button>
             <button disabled={!canFire} onClick={fire} style={{ width: narrow ? 84 : 104, height: narrow ? 84 : 104, borderRadius: '50%', border: 0, background: 'linear-gradient(145deg,#ffdf74,#e8b32a)', color: '#2b2410', fontWeight: 800, fontSize: narrow ? 14 : 16, font: 'inherit', cursor: canFire ? 'pointer' : 'default', opacity: canFire ? 1 : 0.45, boxShadow: OUT, display: 'grid', placeItems: 'center', alignContent: 'center' }}>
-              <span style={{ fontWeight: 800 }}>{peek ? 'ВЫГЛЯНУТЬ' : 'ОГОНЬ'}</span>
-              <small style={{ fontWeight: 600, opacity: 0.75 }}>{chance !== null ? `${chance}%` : tb ? 'бочка' : ''}</small>
+              <span style={{ fontWeight: 800 }}>{peek ? 'ВЫГЛЯНУТЬ' : wl && !tgt ? 'ЦЕЛЬ' : 'ОГОНЬ'}</span>
+              <small style={{ fontWeight: 600, opacity: 0.75 }}>{wl ? LAUNCH[wl].name : chance !== null ? `${chance}%` : tb ? 'бочка' : ''}</small>
             </button>
           </div>
           <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? 'calc((100vw - 16px - 84px - 12px) / 2)' : undefined }}>

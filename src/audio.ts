@@ -2,7 +2,7 @@
 export type Sfx =
   | 'alert' | 'throw' | 'pin' | 'grenade' | 'shot' | 'alienShot' | 'hit' | 'miss' | 'psi' | 'death' | 'panic'
   | 'reload' | 'click' | 'select' | 'step' | 'dig' | 'heal' | 'bandage' | 'stance' | 'stanceProne' | 'mine' | 'charge'
-  | 'overwatch' | 'fire' | 'collapse' | 'splash' | 'crumble' | 'wound' | 'turnPlayer' | 'turnEnemy' | 'win' | 'lose';
+  | 'launcher' | 'mortar' | 'overwatch' | 'fire' | 'collapse' | 'splash' | 'crumble' | 'wound' | 'turnPlayer' | 'turnEnemy' | 'win' | 'lose';
 
 export interface SfxOpts { vol?: number; pitch?: number; variant?: string }
 
@@ -138,6 +138,8 @@ export function sfx(kind: Sfx, o: SfxOpts = {}) {
     case 'charge': [800, 900, 1000, 1200].forEach((f, i) => tone(c, t + i * 0.12, 0.06, f, f, 0.1, 'square')); break;
     case 'overwatch': tone(c, t, 0.08, 600, 600, 0.1, 'triangle'); tone(c, t + 0.1, 0.1, 900, 900, 0.1, 'triangle'); break;
     case 'grenade': noise(c, t, 0.9, 0.7, 'lowpass', 350); tone(c, t, 0.7, 90, 28, 0.6); noise(c, t, 0.15, 0.5, 'bandpass', 2000); break;
+    case 'launcher': noise(c, t, 0.35, 0.8, 'lowpass', 500); tone(c, t, 0.3, 160, 60, 0.5); noise(c, t + 0.05, 0.5, 0.25, 'bandpass', 1800); break;
+    case 'mortar': tone(c, t, 0.5, 110, 38, 0.6); noise(c, t, 0.4, 0.6, 'lowpass', 260); tone(c, t + 0.35, 0.6, 1400, 300, 0.05, 'sawtooth'); break;
     case 'fire': noise(c, t, 0.9, 0.16, 'lowpass', 300); pops(c, t, 14, 0.8, 0.14, 1500, 3500); break;
     case 'collapse': noise(c, t, 1.1, 0.5, 'lowpass', 250); tone(c, t, 0.9, 70, 30, 0.4); pops(c, t + 0.1, 8, 0.9, 0.25, 500, 1500); break;
     case 'splash': noise(c, t, 0.5, 0.3, 'bandpass', 1200); tone(c, t, 0.2, 300, 150, 0.2); break;

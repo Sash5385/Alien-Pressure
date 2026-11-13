@@ -1,4 +1,5 @@
-import type { GameState, Stance, Unit } from './types';
+import type { GameState, LaunchKind, Stance, Unit } from './types';
+import { WEAPONS } from './weapons';
 
 export interface ShotResult {
   attackerId: number;
@@ -153,7 +154,7 @@ export function reactions(s: GameState, mover: Unit): ShotResult[] {
   const out: ShotResult[] = [];
   for (const h of living(s, 'human')) {
     if (mover.hp <= 0) break;
-    if (!h.overwatch || !isVisible(s, mover) || hitChance(s, h, mover, true) === null) continue;
+    if (!h.overwatch || WEAPONS[h.weapon].launch || !isVisible(s, mover) || hitChance(s, h, mover, true) === null) continue;
     h.overwatch = false;
     out.push(shoot(s, h, mover, true));
   }
@@ -360,6 +361,8 @@ export interface GrenadeResult {
   alerted: number[];
   ignited: { x: number; y: number }[];
   chain: GrenadeResult[]; // цепные взрывы бочек
+  r?: number; // радиус взрыва (по умолчанию BLAST)
+  launch?: LaunchKind; // чем выпущено
 }
 
 /** Можно ли кинуть гранату в клетку: дальность и исследованная клетка. */
@@ -379,12 +382,12 @@ export function throwGrenade(s: GameState, u: Unit, x: number, y: number): Grena
 }
 
 /** Взрыв (граната/мина): центр 5, край 3 (−броня); бьёт и по своим, срывает половинные укрытия. Убийства засчитываются owner. */
-export function blast(s: GameState, owner: Unit | null, x: number, y: number, label: string, oil = false): GrenadeResult {
-  const hits: GrenadeResult['hits'] = [];
+export function blast(s: GameState, owner: Unit | null, x: number, y: number, label: string, oil = false, opts?: { r: number; center: number; edge: number }): GrenadeResult {
+  const R = opts?.r ?? BLAST, hits: GrenadeResult['hits'] = [];
   for (const t of living(s)) {
     const d = Math.hypot(t.x - x, t.y - y);
-    if (d > BLAST) continue;
-    const dmg = Math.max(1, (d <= 1.0 ? 5 : 3) - t.cut - (s.trenches.some(tr => tr.x === t.x && tr.y === t.y) ? 1 : 0) - (t.stance === 'prone' ? 1 : 0));
+    if (d > R) continue;
+    const dmg = Math.max(1, (d <= (opts ? Math.min(1, R * 0.6) : 1.0) ? (opts?.center ?? 5) : (opts?.edge ?? 3)) - t.cut - (s.trenches.some(tr => tr.x === t.x && tr.y === t.y) ? 1 : 0) - (t.stance === 'prone' ? 1 : 0));
     t.hp = Math.max(0, t.hp - dmg);
     const killed = t.hp <= 0;
     hits.push({ id: t.id, dmg, killed });
@@ -400,14 +403,14 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
   const broken: GrenadeResult['broken'] = [];
   for (let cy = Math.max(0, Math.floor(y - 1.5)); cy <= Math.min(s.size - 1, Math.ceil(y + 1.5)); cy++) {
     for (let cx = Math.max(0, Math.floor(x - 1.5)); cx <= Math.min(s.size - 1, Math.ceil(x + 1.5)); cx++) {
-      if (s.cover[cy][cx] === 'half' && s.look[cy][cx] !== 'rock' && Math.hypot(cx - x, cy - y) <= 1.5) { s.cover[cy][cx] = 'none'; broken.push({ x: cx, y: cy }); }
+      if (s.cover[cy][cx] === 'half' && s.look[cy][cx] !== 'rock' && Math.hypot(cx - x, cy - y) <= Math.min(1.5, R)) { s.cover[cy][cx] = 'none'; broken.push({ x: cx, y: cy }); }
     }
   }
   // дома рядом со взрывом получают урон и обрушиваются; мосты рушатся
   for (const hs of [...s.houses]) {
     let dmin = 99;
     for (let yy = hs.y; yy < hs.y + hs.h; yy++) for (let xx = hs.x; xx < hs.x + hs.w; xx++) dmin = Math.min(dmin, Math.hypot(xx - x, yy - y));
-    if (dmin > 1.7) continue;
+    if (dmin > R - 0.2) continue;
     hs.hp -= dmin <= 1.0 ? 3 : 2;
     if (hs.hp <= 0) {
       for (let yy = hs.y; yy < hs.y + hs.h; yy++) for (let xx = hs.x; xx < hs.x + hs.w; xx++) { s.cover[yy][xx] = 'half'; s.look[yy][xx] = 'rock'; }
@@ -415,7 +418,7 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
       log(s, 'Дом обрушился!');
     }
   }
-  const fallen = s.bridges.filter(b => Math.hypot(b.x - x, b.y - y) <= 1.3);
+  const fallen = s.bridges.filter(b => Math.hypot(b.x - x, b.y - y) <= Math.min(1.3, R));
   if (fallen.length) {
     s.bridges = s.bridges.filter(b => !fallen.includes(b));
     for (const b of fallen) s.terrain[b.y][b.x] = 'water';
@@ -440,7 +443,45 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
   }
   if (ignited.length) log(s, 'Пожар!');
   const alerted = raiseAlert(s, x, y, 16);
-  return { thrower: owner?.id ?? 0, x, y, hits, broken, alerted, ignited, chain };
+  return { thrower: owner?.id ?? 0, x, y, hits, broken, alerted, ignited, chain, r: R };
+}
+
+/** Гранатомёты: подствольник, гранатомёт, миномёт, АГС. */
+export const LAUNCH: Record<LaunchKind, { name: string; min: number; range: number; r: number; center: number; edge: number; ap: number; rounds: number; scatter: number; los: boolean; verb: string }> = {
+  ugl: { name: 'Подствольник', min: 2, range: 10, r: 1.2, center: 4, edge: 2, ap: 1, rounds: 1, scatter: 0.7, los: true, verb: 'стреляет из подствольника' },
+  launcher: { name: 'Гранатомёт', min: 3, range: 13, r: 1.5, center: 6, edge: 3, ap: 1, rounds: 1, scatter: 0.5, los: true, verb: 'стреляет из гранатомёта' },
+  mortar: { name: 'Миномёт', min: 7, range: 24, r: 2, center: 5, edge: 3, ap: 2, rounds: 1, scatter: 1.2, los: false, verb: 'ведёт миномётный огонь' },
+  ags: { name: 'АГС', min: 3, range: 14, r: 1, center: 4, edge: 2, ap: 2, rounds: 3, scatter: 1.1, los: true, verb: 'бьёт из АГС' },
+};
+
+export const launchKindOf = (u: Unit): LaunchKind | undefined => WEAPONS[u.weapon].launch;
+
+/** Можно ли выстрелить гранатой launcher-типа в клетку. */
+export function canLaunch(s: GameState, u: Unit, x: number, y: number, kind: LaunchKind): boolean {
+  const c = LAUNCH[kind];
+  if (u.hp <= 0 || u.down || u.ap < c.ap || x < 0 || y < 0 || x >= s.size || y >= s.size || !s.seen[y][x]) return false;
+  if (kind === 'ugl' ? (u.ugl ?? 0) < 1 : u.ammo < c.rounds) return false;
+  const d = Math.hypot(u.x - x, u.y - y);
+  if (d < c.min || d > c.range) return false;
+  return !c.los || los(s, u, { x, y });
+}
+
+/** Выстрел: с разбросом (миномёт и АГС — заметно), АГС даёт залп из трёх гранат. */
+export function launch(s: GameState, u: Unit, x: number, y: number, kind: LaunchKind): GrenadeResult[] {
+  const c = LAUNCH[kind];
+  faceToward(u, x, y);
+  u.ap -= c.ap; u.overwatch = false;
+  if (kind === 'ugl') u.ugl = (u.ugl ?? 0) - 1; else u.ammo -= c.rounds;
+  s.aiming = null; s.launch = undefined; s.smokeMode = false;
+  const out: GrenadeResult[] = [];
+  for (let i = 0; i < c.rounds; i++) {
+    const ang = rand(s) * Math.PI * 2, rr = rand(s) * c.scatter * (kind === 'mortar' ? 1 + Math.hypot(u.x - x, u.y - y) / 24 : 1);
+    const tx = Math.min(s.size - 1, Math.max(0, Math.round(x + Math.cos(ang) * rr))), ty = Math.min(s.size - 1, Math.max(0, Math.round(y + Math.sin(ang) * rr)));
+    const r = blast(s, u, tx, ty, `${u.name} ${c.verb}`, false, { r: c.r, center: c.center, edge: c.edge });
+    r.launch = kind;
+    out.push(r);
+  }
+  return out;
 }
 
 export const nearBeacon = (s: GameState, u: Unit) =>

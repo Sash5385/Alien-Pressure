@@ -14,7 +14,7 @@ const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
   const w = WEAPONS[s.weapon], ar = ARMORS[s.armor];
   const u: Unit = {
     id: s.id, team: 'human', kind: 'soldier', name: s.name, x, y, hp: 8, maxHp: 8, ap: HUMAN_AP, maxAp: HUMAN_AP, move: 5 + w.move + ar.move,
-    aim: w.aim + ar.aim, ammo: w.ammo, maxAmmo: w.ammo, weapon: s.weapon, armor: s.armor, burst: w.burst, falloffFrom: w.falloffFrom, falloff: w.falloff, cut: ar.cut, mags: 2, grenades: 2 + (tech.grenades ? 1 : 0), facing: Math.PI, stance: 'stand', cls: s.cls, abilityUsed: 0, suppressed: false, alert: true, homeX: x, homeY: y, dmg: w.dmg, range: w.range, overwatch: false,
+    aim: w.aim + ar.aim, ammo: w.ammo, maxAmmo: w.ammo, weapon: s.weapon, armor: s.armor, burst: w.burst, falloffFrom: w.falloffFrom, falloff: w.falloff, cut: ar.cut, mags: 2, grenades: 2 + (tech.grenades ? 1 : 0), ugl: s.weapon === 'rifle' || s.weapon === 'smg' ? 3 : 0, facing: Math.PI, stance: 'stand', cls: s.cls, abilityUsed: 0, suppressed: false, alert: true, homeX: x, homeY: y, dmg: w.dmg, range: w.range, overwatch: false,
     bleeding: false, fracture: s.fracture, morale: 70, panic: false, traits: s.traits, perks: s.perks, bio: s.bio, kills: 0,
   };
   applyTraits(u);
@@ -58,6 +58,7 @@ export interface MissionOpts {
   objective: Objective;
   biome: Biome;
   size?: 44 | 64;
+  variant?: number;
   boss?: boolean;
   risky?: boolean;
   soldiers: Soldier[];
@@ -196,9 +197,23 @@ function genMap(rng: { rng: number }, biome: Biome, n: number, missionNo: number
   return g;
 }
 
+/** Варианты обороны в центре карты: геометрия и правила. */
+export const DEFEND_KINDS: { name: string; geo: 'hill' | 'fort' | 'house' | 'bunker' | 'crossroads' | 'bridge'; turns: number; weather?: string; boost?: number; sides?: 'ns'; desc: string }[] = [
+  { name: 'Высота', geo: 'hill', turns: 10, desc: 'держим холм: высота даёт меткость' },
+  { name: 'Укрепрайон', geo: 'fort', turns: 10, desc: 'стена из контейнеров с четырьмя воротами' },
+  { name: 'Дом на холме', geo: 'house', turns: 10, desc: 'дом на вершине (его можно разрушить)' },
+  { name: 'Бункер', geo: 'bunker', turns: 10, desc: 'окопы и мешки вокруг центра' },
+  { name: 'Перекрёсток', geo: 'crossroads', turns: 10, desc: 'четыре дома по углам перекрёстка' },
+  { name: 'Мост и остров', geo: 'bridge', turns: 10, desc: 'остров в кольце воды, четыре моста (их можно взорвать)' },
+  { name: 'Ночная оборона', geo: 'hill', turns: 8, weather: 'night', desc: 'ночь и фонари, но волны идут сразу' },
+  { name: 'Осада', geo: 'fort', turns: 12, desc: '12 ходов вместо 10' },
+  { name: 'Клещи', geo: 'house', turns: 10, sides: 'ns', desc: 'пришельцы идут с севера и юга' },
+];
+
 /** Оборона: расчищаем центр и строим либо холм с мешками, либо укрепление с воротами. Возвращает вид. */
-function fortify(rng: { rng: number }, g: Grids, n: number): 'hill' | 'fort' | 'house' {
-  const c = n >> 1, r3 = rand(rng), kind = r3 < 0.34 ? 'hill' : r3 < 0.67 ? 'fort' : 'house', R = 9;
+function fortify(g: Grids, n: number, kind: typeof DEFEND_KINDS[number]['geo'], trenches: { x: number; y: number }[]) {
+  const c = n >> 1, R = 9;
+  const dig = (list: number[][]) => { for (const [dx, dy] of list) if (g.cover[c + dy][c + dx] === 'none' && g.terrain[c + dy][c + dx] === 'ground') trenches.push({ x: c + dx, y: c + dy }); };
   g.houses = g.houses.filter(h => Math.hypot(h.x + h.w / 2 - c, h.y + h.h / 2 - c) > R + 2).map((h, i) => ({ ...h, id: i }));
   for (let y = c - R; y <= c + R; y++) for (let x = c - R; x <= c + R; x++) {
     if (g.look[y][x] === 'house' && !g.houses.some(h => x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h)) { g.cover[y][x] = 'none'; g.look[y][x] = ''; }
@@ -207,6 +222,11 @@ function fortify(rng: { rng: number }, g: Grids, n: number): 'hill' | 'fort' | '
     g.terrain[y][x] = 'ground'; g.bridges = g.bridges.filter(b => b.x !== x || b.y !== y);
     if (g.look[y][x] !== 'house') { g.cover[y][x] = 'none'; g.look[y][x] = ''; }
     g.height[y][x] = kind === 'hill' ? (d <= 2.6 ? 3 : d <= 4.2 ? 2 : d <= 5.8 ? 1 : 0) : kind === 'house' ? (d <= 4 ? 3 : d <= 5.6 ? 2 : d <= 7.2 ? 1 : 0) : 0;
+  }
+  // плавный спуск от центра к окружающему рельефу: нет обрывов, отрезающих площадку от карты
+  for (let y = Math.max(0, c - R - 7); y <= Math.min(n - 1, c + R + 7); y++) for (let x = Math.max(0, c - R - 7); x <= Math.min(n - 1, c + R + 7); x++) {
+    const d = Math.hypot(x - c, y - c);
+    if (d > R) g.height[y][x] = Math.min(g.height[y][x], Math.floor((d - R) / 1.4));
   }
   const put = (x: number, y: number, cv: Cover, l: Look) => { g.cover[y][x] = cv; g.look[y][x] = l; };
   if (kind === 'house') { // дом на вершине холма: отряд держит оборону вокруг него
@@ -223,6 +243,26 @@ function fortify(rng: { rng: number }, g: Grids, n: number): 'hill' | 'fort' | '
       if (!gap) put(Math.round(c + Math.cos(t) * 3.4), Math.round(c + Math.sin(t) * 3.4), 'half', 'crate');
       if (a % 3 === 1) put(Math.round(c + Math.cos(t + 0.2) * 5.4), Math.round(c + Math.sin(t + 0.2) * 5.4), 'full', 'rock');
     }
+  } else if (kind === 'bunker') { // окопы кольцом и мешки снаружи
+    for (let a = 0; a < 14; a++) { const t = (a / 14) * 6.283; trenches.push({ x: Math.round(c + Math.cos(t) * 2.6), y: Math.round(c + Math.sin(t) * 2.6) }); }
+    for (let a = 0; a < 24; a++) { const t = (a / 24) * 6.283; if (a % 6 !== 0) put(Math.round(c + Math.cos(t) * 4.8), Math.round(c + Math.sin(t) * 4.8), 'half', 'crate'); }
+    put(c - 1, c - 1, 'full', 'container'); put(c + 1, c + 1, 'full', 'container');
+  } else if (kind === 'crossroads') { // четыре дома по углам
+    for (const [dx, dy] of [[-4, -4], [3, -4], [-4, 3], [3, 3]]) {
+      for (let y = c + dy; y < c + dy + 2; y++) for (let x = c + dx; x < c + dx + 2; x++) put(x, y, 'full', 'house');
+      g.houses.push({ x: c + dx, y: c + dy, w: 2, h: 2, id: g.houses.length, hp: 7 });
+    }
+    for (const [dx, dy] of [[0, -6], [0, 6], [-6, 0], [6, 0], [-2, -2], [2, 2], [-2, 2], [2, -2]]) put(c + dx, c + dy, 'half', 'crate');
+  } else if (kind === 'bridge') { // остров в кольце воды с мостами по сторонам света
+    for (let y = c - R; y <= c + R; y++) for (let x = c - R; x <= c + R; x++) {
+      const d = Math.hypot(x - c, y - c);
+      if (d >= 5.2 && d <= 7.4) { g.terrain[y][x] = 'water'; g.height[y][x] = 0; g.cover[y][x] = 'none'; g.look[y][x] = ''; }
+    }
+    for (let r = 5; r <= 8; r++) for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) for (const o of [0, 1]) {
+      const x = c + dx * r + (dx === 0 ? o : 0), y = c + dy * r + (dy === 0 ? o : 0);
+      if (g.terrain[y][x] === 'water') { g.terrain[y][x] = 'ground'; g.bridges.push({ x, y }); }
+    }
+    for (const [dx, dy] of [[-3, -3], [3, -3], [-3, 3], [3, 3], [0, -3], [0, 3], [-3, 0], [3, 0]]) put(c + dx, c + dy, 'half', 'crate');
   } else { // стена из контейнеров, ворота по сторонам света, ящики внутри
     for (let i = -4; i <= 4; i++) {
       if (Math.abs(i) <= 1) continue;
@@ -232,7 +272,9 @@ function fortify(rng: { rng: number }, g: Grids, n: number): 'hill' | 'fort' | '
     put(c - 2, c - 1, 'half', 'crate'); put(c + 2, c + 1, 'half', 'crate'); put(c + 1, c - 2, 'half', 'crate'); put(c - 1, c + 2, 'half', 'crate');
     for (const [dx, dy] of [[-6, -6], [6, -6], [-6, 6], [6, 6], [0, -6], [0, 6], [-6, 0], [6, 0]]) put(c + dx, c + dy, 'half', 'crate');
   }
-  return kind;
+  if (kind === 'fort') dig([[-2, -2], [2, -2], [-2, 2], [2, 2], [0, -3], [0, 3], [-3, 0], [3, 0]]);
+  if (kind === 'crossroads') dig([[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, 1]]);
+  if (kind === 'bridge') dig([[-2, -2], [2, -2], [-2, 2], [2, 2], [0, -4], [0, 4], [-4, 0], [4, 0]]);
 }
 
 export function createMission(o: MissionOpts): GameState {
@@ -242,7 +284,9 @@ export function createMission(o: MissionOpts): GameState {
     ? { x: rand(rng) < 0.5 ? 0 : n - 3, y: 0, w: 3, h: 3 } : null;
   const gm = genMap(rng, o.biome, n, o.missionNo, zone);
   const defend = o.objective === 'defend';
-  const dKind = defend ? fortify(rng, gm, n) : null;
+  const dv = defend ? DEFEND_KINDS[(o.variant ?? Math.floor(rand(rng) * DEFEND_KINDS.length)) % DEFEND_KINDS.length] : null;
+  const preTrenches: { x: number; y: number }[] = [];
+  if (dv) fortify(gm, n, dv.geo, preTrenches);
   const { cover, terrain, height, look, houses, bridges } = gm;
 
   // взрывоопасные бочки: половинное укрытие, которое можно взорвать
@@ -255,7 +299,19 @@ export function createMission(o: MissionOpts): GameState {
     barrels.push({ x, y });
   }
 
-  const humans = o.soldiers.map((s, i) => defend ? (dKind === 'house' ? human(s, cx + [-3, 3, 0, 0, -3, 3, -2, 2][i % 8], cx + [0, 0, -3, 3, 2, -2, 3, -3][i % 8], o.tech) : human(s, cx - 2 + (i % 3) * 2, cx - 1 + (i >> 1 & 1) * 2, o.tech)) : human(s, cx - 3 + i * 2, n - 2, o.tech));
+  // оборона: бойцы стоят на свободных клетках вокруг центра
+  const starts: [number, number][] = [];
+  if (defend) {
+    const free: [number, number][] = [];
+    for (let y = cx - 6; y <= cx + 6; y++) for (let x = cx - 6; x <= cx + 6; x++) {
+      if (cover[y][x] === 'none' && terrain[y][x] === 'ground') free.push([x, y]);
+    }
+    const pref = (p: [number, number]) => Math.hypot(p[0] - cx, p[1] - cx) - (preTrenches.some(t => t.x === p[0] && t.y === p[1]) ? 3 : 0) - ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => cover[p[1] + dy]?.[p[0] + dx] && cover[p[1] + dy][p[0] + dx] !== 'none') ? 2 : 0) + (rand(rng) - 0.5) * 1.2;
+    free.sort((a, b) => pref(a) - pref(b));
+    for (const p of free) { if (starts.length >= o.soldiers.length) break; if (Math.hypot(p[0] - cx, p[1] - cx) <= 6 && starts.every(q => Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]) >= 2)) starts.push(p); }
+    for (const p of free) { if (starts.length >= o.soldiers.length) break; if (!starts.includes(p)) starts.push(p); }
+  }
+  const humans = o.soldiers.map((s, i) => defend ? human(s, starts[i][0], starts[i][1], o.tech) : human(s, cx - 3 + i * 2, n - 2, o.tech));
 
   const base: AlienKind[] = ['trooper', 'trooper', 'sniper', 'trooper', 'heavy', 'trooper', 'trooper', 'sniper'];
   let kinds: AlienKind[] = base.slice(0, 6);
@@ -326,13 +382,13 @@ export function createMission(o: MissionOpts): GameState {
     hold: `Цель: продержаться ${HOLD_TURNS} ходов. Пришельцы получают подкрепление.`,
     assassinate: o.boss ? 'БОСС: убей Тирана (много HP, броня −1 урон, свита с тяжёлым). Он помечен красным кольцом.' : 'Цель: убить командира пришельцев (он помечен красным кольцом и виден всегда).',
     sabotage: 'Цель: взорвать два маяка (подойди вплотную: заряд тратит 1 AP и 1 гранату).',
-    defend: `Цель: выжить ${DEFEND_TURNS} ходов. Отряд ${dKind === 'hill' ? 'удерживает высоту' : dKind === 'house' ? 'обороняет дом на холме' : 'обороняет укрепление'}; пришельцы идут волнами со всех сторон.`,
+    defend: `Цель: выжить ${dv?.turns ?? DEFEND_TURNS} ходов. ${dv ? dv.name : 'Оборона'}: ${dv?.desc ?? ''}. Пришельцы идут волнами со всех сторон${dv?.sides ? ' (здесь — с севера и юга)' : ''}.`,
   }[o.objective];
   return {
-    size: n, cover, terrain, height, look, houses, trenches: [], biome: o.biome, units: [...humans, ...aliens], selectedId: null, targetId: null,
+    size: n, cover, terrain, height, look, houses, trenches: preTrenches, biome: o.biome, units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels, fires: [], scorched: grid(n, false), bridges, targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
-    objective: o.objective, markId: aliens.find(a => a.kind === 'commander')?.id ?? null, beacons, holdTurns: defend ? DEFEND_TURNS : HOLD_TURNS, zone,
+    objective: o.objective, markId: aliens.find(a => a.kind === 'commander')?.id ?? null, beacons, holdTurns: defend ? (dv?.turns ?? DEFEND_TURNS) : HOLD_TURNS, zone, weather: dv?.weather, sides: dv?.sides ?? 'all', waveBoost: dv?.boost ?? 0, defendName: dv?.name,
     log: [`Миссия ${o.missionNo} · ${BIOME_NAME[o.biome]}. ${brief}`, 'Разведка: пехота, снайпер, тяжёлый (ломает укрытия).'],
     rng: rng.rng, boss: !!o.boss,
   };
@@ -346,7 +402,7 @@ export function reinforce(s: GameState) {
   if (s.objective === 'defend') {
     const reach = reachSet(s, s.size, Math.round(s.units.find(u => u.team === 'human' && u.hp > 0)?.x ?? c), Math.round(s.units.find(u => u.team === 'human' && u.hp > 0)?.y ?? c));
     for (let y = 1; y < s.size - 1; y++) for (let x = 1; x < s.size - 1; x++) {
-      if (Math.min(x, y, s.size - 1 - x, s.size - 1 - y) > 3 || !reach.has(`${x},${y}`) || s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) continue;
+      if (Math.min(x, y, s.size - 1 - x, s.size - 1 - y) > 3 || (s.sides === 'ns' && Math.min(y, s.size - 1 - y) > 6) || !reach.has(`${x},${y}`) || s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) continue;
       free.push([x, y]);
     }
   } else {
@@ -355,11 +411,11 @@ export function reinforce(s: GameState) {
     }
   }
   if (!free.length) return;
-  const wave = s.objective === 'defend' ? Math.min(3, 1 + Math.floor(s.turnNo / 5) + (s.size >= 64 ? 1 : 0)) : 1;
+  const wave = s.objective === 'defend' ? Math.min(3 + (s.waveBoost ?? 0), 1 + Math.floor(s.turnNo / 5) + (s.size >= 64 ? 1 : 0) + (s.waveBoost ?? 0)) : 1;
   const kinds: AlienKind[] = ['trooper', 'trooper', 'trooper', 'trooper', 'heavy', 'sniper', 'psi'];
   for (let k = 0; k < wave && free.length; k++) {
     const j = Math.floor(rand(s) * free.length), [x, y] = free.splice(j, 1)[0];
-    const kind = s.objective === 'defend' ? kinds[Math.floor(rand(s) * Math.min(kinds.length, 4 + Math.floor(s.turnNo / 3)))] : 'trooper';
+    const kind = s.objective === 'defend' ? kinds[Math.floor(rand(s) * Math.min(kinds.length, 4 + Math.floor(s.turnNo / 4)))] : 'trooper';
     const id = Math.max(...s.units.map(u => u.id)) + 1;
     const rn = alien(id, kind, s.units.filter(u => u.kind === 'trooper').length + 1, x, y, s.difficulty);
     rn.alert = true;

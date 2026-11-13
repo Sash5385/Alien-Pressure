@@ -2,7 +2,8 @@ import type { TraitId } from './traits';
 
 export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy' | 'commander';
 export type ClassId = 'assault' | 'sniper' | 'medic' | 'engineer';
-export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper';
+export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'launcher' | 'mortar' | 'ags';
+export type LaunchKind = 'ugl' | 'launcher' | 'mortar' | 'ags';
 export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
 export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container';
@@ -81,6 +82,7 @@ export interface Unit {
   kills: number;
   grp?: number; // тактическая группа пришельцев
   retreatUntil?: number; // до какого хода держит оборону после отхода
+  ugl?: number; // выстрелов подствольника
   down?: boolean; // тяжело ранен: лежит, можно поднять
   bleedOut?: number; // ходов до смерти
   revived?: boolean; // уже падал в этой миссии
@@ -126,5 +128,10 @@ export interface GameState {
   boss?: boolean; // миссия с боссом (ликвидация)
   smokes?: { x: number; y: number; ttl: number }[]; // дым: закрывает обзор
   smokeMode?: boolean; // прицел дымовой гранаты
+  launch?: LaunchKind; // прицел гранатомёта/миномёта/подствольника (вместе с aiming 'grenade')
+  weather?: string; // принудительная погода миссии
+  sides?: 'all' | 'ns'; // откуда идут волны обороны
+  waveBoost?: number; // добавка к размеру волн
+  defendName?: string; // название варианта обороны
   undo?: { id: number; x: number; y: number; ap: number; stance: Stance; overwatch: boolean; facing: number; fp: string; vis: number }; // отмена последнего хода
 }

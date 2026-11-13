@@ -26,7 +26,7 @@ export function App() {
       before: structuredClone(c0),
       run: Date.now(),
       state: createMission({
-        rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, objective: c0.objective, biome: c0.biome, size: c0.mapSize, boss: c0.boss, risky: c0.risky, tech: c0.tech,
+        rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, objective: c0.objective, biome: c0.biome, size: c0.mapSize, boss: c0.boss, risky: c0.risky, variant: c0.variant, tech: c0.tech,
         soldiers: c0.roster.filter(s => deployed.includes(s.id)),
       }),
     });

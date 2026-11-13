@@ -5,7 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
-import { alienReactions, barrelAt, BLAST, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
@@ -631,7 +631,7 @@ export class GameView {
     const height = { soldier: 1.05, trooper: 1.05, sniper: 1.15, psi: 1.05, heavy: 1.45, commander: 1.6 }[u.kind];
     const tint = { soldier: undefined, trooper: 0x7fd24a, sniper: 0x3f8f6a, psi: 0xb36bff, heavy: 0x6f8a2c, commander: 0xc0392b }[u.kind];
     const gun = u.team === 'human'
-      ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper' }[u.weapon]
+      ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'ShortCannon', mortar: 'ShortCannon', ags: 'ShortCannon' }[u.weapon]
       : { soldier: '', trooper: 'AK', sniper: 'Sniper_2', psi: '', heavy: 'ShortCannon', commander: 'Revolver' }[u.kind];
     const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun);
     if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
@@ -848,7 +848,7 @@ export class GameView {
   private decals: THREE.Mesh[] = [];
   private pathLine: THREE.Line | null = null;
   hover: { sx: number; sy: number; text: string } | null = null;
-  getWeather(): Weather { return weatherOf(this.state.missionNo, this.state.biome); }
+  getWeather(): Weather { return (this.state.weather as Weather | undefined) ?? weatherOf(this.state.missionNo, this.state.biome); }
   isWeatherOn() { return this.weatherOn; }
   setWeatherOn(on: boolean) {
     this.weatherOn = on;
@@ -1125,7 +1125,7 @@ export class GameView {
       const am = new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: 0.22 });
       const ag = new THREE.PlaneGeometry(0.92, 0.92);
       for (let y = 0; y < s.size; y++) for (let x = 0; x < s.size; x++) {
-        if (!canThrow(s, u, x, y)) continue;
+        if (!this.canAim(u, x, y)) continue;
         const p = new THREE.Mesh(ag, am);
         p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, this.hy(x, y) + 0.03, y + 0.5);
         this.highlight.add(p);
@@ -1326,13 +1326,44 @@ export class GameView {
       else setTimeout(() => sfx('death'), 150);
     }
     await this.tween(300, k => {
-      ball.scale.setScalar(0.2 + k * (BLAST - 0.2));
+      ball.scale.setScalar(0.2 + k * ((res.r ?? BLAST) - 0.2));
       (ball.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - k);
       light.intensity = 40 * (1 - k);
     });
     this.scene.remove(light, ball);
     ball.geometry.dispose();
     for (const c of res.chain) { await sleep(160); await this.explode(c); }
+  }
+
+  /** Выстрел гранатой из подствольника, гранатомёта, миномёта или АГС. */
+  async launchAt(u: Unit, x: number, y: number) {
+    const s = this.state, kind = s.launch!;
+    s.busy = true;
+    const results = launch(s, u, x, y, kind);
+    this.focusOn(x, y);
+    this.blast.visible = false;
+    this.play(u.id, 'Idle_Shoot', true);
+    for (let i = 0; i < results.length; i++) {
+      const res = results[i];
+      const from = new THREE.Vector3(u.x + 0.5 + Math.sin(u.facing) * 0.5, this.eye(u) + this.hy(u.x, u.y), u.y + 0.5 + Math.cos(u.facing) * 0.5);
+      const to = new THREE.Vector3(res.x + 0.5, 0.2 + this.hy(res.x, res.y), res.y + 0.5);
+      sfx(kind === 'mortar' ? 'mortar' : 'launcher');
+      this.muzzleFlash(from);
+      this.burst(from, 0xcccccc, 10, 1.4, 500);
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(kind === 'mortar' ? 0.12 : 0.09, 8, 8), new THREE.MeshStandardMaterial({ color: 0x3a4030 }));
+      this.scene.add(shell);
+      const dist = from.distanceTo(to), peak = kind === 'mortar' ? 9 + dist * 0.3 : kind === 'ugl' ? 1.2 + dist * 0.12 : 0.6 + dist * 0.04;
+      await this.tween(kind === 'mortar' ? 900 + dist * 25 : 380 + dist * 45, k => {
+        shell.position.lerpVectors(from, to, k);
+        shell.position.y += Math.sin(k * Math.PI) * peak;
+      });
+      this.scene.remove(shell); shell.geometry.dispose();
+      await this.explode(res);
+      if (i < results.length - 1) await sleep(180);
+    }
+    s.busy = false;
+    this.syncUnits();
+    this.onChange();
   }
 
   /** Бросок дымовой гранаты. */
@@ -1404,6 +1435,11 @@ export class GameView {
     return hit ? { x: Math.floor(hit.point.x), y: Math.floor(hit.point.z) } : null;
   }
 
+  private canAim(u: Unit, x: number, y: number) {
+    const s = this.state;
+    return s.launch ? canLaunch(s, u, x, y, s.launch) : canThrow(s, u, x, y);
+  }
+
   /** Наведение: радиус гранаты; иначе путь до клетки и шанс попадания по пришельцу. */
   private onHover(e: PointerEvent) {
     const s = this.state;
@@ -1413,8 +1449,9 @@ export class GameView {
     const t = this.tileAt(e);
     if (s.aiming === 'grenade') {
       this.setHover(null);
-      if (!t || !canThrow(s, u, t.x, t.y)) { this.blast.visible = false; return; }
+      if (!t || !this.canAim(u, t.x, t.y)) { this.blast.visible = false; return; }
       this.blast.position.set(t.x + 0.5, this.hy(t.x, t.y) + 0.05, t.y + 0.5);
+      this.blast.scale.setScalar(s.launch ? LAUNCH[s.launch].r / BLAST : 1);
       this.blast.visible = !s.smokeMode;
       return;
     }
@@ -1485,7 +1522,7 @@ export class GameView {
     }
     if (s.aiming === 'grenade') {
       const th = s.units.find(v => v.id === s.selectedId && v.hp > 0);
-      if (th && canThrow(s, th, x, y)) { if (s.smokeMode) await this.smokeAt(th, x, y); else await this.throwAt(th, x, y); }
+      if (th && this.canAim(th, x, y)) { if (s.launch) await this.launchAt(th, x, y); else if (s.smokeMode) await this.smokeAt(th, x, y); else await this.throwAt(th, x, y); }
       return;
     }
     const at = s.units.find(v => v.hp > 0 && v.x === x && v.y === y && isVisible(s, v));
