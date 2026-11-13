@@ -1366,7 +1366,14 @@ export class GameView {
       line.geometry.dispose();
       return;
     }
-    if (!r.reaction) await sleep(a.team === 'alien' ? 450 : 150); // пауза на прицеливание: стрелок успевает повернуться
+    // стрелок сначала доворачивается к цели (до 0,9 с), потом идёт выстрел: пуля не вылетает раньше, чем ствол наведён
+    for (let i = 0; i < 30 && am; i++) {
+      const d = Math.abs(Math.atan2(Math.sin(f - am.rotation.y), Math.cos(f - am.rotation.y)));
+      if (d < 0.1 && (am.position.distanceTo(this.goals.get(a.id) ?? am.position) < 0.15)) break;
+      await sleep(30);
+    }
+    if (am) { const yaw = am.rotation.y; muzzle.set(am.position.x + Math.sin(yaw) * 0.5, this.eye(a) + this.hy(a.x, a.y), am.position.z + Math.cos(yaw) * 0.5); }
+    if (!r.reaction) await sleep(a.team === 'alien' ? 250 : 100); // короткая пауза на прицеливание
     // звук выстрела по оружию: автомат/ПП/дробовик/снайперка; у пришельцев — по типу
     const variant = a.team === 'human' ? a.weapon : a.kind === 'sniper' ? 'sniper' : a.kind === 'heavy' || a.kind === 'commander' ? 'shotgun' : undefined;
     this.gaze.set(a.id, { tid: t.id, until: this.clock.elapsedTime + 2 });
@@ -1382,7 +1389,7 @@ export class GameView {
         to.z += (Math.random() - 0.5) * (last ? 1.6 : 1.1);
         to.y = 0.15 + Math.random() * 0.9;
       }
-      shots.push(this.fireRound(muzzle, to, i * BURST_GAP, last && r.hit, last, a.team === 'human', variant));
+      shots.push(this.fireRound(muzzle, to, 80 + i * BURST_GAP, last && r.hit, last, a.team === 'human', variant));
     }
     if (am) { am.position.x -= Math.sin(f) * 0.07; am.position.z -= Math.cos(f) * 0.07; } // отдача
     await Promise.all(shots);
