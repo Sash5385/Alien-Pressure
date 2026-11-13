@@ -12,6 +12,9 @@ export interface ShotResult {
   alerted?: number[];
   suppress?: boolean;
   psi?: boolean;
+  melee?: boolean;
+  flank?: boolean;
+  downed?: boolean;
   broken?: { x: number; y: number };
 }
 
@@ -46,6 +49,7 @@ export function los(s: GameState, a: { x: number; y: number }, b: { x: number; y
     const lv = s.height[y][x];
     if (lv > Math.max(la, lb)) return false; // холм закрывает обзор
     if (s.cover[y][x] === 'full' && lv >= la) return false; // полное укрытие, если стрелок не выше
+    if (s.smokes?.length && s.smokes.some(m => m.x === x && m.y === y)) return false; // дым
   }
   return true;
 }
@@ -67,6 +71,12 @@ export function coverSource(s: GameState, shooter: Unit, target: Unit): { bonus:
   return best;
 }
 
+/** Фланг: у цели есть укрытие рядом, но не со стороны стрелка — выстрел точнее (+10%), цель теряет мораль. */
+export function isFlanked(s: GameState, a: Unit, t: Unit): boolean {
+  if (coverSource(s, a, t)) return false;
+  return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => (s.cover[t.y + dy]?.[t.x + dx] ?? 'none') !== 'none') && Math.hypot(a.x - t.x, a.y - t.y) >= 2;
+}
+
 export const coverBonus = (s: GameState, shooter: Unit, target: Unit) => coverSource(s, shooter, target)?.bonus ?? 0;
 
 /** Шанс попадания, % — или null, если выстрел невозможен. */
@@ -76,7 +86,7 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonu
   if (dist > a.range || !los(s, a, t)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
     - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
-  return Math.round(Math.min(95, Math.max(5, c)));
+  return Math.round(Math.min(95, Math.max(5, c + (a.team === 'human' && isFlanked(s, a, t) ? 10 : 0))));
 }
 
 const has = (u: Unit, t: string) => (u.traits as string[]).includes(t) || (u.perks as string[]).includes(t) || u.cls === t;
@@ -102,8 +112,14 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
   const hit = rand(s) * 100 < chance;
   let dmg = hit ? a.dmg[0] + Math.floor(rand(s) * (a.dmg[1] - a.dmg[0] + 1)) : 0;
   if (hit && t.cut > 0) dmg = Math.max(1, dmg - t.cut);
+  const flank = isFlanked(s, a, t);
   t.hp = Math.max(0, t.hp - dmg);
+  let downed = false;
+  if (hit && t.team === 'human' && t.hp <= 0 && !t.revived && rand(s) < 0.6) { // не гибнет сразу: падает, его можно поднять за 3 хода
+    t.hp = 1; t.down = true; t.bleedOut = 3; t.revived = true; t.stance = 'prone'; t.overwatch = false; downed = true;
+  }
   const killed = hit && t.hp <= 0;
+  if (flank && t.team === 'human' && a.team === 'alien') shift(t, -3);
   const alerted = a.team === 'human' ? raiseAlert(s, a.x, a.y, 14) : undefined; // выстрел слышно
   let wound: ShotResult['wound'];
   if (t.team === 'human') {
@@ -126,9 +142,9 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
   }
   const wtxt = wound === 'bleed' ? ', кровотечение' : wound === 'fracture' ? ', перелом' : '';
   const btxt = broken ? ' Укрытие разрушено.' : '';
-  log(s, `${reaction ? '[Overwatch] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}${wtxt}` : 'мимо'} (${chance}%)${btxt}`);
+  log(s, `${reaction ? '[Overwatch] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}${downed ? ', тяжело ранен — упал' : ''}${wtxt}` : 'мимо'} (${chance}%)${flank ? ' · фланг' : ''}${btxt}`);
   checkEnd(s);
-  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound, broken, alerted };
+  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound, broken, alerted, flank, downed };
 }
 
 /** Реакция overwatch бойцов на движущегося пришельца. */
@@ -154,13 +170,79 @@ export function checkEnd(s: GameState) {
   else if (s.objective === 'extract' && z && humans.every(h => h.x >= z.x && h.x < z.x + z.w && h.y >= z.y && h.y < z.y + z.h)) s.status = 'won';
 }
 
+/** Ближний бой: цель в соседней клетке. 1 AP, без патронов, тихо (шум в радиусе 3). */
+export function canMelee(a: Unit, t: Unit): boolean {
+  return a.hp > 0 && t.hp > 0 && a.team !== t.team && a.ap > 0 && Math.max(Math.abs(a.x - t.x), Math.abs(a.y - t.y)) <= 1;
+}
+export function melee(s: GameState, a: Unit, t: Unit): ShotResult {
+  faceToward(a, t.x, t.y);
+  a.ap -= 1; a.overwatch = false;
+  const chance = Math.max(10, 80 + (a.cls === 'assault' ? 5 : 0) - (a.fracture ? 20 : 0) + (t.stance === 'prone' ? 10 : 0));
+  const hit = rand(s) * 100 < chance;
+  let dmg = hit ? 1 + Math.floor(rand(s) * 2) + (a.cls === 'assault' ? 1 : 0) : 0;
+  if (hit && t.cut > 0) dmg = Math.max(1, dmg - t.cut);
+  t.hp = Math.max(0, t.hp - dmg);
+  const killed = hit && t.hp <= 0;
+  if (a.team === 'human') { raiseAlert(s, a.x, a.y, 3); if (killed) { a.kills += 1; living(s, 'human').forEach(h => shift(h, 4)); } }
+  log(s, `${a.name} бьёт в ближнем бою ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}` : 'мимо'} (${chance}%)`);
+  checkEnd(s);
+  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction: false, melee: true };
+}
+
+/** Поднять упавшего соседа: 1 AP, он встаёт на колено с 2 HP. */
+export const canRevive = (a: Unit, t: Unit) => a.hp > 0 && a.ap > 0 && !a.down && t.hp > 0 && !!t.down && a.team === t.team && Math.max(Math.abs(a.x - t.x), Math.abs(a.y - t.y)) <= 1;
+export function revive(s: GameState, a: Unit, t: Unit): boolean {
+  if (!canRevive(a, t)) return false;
+  a.ap -= 1; a.overwatch = false;
+  t.down = false; t.bleedOut = 0; t.hp = Math.min(t.maxHp, 2); t.stance = 'kneel'; t.morale = Math.min(100, t.morale + 10);
+  log(s, `${a.name} поднимает ${t.name}.`);
+  return true;
+}
+
+/** Дым: 3×3 клетки на 2 хода, закрывает обзор и линию огня. 1 AP и 1 гранату. */
+export function throwSmoke(s: GameState, u: Unit, x: number, y: number) {
+  faceToward(u, x, y);
+  u.grenades -= 1; u.ap -= 1; u.overwatch = false;
+  s.aiming = null; s.smokeMode = false;
+  s.smokes ??= [];
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const cx = x + dx, cy = y + dy;
+    if (cx < 0 || cy < 0 || cx >= s.size || cy >= s.size || s.terrain[cy][cx] === 'water') continue;
+    s.smokes.push({ x: cx, y: cy, ttl: 2 });
+  }
+  log(s, `${u.name} ставит дымовую завесу.`);
+}
+
+/** Overwatch пришельцев: выстрел по бойцу, пробегающему через их сектор. */
+export function alienReactions(s: GameState, mover: Unit): ShotResult[] {
+  const out: ShotResult[] = [];
+  for (const a of living(s, 'alien')) {
+    if (mover.hp <= 0) break;
+    if (!a.overwatch || hitChance(s, a, mover, true) === null) continue;
+    a.overwatch = false;
+    out.push(shoot(s, a, mover, true));
+  }
+  return out;
+}
+
 /** Начало хода людей: кровотечение, паника, восстановление AP. */
 export function startHumanTurn(s: GameState) {
   for (const a of living(s, 'alien')) a.suppressed = false;
   tickFire(s);
+  if (s.smokes) s.smokes = s.smokes.map(m => ({ ...m, ttl: m.ttl - 1 })).filter(m => m.ttl > 0);
   for (const u of living(s, 'human')) {
-    u.ap = u.maxAp;
+    u.ap = Math.max(1, u.maxAp - (u.suppressed ? 1 : 0));
     u.overwatch = false;
+    if (u.down) {
+      u.ap = 0;
+      u.bleedOut = (u.bleedOut ?? 3) - 1;
+      if (u.bleedOut <= 0) {
+        u.hp = 0; u.down = false;
+        log(s, `${u.name} не дождался помощи.`);
+        living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); });
+      } else log(s, `${u.name} лежит без сил (осталось ${u.bleedOut} хода).`);
+      continue;
+    }
     if (u.bleeding) {
       u.hp -= 1;
       log(s, `${u.name} истекает кровью (−1 HP).`);

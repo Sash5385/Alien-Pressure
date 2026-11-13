@@ -79,6 +79,9 @@ export interface Unit {
   perks: PerkId[];
   bio: string;
   kills: number;
+  down?: boolean; // тяжело ранен: лежит, можно поднять
+  bleedOut?: number; // ходов до смерти
+  revived?: boolean; // уже падал в этой миссии
 }
 
 export interface GameState {
@@ -119,5 +122,7 @@ export interface GameState {
   log: string[];
   rng: number; // состояние генератора (сид миссии)
   boss?: boolean; // миссия с боссом (ликвидация)
+  smokes?: { x: number; y: number; ttl: number }[]; // дым: закрывает обзор
+  smokeMode?: boolean; // прицел дымовой гранаты
   undo?: { id: number; x: number; y: number; ap: number; stance: Stance; overwatch: boolean; facing: number; fp: string; vis: number }; // отмена последнего хода
 }

@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { runAlienTurn } from './game/ai';
-import { aimedShot, bandage, coverSource, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
+import { aimedShot, bandage, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState, Unit } from './game/types';
 import { btn, cta, NM, VERSION } from './ui';
@@ -69,7 +69,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const [showLog, setShowLog] = useState(false);
   const [showMap, setShowMap] = useState(true);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
-  const lift = typeof window !== 'undefined' && window.innerWidth < 1180; // на средних экранах угловые блоки поднимаем над диском
+  const lift = typeof window !== 'undefined' && window.innerWidth < 1400; // на средних экранах угловые блоки поднимаем над диском
   const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   // автосохранение: в начале хода и после каждого действия игрока
   useEffect(() => { if (s.turn === 'human' && !s.busy && s.status === 'playing') onSave(s); });
@@ -86,10 +86,34 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const canGrenade = canAct && !!sel && sel.ap > 0 && sel.grenades > 0 && sel.stance !== 'prone';
   const toggleGrenade = () => {
     if (!canGrenade) return;
-    s.aiming = s.aiming === 'grenade' ? null : 'grenade';
+    s.smokeMode = false;
+    s.aiming = s.aiming === 'grenade' && !s.smokeMode ? null : 'grenade';
     s.targetId = null;
     view.current!.syncUnits();
     rerender();
+  };
+  const toggleSmoke = () => {
+    if (!canGrenade) return;
+    const on = s.aiming === 'grenade' && s.smokeMode;
+    s.smokeMode = !on; s.aiming = on ? null : 'grenade'; s.targetId = null;
+    view.current!.syncUnits(); rerender();
+  };
+  const canMeleeNow = canAct && !!sel && !!tgt && canMelee(sel, tgt);
+  const doMelee = async () => {
+    if (!canMeleeNow || !sel || !tgt) return;
+    s.busy = true;
+    const r = melee(s, sel, tgt);
+    rerender();
+    await view.current!.meleeFx(r);
+    if (tgt.hp <= 0) s.targetId = null;
+    s.busy = false; checkEnd(s);
+    view.current!.syncUnits(); rerender();
+  };
+  const downedAlly = sel ? s.units.find(h => h.team === 'human' && h !== sel && h.hp > 0 && h.down && canRevive(sel, h)) : undefined;
+  const doRevive = () => {
+    if (!canAct || !sel || !downedAlly) return;
+    if (revive(s, sel, downedAlly)) sfx('heal');
+    view.current!.syncUnits(); rerender();
   };
   const canCharge = canAct && !!sel && sel.ap > 0 && sel.grenades > 0 && !!nearBeacon(s, sel);
   const doCharge = () => {
@@ -224,7 +248,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const leave = () => onExit(s);
 
   const info = sel
-    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}`
+    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}${sel.down ? ` · ТЯЖЕЛО РАНЕН (${sel.bleedOut ?? 3} хода)` : ''}`
     : 'Выбери бойца';
   const cmd = s.units.find(u => u.kind === 'commander' && u.hp > 0);
   const goal = {
@@ -253,12 +277,15 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     ab('Заряд', sel ? `маг. ${sel.mags}` : '', false, !canReload, doReload),
     ab('Граната', sel ? `${sel.grenades}` : '', s.aiming === 'grenade', !canGrenade, toggleGrenade),
     ab('Окопаться', '', false, !canDig || !sel, doDig, 'Окоп: укрытие со всех сторон, −1 урон от взрывов'),
+    ab('Удар', '1 AP', false, !canMeleeNow, doMelee, 'Ближний бой: цель в соседней клетке, без патронов, тихо'),
   ];
   const rightBtns = [
     ab('Бинт', `${s.medkits}`, false, !canBandage, heal),
     ab('Overwatch', '', false, !canOw, overwatch),
     sel ? ab(abilityLabel.replace(/ \(.*\)/, ''), abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, CLASSES[sel.cls].desc) : ab('Умение', '', false, true, () => {}),
     ...(s.objective === 'sabotage' ? [ab('Взорвать', 'маяк', true, !canCharge, doCharge)] : []),
+    ...(downedAlly ? [ab('Поднять', downedAlly.name, true, !canAct, doRevive)] : []),
+    ...(sel?.cls === 'engineer' ? [ab('Дымовая', '3×3, 2 хода', !!s.smokeMode && s.aiming === 'grenade', !canGrenade, toggleSmoke, 'Дым закрывает обзор и линию огня. Тратит гранату')] : []),
   ];
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
@@ -274,7 +301,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           {(list as Unit[]).map(u => (
             <button key={u.id} disabled={u.hp <= 0 || !canAct} onClick={() => pick(u.id)} title={u.traits.map(t => TRAITS[t].name).join(', ')}
               style={{ ...nbBase, borderRadius: 14, boxShadow: u.id === s.selectedId ? IN : OUTS, color: u.id === s.selectedId ? '#ffd34d' : '#dfe5f2', padding: '6px 10px', fontSize: narrow ? 11 : 12, fontWeight: 700, minWidth: narrow ? 0 : 160, width: narrow ? '100%' : undefined, opacity: u.hp <= 0 ? 0.4 : 1, textDecoration: u.hp <= 0 ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between', cursor: 'pointer', minHeight: touch ? 40 : undefined }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}{u.bleeding ? ' 🩸' : ''}{u.panic ? ' ⚠' : ''}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}{u.bleeding ? ' 🩸' : ''}{u.panic ? ' ⚠' : ''}{u.down ? ' ⬇' : ''}</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
                 <span style={{ width: 36, height: 6, borderRadius: 3, boxShadow: IN, position: 'relative' }}><b style={{ position: 'absolute', inset: '0 auto 0 0', width: `${Math.max(0, u.hp) / u.maxHp * 100}%`, borderRadius: 3, background: u.hp / u.maxHp < 0.5 ? '#ff7a7a' : '#6fe39a' }} /></span>
                 <i style={{ fontStyle: 'normal', opacity: 0.7, fontWeight: 500 }}>{u.hp}/{u.maxHp}</i>
@@ -309,11 +336,11 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       </div>
       {/* ——— низ: миникарта и меню по углам, диск действий по центру ——— */}
       {showMap && (
-        <div style={{ position: 'absolute', left: 8, bottom: lift ? 150 : 8, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 6 }}>
+        <div style={{ position: 'absolute', left: 8, bottom: lift ? (narrow ? 215 : 150) : 8, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 6 }}>
           <Minimap s={s} narrow={narrow} onPick={(x, y) => view.current?.panTo(x, y)} />
         </div>
       )}
-      <div style={{ position: 'absolute', right: 8, bottom: lift ? 150 : 8, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+      <div style={{ position: 'absolute', right: 8, bottom: lift ? (narrow ? 215 : 150) : 8, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
         {showLog && (
           <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, width: narrow ? 'calc(100vw - 16px)' : 340, maxHeight: 260, overflowY: 'auto', fontSize: 12, lineHeight: 1.45, pointerEvents: 'auto' }}>
             {[...s.log].reverse().slice(0, 60).map((l, i) => <div key={i} style={{ opacity: l.startsWith('—') ? 0.55 : 1, borderTop: l.startsWith('—') ? '1px solid #2a3348' : undefined, paddingTop: l.startsWith('—') ? 4 : 0 }}>{l}</div>)}

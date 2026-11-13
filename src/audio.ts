@@ -14,8 +14,30 @@ let P = 1; // высота (множитель частот)
 let muted = (() => { try { return localStorage.getItem(KEY) === '1'; } catch { return false; } })();
 
 export const isMuted = () => muted;
+let amb: { src: AudioBufferSourceNode; gain: GainNode; base: number } | null = null;
+
+/** Фоновый звук локации и погоды: дождь, ветер в лесу, вода у реки, гул руин. */
+export function setAmbient(kind: 'rain' | 'wind' | 'water' | 'drone' | null) {
+  if (amb) { try { amb.src.stop(); } catch { /* уже остановлен */ } amb.src.disconnect(); amb = null; }
+  if (!kind) return;
+  const c = ac();
+  if (!c || !bus) return;
+  const len = c.sampleRate * 2, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = c.createBufferSource(); src.buffer = buf; src.loop = true;
+  const f = c.createBiquadFilter();
+  const cfg = { rain: ['highpass', 1800, 0.05], wind: ['bandpass', 520, 0.06], water: ['lowpass', 700, 0.035], drone: ['lowpass', 200, 0.03] }[kind] as [BiquadFilterType, number, number];
+  f.type = cfg[0]; f.frequency.value = cfg[1];
+  const g = c.createGain(); g.gain.value = muted ? 0 : cfg[2];
+  if (kind === 'wind') { const o = c.createOscillator(), og = c.createGain(); o.frequency.value = 0.12; og.gain.value = 0.03; o.connect(og).connect(g.gain); o.start(); }
+  src.connect(f).connect(g).connect(bus);
+  src.start();
+  amb = { src, gain: g, base: cfg[2] };
+}
+
 export function setMuted(m: boolean) {
   muted = m;
+  if (amb) amb.gain.gain.value = m ? 0 : amb.base;
   try { localStorage.setItem(KEY, m ? '1' : '0'); } catch { /* ignore */ }
 }
 

@@ -1,4 +1,4 @@
-import { alienSees, canPsi, digIn, hitChance, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
+import { alienSees, canPsi, digIn, hitChance, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 import type { GrenadeResult } from './combat';
@@ -45,6 +45,8 @@ const ideal = (u: Unit, near: number) =>
 /** ИИ: атакует лучшую цель, иначе идёт к клетке с обзором/укрытием на подходящей дистанции. */
 export async function runAlienTurn(s: GameState, h: AiHooks) {
   s.revealed = [];
+  for (const h of living(s, 'human')) h.suppressed = false;
+  for (const a of living(s, 'alien')) a.overwatch = false;
   for (const u of living(s, 'alien')) {
     u.ap = Math.max(1, u.maxAp - (u.suppressed ? 1 : 0));
     for (let i = 0; i < 3 && u.hp > 0 && u.ap > 0 && s.status === 'playing'; i++) {
@@ -58,6 +60,9 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
         .sort((a, b) => b.c - a.c);
       if (options.length) {
         const t = options[0].t;
+        // тяжёлые и снайперы прижимают огнём, когда попасть трудно
+        const sup = ['heavy', 'sniper', 'commander'].includes(u.kind) && u.ammo >= 2 && options[0].c < 35 && !t.suppressed ? suppress(s, u, t) : null;
+        if (sup) { await h.shot(sup); continue; }
         await h.shot(u.kind === 'psi' ? psiAttack(s, u, t) : shoot(s, u, t));
         // стрелки дальнего боя окапываются, если рядом нет укрытия
         const covered = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => s.cover[u.y + dy]?.[u.x + dx] && s.cover[u.y + dy][u.x + dx] !== 'none');
@@ -66,6 +71,11 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
         continue;
       }
 
+      if (u.ap === 1 && u.ammo > 0 && u.kind !== 'psi' && rand(s) < 0.2) { // последнее действие: встать на overwatch
+        u.overwatch = true; u.ap = 0;
+        await h.moved(u);
+        break;
+      }
       let best: [number, number] | null = null;
       let bestScore = Infinity;
       for (const k of reachable(s, u.x, u.y, u.move).keys()) {

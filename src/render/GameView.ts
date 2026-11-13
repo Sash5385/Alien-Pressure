@@ -5,8 +5,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
-import { barrelAt, BLAST, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isVisible, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
-import { sfx, type Sfx } from '../audio';
+import { alienReactions, barrelAt, BLAST, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { sfx, setAmbient, type Sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
 
@@ -18,10 +18,10 @@ const ALIEN_SPEED = 2.2; // пришельцы идут медленнее, чт
 const speedOf = (u?: Unit) => (u?.team === 'alien' ? ALIEN_SPEED : SPEED);
 
 interface Float { sprite: THREE.Sprite; t: number }
-export type Weather = 'clear' | 'rain' | 'fog' | 'dusk';
-export const WEATHER_NAME: Record<Weather, string> = { clear: 'ясно', rain: '☔ дождь', fog: '🌫 туман', dusk: '🌆 сумерки' };
+export type Weather = 'clear' | 'rain' | 'fog' | 'dusk' | 'dawn' | 'night';
+export const WEATHER_NAME: Record<Weather, string> = { clear: 'ясно', rain: '☔ дождь', fog: '🌫 туман', dusk: '🌆 сумерки', dawn: '🌅 рассвет', night: '🌙 ночь' };
 /** Погода миссии: чисто визуальная, зависит от номера миссии и локации. */
-export const weatherOf = (missionNo: number, biome: string): Weather => (['clear', 'clear', 'rain', 'fog', 'clear', 'dusk'] as const)[(missionNo * 7 + (biome === 'forest' ? 3 : biome === 'lake' ? 6 : 0)) % 6];
+export const weatherOf = (missionNo: number, biome: string): Weather => (['clear', 'clear', 'rain', 'fog', 'dawn', 'dusk', 'night', 'clear'] as const)[(missionNo * 7 + (biome === 'forest' ? 3 : biome === 'lake' ? 6 : 0)) % 8];
 
 export class GameView {
   private renderer: THREE.WebGLRenderer;
@@ -711,6 +711,7 @@ export class GameView {
       } else { m.rotation.z = Math.PI / 2; m.position.y += 0.15; this.corpses.set(id, m); this.unitMeshes.delete(id); this.goals.delete(id); }
     }
     for (const m of this.corpses.values()) { const cx = Math.floor(m.position.x), cy = Math.floor(m.position.z); m.visible = !!this.state.seen[cy]?.[cx]; }
+    this.syncSmoke();
     for (const [k, m] of this.coverMeshes) {
       const [cx, cy] = k.split(',').map(Number);
       if (this.state.cover[cy][cx] === 'none') {
@@ -842,6 +843,8 @@ export class GameView {
   private hemi!: THREE.HemisphereLight;
   private weatherOn = (() => { try { return localStorage.getItem('alien-pressure:weather') !== 'off'; } catch { return true; } })();
   private rain: THREE.LineSegments | null = null;
+  private torch: THREE.SpotLight | null = null;
+  private smokeMeshes = new Map<string, THREE.Mesh>();
   private decals: THREE.Mesh[] = [];
   private pathLine: THREE.Line | null = null;
   hover: { sx: number; sy: number; text: string } | null = null;
@@ -860,6 +863,15 @@ export class GameView {
     fog.color.set(this.baseFog.color); fog.near = this.baseFog.near; fog.far = this.baseFog.far;
     this.renderer.toneMappingExposure = 3.5; this.sun.color.set(0xfff0d0); this.sun.intensity = 2.0; this.hemi.intensity = 1.3;
     if (this.rain) { this.scene.remove(this.rain); this.rain.geometry.dispose(); this.rain = null; }
+    if (this.torch) { this.scene.remove(this.torch, this.torch.target); this.torch = null; }
+    this.sun.position.set(this.state.size, 20, this.state.size * 0.2);
+    setAmbient(this.weatherOn ? (w === 'rain' ? 'rain' : this.state.biome === 'forest' ? 'wind' : this.state.biome === 'lake' ? 'water' : 'drone') : null);
+    if (w === 'dawn') { this.renderer.toneMappingExposure = 3.0; this.sun.color.set(0xffb070); this.sun.intensity = 1.8; this.sun.position.set(this.state.size, 6, this.state.size * 0.1); this.hemi.intensity = 1.0; fog.color.lerp(new THREE.Color(0xd9a07a), 0.45); }
+    if (w === 'night') {
+      this.renderer.toneMappingExposure = 2.2; this.sun.color.set(0x8aa6ff); this.sun.intensity = 0.7; this.hemi.intensity = 0.55; fog.color.lerp(new THREE.Color(0x0c1424), 0.8); fog.near = 10; fog.far = 60;
+      this.torch = new THREE.SpotLight(0xfff0c8, 120, 22, 0.55, 0.5, 1.2);
+      this.scene.add(this.torch, this.torch.target);
+    }
     if (w === 'fog') { fog.color.lerp(new THREE.Color(0x9aa6a2), 0.7); fog.near = 6; fog.far = 46; }
     if (w === 'dusk') { this.renderer.toneMappingExposure = 2.7; this.sun.color.set(0xff9a60); this.sun.intensity = 1.5; this.hemi.intensity = 0.9; fog.color.lerp(new THREE.Color(0x4a3a50), 0.5); }
     if (w === 'rain') {
@@ -876,6 +888,14 @@ export class GameView {
     }
   }
   private stepRain(dt: number) {
+    if (this.torch) {
+      const u = this.state.units.find(v => v.id === this.state.selectedId && v.hp > 0) ?? this.state.units.find(v => v.team === 'human' && v.hp > 0);
+      const m = u && this.unitMeshes.get(u.id);
+      if (u && m) {
+        this.torch.position.set(m.position.x, m.position.y + 1.6, m.position.z);
+        this.torch.target.position.set(m.position.x + Math.sin(u.facing) * 6, m.position.y, m.position.z + Math.cos(u.facing) * 6);
+      }
+    }
     const r = this.rain; if (!r) return;
     const a = (r.geometry.getAttribute('position') as THREE.BufferAttribute), arr = a.array as Float32Array;
     for (let i = 0; i < arr.length; i += 6) {
@@ -886,6 +906,73 @@ export class GameView {
     a.needsUpdate = true;
     r.position.set(this.controls.target.x, 0, this.controls.target.z);
   }
+  private syncSmoke() {
+    const live = new Set<string>();
+    for (const m of this.state.smokes ?? []) {
+      const k = `${m.x},${m.y}`; live.add(k);
+      if (!this.smokeMeshes.has(k)) {
+        const o = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 8), new THREE.MeshBasicMaterial({ color: 0xbfc4c8, transparent: true, opacity: 0.62, depthWrite: false }));
+        o.position.set(m.x + 0.5, this.hy(m.x, m.y) + 0.8, m.y + 0.5);
+        o.scale.set(1, 1.1, 1);
+        this.scene.add(o); this.smokeMeshes.set(k, o);
+      }
+      (this.smokeMeshes.get(k)!.material as THREE.MeshBasicMaterial).opacity = m.ttl >= 2 ? 0.62 : 0.4;
+    }
+    for (const [k, o] of this.smokeMeshes) if (!live.has(k)) { this.scene.remove(o); o.geometry.dispose(); (o.material as THREE.Material).dispose(); this.smokeMeshes.delete(k); }
+  }
+
+  /** Обломки: куски летят по дуге и остаются лежать. */
+  private debris(pos: THREE.Vector3, color: number, count: number, power = 3) {
+    for (let i = 0; i < count; i++) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.08 + Math.random() * 0.1, 0.06 + Math.random() * 0.06, 0.08 + Math.random() * 0.1), new THREE.MeshStandardMaterial({ color, roughness: 1 }));
+      m.position.copy(pos); m.castShadow = true;
+      this.scene.add(m);
+      const v = new THREE.Vector3((Math.random() - 0.5) * power, 2 + Math.random() * power, (Math.random() - 0.5) * power);
+      const spin = new THREE.Vector3(Math.random() * 8, Math.random() * 8, Math.random() * 8);
+      const gy = this.hy(Math.floor(pos.x), Math.floor(pos.z)) + 0.05;
+      let last = 0;
+      void this.tween(900, k => {
+        const d = ((k - last) * 900) / 1000; last = k;
+        v.y -= 14 * d;
+        m.position.addScaledVector(v, d); m.position.y = Math.max(gy, m.position.y);
+        if (m.position.y > gy) m.rotation.x += spin.x * d, m.rotation.y += spin.y * d;
+      }).then(() => { setTimeout(() => { this.scene.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); }, 12000); });
+    }
+  }
+
+  /** Гильза: вылетает вправо-вверх от ствола и падает. */
+  private casing(pos: THREE.Vector3, facing: number) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.045, 6), new THREE.MeshStandardMaterial({ color: 0xd4a84a, metalness: 0.8, roughness: 0.35 }));
+    m.position.copy(pos); this.scene.add(m);
+    const side = facing + Math.PI / 2 + (Math.random() - 0.5) * 0.6;
+    const v = new THREE.Vector3(Math.sin(side) * (1 + Math.random()), 1.6 + Math.random(), Math.cos(side) * (1 + Math.random()));
+    const gy = this.hy(Math.floor(pos.x), Math.floor(pos.z)) + 0.03;
+    let last = 0;
+    void this.tween(650, k => {
+      const d = ((k - last) * 650) / 1000; last = k;
+      v.y -= 12 * d; m.position.addScaledVector(v, d); m.position.y = Math.max(gy, m.position.y); m.rotation.z += 12 * d;
+    }).then(() => setTimeout(() => { this.scene.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); }, 6000));
+  }
+
+  /** Брызги крови в сторону от стрелка. */
+  private spray(pos: THREE.Vector3, from: THREE.Vector3) {
+    const dir = pos.clone().sub(from).setY(0).normalize();
+    for (let i = 0; i < 7; i++) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 6), new THREE.MeshBasicMaterial({ color: 0x8a1212 }));
+      m.position.copy(pos); this.scene.add(m);
+      const v = new THREE.Vector3(dir.x * (1.5 + Math.random() * 2) + (Math.random() - 0.5), 1 + Math.random() * 1.5, dir.z * (1.5 + Math.random() * 2) + (Math.random() - 0.5));
+      let last = 0;
+      void this.tween(420, k => { const d = ((k - last) * 420) / 1000; last = k; v.y -= 11 * d; m.position.addScaledVector(v, d); }).then(() => { this.scene.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); });
+    }
+  }
+
+  /** Отброс цели от стрелка (мягко возвращается на клетку). */
+  private knockback(t: Unit, a: Unit, amount = 0.18) {
+    const m = this.unitMeshes.get(t.id); if (!m) return;
+    const dx = t.x - a.x, dy = t.y - a.y, d = Math.hypot(dx, dy) || 1;
+    m.position.x += (dx / d) * amount; m.position.z += (dy / d) * amount;
+  }
+
   /** Тёмное пятно на земле: след от пули (промах), кровь (попадание, труп). */
   private decal(x: number, z: number, color: number, r: number, opacity = 0.6) {
     const m = new THREE.Mesh(new THREE.CircleGeometry(r, 10), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
@@ -1002,7 +1089,19 @@ export class GameView {
     this.highlight.clear();
     this.blast.visible = false;
     const s = this.state;
-    for (const o of s.units) if (o.hp > 0 && o.overwatch) this.ring(o.x, o.y, 0x35e0e0, 0.46, 0.52);
+    for (const o of s.units) if (o.hp > 0 && o.overwatch && (o.team === 'human' || isVisible(s, o))) this.ring(o.x, o.y, o.team === 'human' ? 0x35e0e0 : 0xff6a3a, 0.46, 0.52);
+    for (const o of s.units) if (o.hp > 0 && o.down) this.ring(o.x, o.y, 0xffffff, 0.3, 0.36);
+    for (const o of s.units) if (o.hp > 0 && o.team === 'alien' && isVisible(s, o) && !o.overwatch && o.alert) this.ring(o.x, o.y, 0xb03030, 0.5, 0.53);
+    // конусы огня пришельцев на overwatch
+    const cone = new THREE.MeshBasicMaterial({ color: 0xff4a2a, transparent: true, opacity: 0.16, depthWrite: false }), cg = new THREE.PlaneGeometry(0.92, 0.92);
+    for (const o of s.units) {
+      if (o.hp <= 0 || o.team !== 'alien' || !o.overwatch || !isVisible(s, o)) continue;
+      const R = Math.min(o.range, 11);
+      for (let y = Math.max(0, o.y - R); y <= Math.min(s.size - 1, o.y + R); y++) for (let x = Math.max(0, o.x - R); x <= Math.min(s.size - 1, o.x + R); x++) {
+        if (Math.hypot(x - o.x, y - o.y) > R || s.cover[y][x] !== 'none' || !los(s, o, { x, y })) continue;
+        const p = new THREE.Mesh(cg, cone); p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, this.hy(x, y) + 0.028, y + 0.5); this.highlight.add(p);
+      }
+    }
     for (const o of s.units) if (o.hp > 0 && o.bleeding) this.ring(o.x, o.y, 0xb01818, 0.54, 0.6);
     for (const o of s.units) if (o.hp > 0 && o.panic) this.ring(o.x, o.y, 0xff9f43, 0.62, 0.68);
     for (const o of s.units) if (o.hp > 0 && o.team === 'alien' && !o.alert && isVisible(s, o)) this.ring(o.x, o.y, 0xe8e8a0, 0.5, 0.54);
@@ -1015,6 +1114,13 @@ export class GameView {
     const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     if (!u) return;
     this.ring(u.x, u.y, 0xffd34d);
+    if (!s.busy && s.aiming !== 'grenade') { // обзор выбранного бойца
+      const vm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.045, depthWrite: false }), vg = new THREE.PlaneGeometry(1, 1), R = 9;
+      for (let y = Math.max(0, u.y - R); y <= Math.min(s.size - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(s.size - 1, u.x + R); x++) {
+        if (Math.hypot(x - u.x, y - u.y) > R || s.cover[y][x] !== 'none' || !los(s, u, { x, y })) continue;
+        const p = new THREE.Mesh(vg, vm); p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, this.hy(x, y) + 0.022, y + 0.5); this.highlight.add(p);
+      }
+    }
     if (s.aiming === 'grenade' && !s.busy) {
       const am = new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: 0.22 });
       const ag = new THREE.PlaneGeometry(0.92, 0.92);
@@ -1089,6 +1195,7 @@ export class GameView {
     if (delayMs) await sleep(delayMs);
     if (variant) sfx('shot', { variant }); else sfx(human ? 'shot' : 'alienShot');
     this.muzzleFlash(from);
+    if (human) this.casing(from.clone().add(new THREE.Vector3(0, -0.05, 0)), Math.atan2(to.x - from.x, to.z - from.z));
     const bullet = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.6), new THREE.MeshBasicMaterial({ color: 0xffe9a8 }));
     bullet.position.copy(from);
     bullet.lookAt(to);
@@ -1144,6 +1251,7 @@ export class GameView {
     if (r.hit) {
       sfx('hit');
       this.floatText(t.x + 0.5, t.y + 0.5, `−${r.dmg}`, '#ff6b6b');
+      if (r.hit) { this.spray(new THREE.Vector3(t.x + 0.5, this.eye(t) + this.hy(t.x, t.y) - 0.2, t.y + 0.5), new THREE.Vector3(a.x + 0.5, 0, a.y + 0.5)); this.knockback(t, a, r.killed ? 0.3 : 0.16); }
       if (!r.killed) this.play(t.id, 'HitReact', true);
     } else this.floatText(t.x + 0.5, t.y + 0.5, r.suppress ? 'подавлен' : 'мимо', r.suppress ? '#ffd34d' : '#c9ced3');
     if (r.alerted?.length) this.alertFx(r.alerted);
@@ -1193,7 +1301,9 @@ export class GameView {
     this.scene.add(light, ball);
     this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0xffb050, 30, 5, 650);
     this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0x555555, 18, 3, 800);
-    for (const b of res.broken) this.burst(new THREE.Vector3(b.x + 0.5, 0.3 + this.hy(b.x, b.y), b.y + 0.5), 0x8a7a62, 10, 2.5, 600);
+    for (const b of res.broken) { const bp = new THREE.Vector3(b.x + 0.5, 0.3 + this.hy(b.x, b.y), b.y + 0.5); this.burst(bp, 0x8a7a62, 10, 2.5, 600); this.debris(bp, 0x8a7a62, 8, 3); }
+    this.debris(new THREE.Vector3(to.x, to.y + 0.3, to.z), 0x5a4a38, 14, 5);
+    this.decal(to.x, to.z, 0x121210, 1.1, 0.55); this.decal(to.x, to.z, 0x2a2420, 1.5, 0.3);
     if (res.ignited.length) setTimeout(() => sfx('fire'), 250);
     if (res.alerted.length) this.alertFx(res.alerted);
     for (const h of res.hits) {
@@ -1210,6 +1320,50 @@ export class GameView {
     this.scene.remove(light, ball);
     ball.geometry.dispose();
     for (const c of res.chain) { await sleep(160); await this.explode(c); }
+  }
+
+  /** Бросок дымовой гранаты. */
+  async smokeAt(u: Unit, x: number, y: number) {
+    const s = this.state;
+    s.busy = true;
+    throwSmoke(s, u, x, y);
+    this.focusOn(x, y);
+    this.blast.visible = false;
+    this.play(u.id, 'Punch', true);
+    sfx('pin'); setTimeout(() => sfx('throw'), 220);
+    const from = new THREE.Vector3(u.x + 0.5, 1.0 + this.hy(u.x, u.y), u.y + 0.5), to = new THREE.Vector3(x + 0.5, 0.1 + this.hy(x, y), y + 0.5);
+    const g = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), new THREE.MeshStandardMaterial({ color: 0x9aa0a4 }));
+    this.scene.add(g);
+    const dist = from.distanceTo(to);
+    await this.tween(350 + dist * 60, k => { g.position.lerpVectors(from, to, k); g.position.y += Math.sin(k * Math.PI) * (1.2 + dist * 0.15); });
+    this.scene.remove(g); g.geometry.dispose();
+    this.burst(to.clone().setY(to.y + 0.3), 0xcfd3d6, 24, 1.6, 900);
+    sfx('splash');
+    this.syncUnits();
+    s.busy = false;
+    this.onChange();
+  }
+
+  /** Удар в ближнем бою: рывок к цели, брызги. */
+  async meleeFx(r: ShotResult) {
+    const a = this.state.units.find(u => u.id === r.attackerId)!, t = this.state.units.find(u => u.id === r.targetId)!;
+    this.focusOn((a.x + t.x) / 2, (a.y + t.y) / 2);
+    const m = this.unitMeshes.get(a.id);
+    this.play(a.id, 'Punch', true);
+    if (m) { const k0 = m.position.clone(); m.position.x += (t.x - a.x) * 0.35; m.position.z += (t.y - a.y) * 0.35; setTimeout(() => m.position.copy(k0), 160); }
+    await sleep(260);
+    const chest = new THREE.Vector3(t.x + 0.5, this.eye(t) + this.hy(t.x, t.y) - 0.2, t.y + 0.5);
+    if (r.hit) {
+      sfx('hit');
+      this.burst(chest, 0xff5533, 10, 2, 300);
+      this.spray(chest, new THREE.Vector3(a.x + 0.5, 0, a.y + 0.5));
+      this.knockback(t, a, r.killed ? 0.3 : 0.14);
+      this.floatText(t.x + 0.5, t.y + 0.5, `−${r.dmg}`, '#ff6b6b');
+      if (!r.killed) this.play(t.id, 'HitReact', true);
+      else { setTimeout(() => sfx('death'), 100); this.decal(t.x + 0.5, t.y + 0.5, 0x4a0808, 0.42, 0.65); }
+    } else { sfx('miss'); this.floatText(t.x + 0.5, t.y + 0.5, 'мимо', '#cfd8dc'); }
+    await sleep(300);
+    this.syncUnits();
   }
 
   /** Выстрел по бочке: пуля и взрыв. */
@@ -1248,7 +1402,7 @@ export class GameView {
       this.setHover(null);
       if (!t || !canThrow(s, u, t.x, t.y)) { this.blast.visible = false; return; }
       this.blast.position.set(t.x + 0.5, this.hy(t.x, t.y) + 0.05, t.y + 0.5);
-      this.blast.visible = true;
+      this.blast.visible = !s.smokeMode;
       return;
     }
     this.blast.visible = false;
@@ -1258,7 +1412,7 @@ export class GameView {
     if (at?.team === 'alien') {
       const ch = hitChance(s, u, at);
       const cs = ch !== null ? coverSource(s, u, at) : null;
-      this.setHover({ sx, sy, text: ch === null ? `${at.name} · нет линии огня` : `${at.name} · шанс ${ch}%${cs ? ` · укрытие −${cs.bonus}%` : ''}` });
+      this.setHover({ sx, sy, text: ch === null ? `${at.name} · нет линии огня` : `${at.name} · шанс ${ch}%${cs ? ` · укрытие −${cs.bonus}%` : ch !== null && isFlanked(s, u, at) ? ' · фланг +10%' : ''}` });
       return;
     }
     if (!at && u.ap > 0 && reachable(s, u.x, u.y, moveRange(u)).has(`${t.x},${t.y}`)) {
@@ -1316,7 +1470,7 @@ export class GameView {
     }
     if (s.aiming === 'grenade') {
       const th = s.units.find(v => v.id === s.selectedId && v.hp > 0);
-      if (th && canThrow(s, th, x, y)) await this.throwAt(th, x, y);
+      if (th && canThrow(s, th, x, y)) { if (s.smokeMode) await this.smokeAt(th, x, y); else await this.throwAt(th, x, y); }
       return;
     }
     const at = s.units.find(v => v.hp > 0 && v.x === x && v.y === y && isVisible(s, v));
@@ -1328,12 +1482,18 @@ export class GameView {
       const before = { id: sel.id, x: sel.x, y: sel.y, ap: sel.ap, stance: sel.stance, overwatch: sel.overwatch, facing: sel.facing };
       const visBefore = s.units.filter(v => v.team === 'alien' && v.hp > 0 && isVisible(s, v)).length;
       s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false; sel.stance = 'stand';
-      for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) { sel.x = px; sel.y = py; this.stepFx(sel); await this.moved(); }
+      let shotAt = false;
+      for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) {
+        sel.x = px; sel.y = py; this.stepFx(sel); await this.moved();
+        const rs = alienReactions(s, sel); // overwatch пришельцев
+        for (const r of rs) { shotAt = true; await this.shotFx(r); this.syncUnits(); }
+        if (sel.hp <= 0 || sel.down || s.status !== 'playing') break;
+      }
       s.busy = false;
       updateVision(s);
       const visAfter = s.units.filter(v => v.team === 'alien' && v.hp > 0 && isVisible(s, v)).length;
       // отмена доступна, пока боец не сделал ничего другого и ход не открыл новых пришельцев
-      s.undo = visAfter > visBefore ? undefined : { ...before, fp: `${sel.x},${sel.y},${sel.ap},${sel.ammo},${sel.stance},${sel.overwatch},${s.log.length}`, vis: visAfter };
+      s.undo = visAfter > visBefore || shotAt ? undefined : { ...before, fp: `${sel.x},${sel.y},${sel.ap},${sel.ammo},${sel.stance},${sel.overwatch},${s.log.length}`, vis: visAfter };
       checkEnd(s);
     }
     this.syncUnits();
@@ -1349,6 +1509,7 @@ export class GameView {
   }
 
   dispose() {
+    setAmbient(null);
     cancelAnimationFrame(this.raf);
     this.renderer.dispose();
     this.renderer.domElement.remove();
