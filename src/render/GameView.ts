@@ -48,6 +48,11 @@ export class GameView {
   /** Колесо зажато / отпущено: в реальном времени пока зажато — время стоит. */
   onMiddle?: (down: boolean) => void;
   private recoil = new Map<number, number>();
+  /** Цели, по которым уже посчитан урон, но снаряд ещё в полёте: гибель и падение показываем только при попадании. */
+  private held = new Map<number, number>();
+  private hold(ids: number[]) { for (const i of ids) this.held.set(i, (this.held.get(i) ?? 0) + 1); }
+  private release(ids: number[]) { for (const i of ids) { const n = (this.held.get(i) ?? 1) - 1; if (n <= 0) this.held.delete(i); else this.held.set(i, n); } }
+  private hitIds(r: GrenadeResult): number[] { return [...r.hits.map(h => h.id), ...r.chain.flatMap(c => this.hitIds(c))]; }
   private gaze = new Map<number, { tid: number; until: number }>();
   private treeSpots: { x: number; z: number; y: number; k: string }[] = [];
   private anim = new Map<number, string>();
@@ -801,7 +806,7 @@ export class GameView {
     if (this.state.targetBarrel && !barrelAt(this.state, this.state.targetBarrel.x, this.state.targetBarrel.y)) this.state.targetBarrel = null;
     const alive = new Set<number>();
     for (const u of this.state.units) {
-      if (u.hp <= 0) continue;
+      if (u.hp <= 0 && !this.held.has(u.id)) continue;
       alive.add(u.id);
       let m = this.unitMeshes.get(u.id);
       const inTrench = this.state.trenches.some(t => t.x === u.x && t.y === u.y);
@@ -1340,6 +1345,11 @@ export class GameView {
 
   /** Выстрел: очередь (боец и тяжёлый — 3 патрона, пехотинец — 2, снайпер — 1), последний патрон решает исход. */
   async shotFx(r: ShotResult) {
+    this.hold([r.targetId]);
+    try { await this.shotFx2(r); } finally { this.release([r.targetId]); this.syncUnits(); }
+  }
+
+  private async shotFx2(r: ShotResult) {
     const a = this.state.units.find(u => u.id === r.attackerId)!;
     const t = this.state.units.find(u => u.id === r.targetId)!;
     if (isVisible(this.state, a) || isVisible(this.state, t)) this.focusOn((a.x + t.x) / 2, (a.y + t.y) / 2);
@@ -1393,6 +1403,7 @@ export class GameView {
     }
     if (am) { am.position.x -= Math.sin(f) * 0.07; am.position.z -= Math.cos(f) * 0.07; } // отдача
     await Promise.all(shots);
+    this.release([r.targetId]); this.syncUnits(); this.hold([r.targetId]); // пуля долетела: гибель и падение показываем сейчас
     if (r.hit) {
       sfx('hit');
       this.floatText(t.x + 0.5, t.y + 0.5, `−${r.dmg}`, '#ff6b6b');
@@ -1418,6 +1429,7 @@ export class GameView {
     const s = this.state;
     s.busy = true;
     const res = throwGrenade(s, u, x, y);
+    const hids = this.hitIds(res); this.hold(hids);
     this.focusOn(x, y);
     this.blast.visible = false;
     this.play(u.id, 'Punch', true);
@@ -1458,6 +1470,7 @@ export class GameView {
     this.decal(to.x, to.z, 0x121210, 1.1, 0.55); this.decal(to.x, to.z, 0x2a2420, 1.5, 0.3);
     if (res.ignited.length) setTimeout(() => sfx('fire'), 250);
     if (res.alerted.length) this.alertFx(res.alerted);
+    this.release(res.hits.map(h => h.id)); this.syncUnits(); // снаряд упал: теперь показываем гибель
     for (const h of res.hits) {
       const tu = s.units.find(v => v.id === h.id)!;
       this.floatText(tu.x + 0.5, tu.y + 0.5, `−${h.dmg}`, '#ff6b6b');
@@ -1479,6 +1492,7 @@ export class GameView {
     const s = this.state, kind = s.launch!;
     s.busy = true;
     const results = launch(s, u, x, y, kind);
+    for (const r of results) this.hold(this.hitIds(r));
     this.focusOn(x, y);
     this.blast.visible = false;
     this.play(u.id, 'Idle_Shoot', true);
