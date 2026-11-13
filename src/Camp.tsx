@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CLASS_IDS, CLASSES } from './game/classes';
-import { setMapSize, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
+import { chooseOption, setMapSize, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
@@ -52,9 +52,34 @@ export function Camp({ c, onChange, onStart, onMenu }: {
     <Screen>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'baseline' }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>Подпольная база</h1>
-        <span>Следующая миссия: {c.missionNo} — {OBJECTIVE_NAME[c.objective]} · {BIOME_NAME[c.biome]}</span>
         <span>Сложность: {DIFF[c.difficulty].label}</span>
         <b style={{ color: NM.accent }}>Трофеи: {c.scrap}</b>
+      </div>
+      <div style={{ ...panel, display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, alignItems: 'baseline' }}>
+          <b>Карта операций · миссия {c.missionNo}</b>
+          <span style={{ fontSize: 12, opacity: 0.7 }}>{c.options.length > 1 ? 'Выбери задание' : c.options[0]?.boss ? 'Босс: выбора нет' : 'Единственное задание'}</span>
+        </div>
+        <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, c.options.length)}, minmax(0, 1fr))`, gap: 10, paddingTop: 34 }}>
+          <svg aria-hidden="true" style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: 34 }} viewBox="0 0 300 34" preserveAspectRatio="none">
+            {c.options.map((_, i) => {
+              const x = ((i + 0.5) / c.options.length) * 300;
+              return <path key={i} d={`M150 0 Q150 20 ${x} 34`} stroke="#2f3a54" strokeWidth="2" fill="none" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />;
+            })}
+          </svg>
+          <div style={{ position: 'absolute', left: '50%', top: -4, transform: 'translateX(-50%)', width: 14, height: 14, clipPath: HEX, background: NM.accent }} title="База" />
+          {c.options.map((o, i) => {
+            const on = c.objective === o.objective && c.biome === o.biome && c.boss === o.boss && c.risky === o.risky;
+            return (
+              <button key={i} onClick={() => act(x => chooseOption(x, i))} style={{ ...btn(on), padding: '10px 8px', display: 'grid', gap: 3, justifyItems: 'center', textAlign: 'center', fontSize: 12 }}>
+                <span style={{ fontSize: 22 }}>{o.boss ? '☠' : { clear: '⚔', extract: '🚁', hold: '🛡', defend: '🏠', assassinate: '🎯', sabotage: '💣' }[o.objective]}</span>
+                <b style={{ fontSize: 13 }}>{o.boss ? 'Босс: Тиран' : OBJECTIVE_NAME[o.objective]}</b>
+                <span style={{ opacity: 0.75 }}>{BIOME_NAME[o.biome]}</span>
+                <span style={{ color: NM.accent }}>{o.boss ? 'награда +4' : o.risky ? 'риск: +2 врага, награда +3' : 'стандарт'}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
         <span style={{ opacity: 0.7 }}>Размер карты:</span>

@@ -4,6 +4,9 @@ import { CLASS_IDS } from './classes';
 import { ARMORS, WEAPONS } from './weapons';
 import type { ArmorId, Biome, ClassId, Difficulty, GameState, Objective, PerkId, Soldier, Tech, WeaponId } from './types';
 
+/** Вариант следующей миссии на карте операций. */
+export interface MissionOption { objective: Objective; biome: Biome; boss: boolean; risky: boolean }
+
 export interface Campaign {
   v: 1;
   rng: number;
@@ -20,6 +23,9 @@ export interface Campaign {
   over: boolean;
   weapons: WeaponId[]; // разблокированное оружие
   armors: ArmorId[]; // разблокированная броня
+  boss: boolean; // следующая миссия — с боссом
+  risky: boolean; // рискованная: +2 пехотинца, +3 трофея
+  options: MissionOption[]; // карта операций: выбор следующей миссии
 }
 
 export const OBJECTIVE_NAME: Record<Objective, string> = {
@@ -52,10 +58,11 @@ function mkSoldier(c: Campaign, name: string, bio: string, cls?: ClassId): Soldi
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Campaign {
   const c: Campaign = {
     v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', biome: 'ruins', mapSize: 44, roster: [], fallen: [], scrap: 3,
-    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg'], armors: ['none'],
+    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg'], armors: ['none'], boss: false, risky: false, options: [],
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
   c.biome = pickBiome(c);
+  c.options = [{ objective: 'clear', biome: c.biome, boss: false, risky: false }, ...pickOptions(c).filter(o => o.objective !== 'clear').slice(0, 2).map((o, i) => ({ ...o, risky: i === 1 }))];
   return c;
 }
 
@@ -94,6 +101,21 @@ export function buy(c: Campaign, key: keyof Tech): string | null {
 }
 
 /** Итоги миссии: раны остаются, павшие уходят в мемориал, победа даёт трофеи. */
+const OBJS = ['clear', 'extract', 'hold', 'assassinate', 'sabotage', 'defend'] as const;
+
+/** Карта операций: 3 разных задания; каждая 5-я миссия — босс (единственный вариант). */
+export function pickOptions(c: Campaign): MissionOption[] {
+  if (c.missionNo % 5 === 0) return [{ objective: 'assassinate', biome: pickBiome(c), boss: true, risky: false }];
+  const objs = shuffle([...OBJS], c).slice(0, 3);
+  return objs.map((objective, i) => ({ objective, biome: pickBiome(c), boss: false, risky: i === 2 }));
+}
+export function chooseOption(c: Campaign, i: number): string | null {
+  const o = c.options[i];
+  if (!o) return 'Нет такого задания';
+  c.objective = o.objective; c.biome = o.biome; c.boss = o.boss; c.risky = o.risky;
+  return null;
+}
+
 export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
   for (const sol of [...c.roster]) {
     if (!deployed.includes(sol.id)) continue;
@@ -113,10 +135,10 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
   c.roster.forEach(x => { x.hpLoss = Math.max(0, x.hpLoss - 3); }); // отдых между миссиями
   c.rng = (s.rng + Math.floor(rand(c) * 1e6)) >>> 0;
   if (s.status === 'won') {
-    c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : c.objective === 'assassinate' || c.objective === 'sabotage' ? 3 : 2);
+    c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : c.objective === 'assassinate' || c.objective === 'sabotage' ? 3 : 2) + (c.boss ? 4 : 0) + (c.risky ? 3 : 0);
     c.missionNo += 1;
-    c.objective = (['clear', 'extract', 'hold', 'assassinate', 'sabotage', 'defend'] as const)[Math.floor(rand(c) * 6)];
-    c.biome = pickBiome(c);
+    c.options = pickOptions(c);
+    chooseOption(c, 0);
   } else c.over = true;
   if (c.roster.length === 0) c.over = true;
 }
@@ -135,6 +157,8 @@ export function load(): Campaign | null {
     c.mapSize ??= 44;
     c.weapons ??= ['rifle', 'smg'];
     c.armors ??= ['none'];
+    c.boss ??= false; c.risky ??= false;
+    c.options ??= [{ objective: c.objective, biome: c.biome, boss: false, risky: false }];
     for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; s.weapon ??= 'rifle'; s.armor ??= 'none'; s.cls ??= 'assault'; }
     return c;
   } catch { return null; }

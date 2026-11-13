@@ -58,6 +58,8 @@ export interface MissionOpts {
   objective: Objective;
   biome: Biome;
   size?: 44 | 64;
+  boss?: boolean;
+  risky?: boolean;
   soldiers: Soldier[];
   tech: Tech;
 }
@@ -263,7 +265,8 @@ export function createMission(o: MissionOpts): GameState {
   if (o.objective === 'extract') kinds = base.slice(0, 5);
   if (o.objective === 'hold') kinds = base.slice(0, 4);
   if (o.objective === 'sabotage') kinds = base.slice(0, 6);
-  if (o.objective === 'assassinate') kinds = [...base.slice(0, 5), 'commander'];
+  if (o.objective === 'assassinate') kinds = [...base.slice(0, 5), ...(o.boss ? ['heavy'] as AlienKind[] : []), 'commander'];
+  if (o.risky) kinds.push('trooper', 'trooper');
   if (defend) kinds = [];
 
   if (n >= 64) { // большая карта: меньше пришельцев, но они дальше друг от друга
@@ -310,6 +313,8 @@ export function createMission(o: MissionOpts): GameState {
   let tn = 0;
   const aliens = kinds.slice(0, chosen.length).map((k, i) => alien(1000 + i, k, k === 'trooper' ? ++tn : 0, chosen[i][0], chosen[i][1], o.difficulty));
 
+  const bossU = o.boss ? aliens.find(a => a.kind === 'commander') : undefined;
+  if (bossU) { bossU.maxHp = bossU.hp = Math.round((11 + o.missionNo) * DIFF[o.difficulty].hp); bossU.cut = 1; bossU.name = 'Тиран'; bossU.dmg = [3, 6]; bossU.ap = bossU.maxAp = 3; }
   if (hold) aliens.forEach(a => { a.alert = true; }); // волны атакуют сразу
   const seen = grid(n, false);
   if (zone) for (let y = zone.y; y < zone.y + zone.h; y++) for (let x = zone.x; x < zone.x + zone.w; x++) seen[y][x] = true;
@@ -319,7 +324,7 @@ export function createMission(o: MissionOpts): GameState {
     clear: 'Цель: уничтожить всех пришельцев.',
     extract: 'Цель: эвакуация — все выжившие бойцы должны дойти до зелёной зоны.',
     hold: `Цель: продержаться ${HOLD_TURNS} ходов. Пришельцы получают подкрепление.`,
-    assassinate: 'Цель: убить командира пришельцев (он помечен красным кольцом и виден всегда).',
+    assassinate: o.boss ? 'БОСС: убей Тирана (много HP, броня −1 урон, свита с тяжёлым). Он помечен красным кольцом.' : 'Цель: убить командира пришельцев (он помечен красным кольцом и виден всегда).',
     sabotage: 'Цель: взорвать два маяка (подойди вплотную: заряд тратит 1 AP и 1 гранату).',
     defend: `Цель: выжить ${DEFEND_TURNS} ходов. Отряд ${dKind === 'hill' ? 'удерживает высоту' : dKind === 'house' ? 'обороняет дом на холме' : 'обороняет укрепление'}; пришельцы идут волнами со всех сторон.`,
   }[o.objective];
@@ -329,7 +334,7 @@ export function createMission(o: MissionOpts): GameState {
     aiming: null, mines: [], barrels, fires: [], scorched: grid(n, false), bridges, targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: o.objective, markId: aliens.find(a => a.kind === 'commander')?.id ?? null, beacons, holdTurns: defend ? DEFEND_TURNS : HOLD_TURNS, zone,
     log: [`Миссия ${o.missionNo} · ${BIOME_NAME[o.biome]}. ${brief}`, 'Разведка: пехота, снайпер, тяжёлый (ломает укрытия).'],
-    rng: rng.rng,
+    rng: rng.rng, boss: !!o.boss,
   };
 }
 

@@ -824,6 +824,17 @@ export class GameView {
 
   // --- камера и графика ---
   /** Переместить камеру в клетку (миникарта), независимо от режима «Камера: авто». */
+  /** Откатить последний ход бойца (если он больше ничего не делал). */
+  undoMove(): boolean {
+    const s = this.state, k = s.undo;
+    if (!k || s.busy || s.turn !== 'human') return false;
+    const u = s.units.find(v => v.id === k.id && v.hp > 0);
+    if (!u || `${u.x},${u.y},${u.ap},${u.ammo},${u.stance},${u.overwatch},${s.log.length}` !== k.fp) { s.undo = undefined; return false; }
+    u.x = k.x; u.y = k.y; u.ap = k.ap; u.stance = k.stance; u.overwatch = k.overwatch; u.facing = k.facing;
+    s.undo = undefined;
+    this.syncUnits(true);
+    return true;
+  }
   panTo(x: number, y: number) { this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
   focusOn(x: number, y: number) { if (this.autoCam) this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
   unfocus() { this.focus = null; }
@@ -1314,9 +1325,15 @@ export class GameView {
     else if (at?.team === 'alien') { if (sel) { s.targetId = at.id; s.targetBarrel = null; } }
     else if (barrelAt(s, x, y)) { if (sel) { s.targetBarrel = { x, y }; s.targetId = null; } }
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
+      const before = { id: sel.id, x: sel.x, y: sel.y, ap: sel.ap, stance: sel.stance, overwatch: sel.overwatch, facing: sel.facing };
+      const visBefore = s.units.filter(v => v.team === 'alien' && v.hp > 0 && isVisible(s, v)).length;
       s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false; sel.stance = 'stand';
       for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) { sel.x = px; sel.y = py; this.stepFx(sel); await this.moved(); }
       s.busy = false;
+      updateVision(s);
+      const visAfter = s.units.filter(v => v.team === 'alien' && v.hp > 0 && isVisible(s, v)).length;
+      // отмена доступна, пока боец не сделал ничего другого и ход не открыл новых пришельцев
+      s.undo = visAfter > visBefore ? undefined : { ...before, fp: `${sel.x},${sel.y},${sel.ap},${sel.ammo},${sel.stance},${sel.overwatch},${s.log.length}`, vis: visAfter };
       checkEnd(s);
     }
     this.syncUnits();

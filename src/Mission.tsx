@@ -69,6 +69,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const [showLog, setShowLog] = useState(false);
   const [showMap, setShowMap] = useState(true);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
+  const lift = typeof window !== 'undefined' && window.innerWidth < 1180; // на средних экранах угловые блоки поднимаем над диском
   const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   // автосохранение: в начале хода и после каждого действия игрока
   useEffect(() => { if (s.turn === 'human' && !s.busy && s.status === 'playing') onSave(s); });
@@ -308,11 +309,11 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       </div>
       {/* ——— низ: миникарта и меню по углам, диск действий по центру ——— */}
       {showMap && (
-        <div style={{ position: 'absolute', left: 8, bottom: narrow ? 150 : 8, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 6 }}>
+        <div style={{ position: 'absolute', left: 8, bottom: lift ? 150 : 8, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 6 }}>
           <Minimap s={s} narrow={narrow} onPick={(x, y) => view.current?.panTo(x, y)} />
         </div>
       )}
-      <div style={{ position: 'absolute', right: 8, bottom: narrow ? 150 : 8, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+      <div style={{ position: 'absolute', right: 8, bottom: lift ? 150 : 8, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
         {showLog && (
           <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, width: narrow ? 'calc(100vw - 16px)' : 340, maxHeight: 260, overflowY: 'auto', fontSize: 12, lineHeight: 1.45, pointerEvents: 'auto' }}>
             {[...s.log].reverse().slice(0, 60).map((l, i) => <div key={i} style={{ opacity: l.startsWith('—') ? 0.55 : 1, borderTop: l.startsWith('—') ? '1px solid #2a3348' : undefined, paddingTop: l.startsWith('—') ? 4 : 0 }}>{l}</div>)}
@@ -330,16 +331,17 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         )}
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={round(showMap)} title="Миникарта" onClick={() => setShowMap(!showMap)}>🗺</button>
+          {(() => { const k = s.undo, uu = k && s.units.find(v => v.id === k.id && v.hp > 0); const ok = !!k && !!uu && canAct && `${uu.x},${uu.y},${uu.ap},${uu.ammo},${uu.stance},${uu.overwatch},${s.log.length}` === k.fp; return ok ? <button style={round(false)} title="Отменить последний ход" onClick={() => { if (view.current?.undoMove()) { sfx('click'); } rerender(); }}>↶</button> : null; })()}
           <button style={round(s.turning)} title="Повернуть бойца" onClick={() => { s.turning = !s.turning; s.aiming = null; rerender(); }}>↻</button>
           <button style={round(showLog)} title="Журнал боя" onClick={() => setShowLog(!showLog)}>📜</button>
           <button style={round(more)} title="Настройки" onClick={() => setMore(!more)}>⚙</button>
         </div>
       </div>
-      <div style={{ position: 'absolute', left: '50%', bottom: 8, transform: 'translateX(-50%)', display: 'grid', gap: 8, justifyItems: 'center', width: narrow ? 'calc(100vw - 16px)' : undefined }}>
+      <div style={{ position: 'absolute', left: '50%', bottom: 8, transform: 'translateX(-50%)', display: 'grid', gap: 8, justifyItems: 'center', width: narrow ? 'calc(100vw - 16px)' : undefined, pointerEvents: 'none' }}>
         <div style={{ maxWidth: narrow ? '34vw' : 420, fontSize: narrow ? 9 : 12, textAlign: 'center', textShadow: '0 1px 2px #000', pointerEvents: 'none', maxHeight: narrow ? 42 : 64, overflow: 'hidden' }}>
           {s.log.slice(narrow ? -1 : -3).map((l, i) => <div key={s.log.length + ':' + i}>{l}</div>)}
         </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: narrow ? 6 : 14 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: narrow ? 6 : 14, pointerEvents: 'auto' }}>
           <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? 'calc((100vw - 16px - 84px - 12px) / 2)' : undefined }}>
             {leftBtns.map((b, i) => <div key={i} style={{ marginBottom: narrow ? 0 : i * 16, minWidth: 0 }}>{b}</div>)}
           </div>

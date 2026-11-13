@@ -118,4 +118,6 @@ export interface GameState {
   busy: boolean; // идёт анимация/ход ИИ — ввод заблокирован
   log: string[];
   rng: number; // состояние генератора (сид миссии)
+  boss?: boolean; // миссия с боссом (ликвидация)
+  undo?: { id: number; x: number; y: number; ap: number; stance: Stance; overwatch: boolean; facing: number; fp: string; vis: number }; // отмена последнего хода
 }
