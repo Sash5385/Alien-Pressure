@@ -372,8 +372,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   );
   const rtOrEnd = s.rt ? (
     <div style={{ display: 'flex', gap: 6 }}>
-      <button style={{ ...nb(s.rt.paused), minWidth: 0, padding: '6px 12px' }} title="Пауза (Пробел)" onClick={() => { s.rt!.paused = !s.rt!.paused; sfx('click'); rerender(); }}>{s.rt.paused ? '▶' : 'II'}</button>
-      {([0.5, 1] as const).map(v => <button key={v} style={{ ...nb(s.rt!.speed === v), minWidth: 0, padding: '6px 10px' }} title={`Скорость ×${v}`} onClick={() => { s.rt!.speed = v; sfx('click'); rerender(); }}>×{v}</button>)}
+      <button style={{ ...nb(s.rt.paused), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Пауза (Пробел)" onClick={() => { s.rt!.paused = !s.rt!.paused; sfx('click'); rerender(); }}>{s.rt.paused ? '▶' : 'II'}</button>
+      {([0.5, 1] as const).map(v => <button key={v} style={{ ...nb(s.rt!.speed === v), minWidth: 0, padding: narrow ? '6px 7px' : '6px 10px' }} title={`Скорость ×${v}`} onClick={() => { s.rt!.speed = v; sfx('click'); rerender(); }}>×{v}</button>)}
     </div>
   ) : <button style={{ ...nb(false, !canAct), color: AC, minWidth: narrow ? 84 : 120 }} disabled={!canAct} onClick={endTurn}>Конец хода</button>;
   return (
@@ -388,7 +388,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         </div>
       </div>
       {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (
-        <div key={side as string} style={{ position: 'absolute', top: narrow ? 46 : 8, [side as string]: 8, display: 'flex', flexDirection: 'column', gap: 6, alignItems: side === 'left' ? 'flex-start' : 'flex-end', width: narrow ? vw(46) : undefined }}>
+        <div key={side as string} style={{ position: 'absolute', top: narrow ? 68 : 8, [side as string]: 8, display: 'flex', flexDirection: 'column', gap: 6, alignItems: side === 'left' ? 'flex-start' : 'flex-end', width: narrow ? vw(46) : undefined }}>
           {(list as Unit[]).map(u => (
             <button key={u.id} disabled={u.hp <= 0 || !canAct} onClick={() => pick(u.id)} title={u.traits.map(t => TRAITS[t].name).join(', ')}
               style={{ ...nbBase, borderRadius: 14, boxShadow: u.id === s.selectedId ? `${OUTS}, 0 0 0 2px ${AC}` : OUTS, color: '#f2f6ff', padding: '6px 10px', fontSize: narrow ? 11 : 12, fontWeight: 700, minWidth: narrow ? 0 : 160, width: narrow ? '100%' : undefined, opacity: u.hp <= 0 ? 0.4 : 1, textDecoration: u.hp <= 0 ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between', cursor: 'pointer', minHeight: touch ? 40 : undefined }}>
@@ -402,7 +402,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         </div>
       ))}
       {/* ——— инфо о бойце и цели, по центру ——— */}
-      <div style={{ position: 'absolute', top: narrow ? 150 : 50, left: '50%', transform: 'translateX(-50%)', width: narrow ? vw(94) : 560, display: 'grid', gap: 5, justifyItems: 'center', textAlign: 'center', pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
+      <div style={{ position: 'absolute', top: narrow ? 172 : 50, left: '50%', transform: 'translateX(-50%)', width: narrow ? vw(94) : 560, display: 'grid', gap: 5, justifyItems: 'center', textAlign: 'center', pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
         <div style={{ fontWeight: 700 }}>{info}</div>
         {sel && !narrow && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', fontSize: 12 }}>
@@ -435,12 +435,12 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       )}
       <div style={{ position: 'absolute', right: 8, bottom: cornerBottom, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
         {showLog && (
-          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, width: narrow ? `calc(${vw(100)} - 16px)` : 340, maxHeight: 260, overflowY: 'auto', fontSize: 12, lineHeight: 1.45, pointerEvents: 'auto' }}>
+          <div style={{ ...nbBase, boxSizing: 'border-box', borderRadius: 16, boxShadow: OUT, padding: 10, width: narrow ? `calc(${vw(100)} - 16px)` : 340, maxHeight: 260, overflowY: 'auto', fontSize: 12, lineHeight: 1.45, pointerEvents: 'auto' }}>
             {[...s.log].reverse().slice(0, 60).map((l, i) => <div key={i} style={{ opacity: l.startsWith('—') ? 0.55 : 1, borderTop: l.startsWith('—') ? '1px solid #2a3348' : undefined, paddingTop: l.startsWith('—') ? 4 : 0 }}>{l}</div>)}
           </div>
         )}
         {more && (
-          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, fontSize: 12, maxHeight: `calc(100vh / ${z} - 90px)`, overflowY: 'auto' }}>
+          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, boxSizing: 'border-box', display: 'grid', gap: 8, fontSize: 12, maxHeight: `calc(100vh / ${z} - 90px)`, overflowY: 'auto' }}>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графика: {view.current?.getQuality() === 'low' ? 'обычная' : 'высокая'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручная' : 'авто'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setWeatherOn(!v.isWeatherOn()); rerender(); }}>Погода: {view.current?.isWeatherOn() === false ? 'выкл' : 'вкл'}</button>
@@ -468,12 +468,12 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           {s.log.slice(narrow ? -1 : -3).map((l, i) => <div key={s.log.length + ':' + i}>{l}</div>)}
         </div>
         {fan ? <div style={{ pointerEvents: 'auto' }}>{rtOrEnd}</div> : (
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: narrow ? 6 : 14, pointerEvents: 'auto' }}>
-            <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? `calc((${vw(100)} - 16px - 84px - 12px) / 2)` : undefined }}>
+          <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: narrow ? 'minmax(0,1fr) auto minmax(0,1fr)' : undefined, width: narrow ? '100%' : undefined, alignItems: 'flex-end', justifyContent: 'center', gap: narrow ? 6 : 14, pointerEvents: 'auto' }}>
+            <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, alignItems: 'flex-end', minWidth: 0 }}>
               {[bigL, ...itemsL].map((b, i) => <div key={i} style={{ minWidth: 0 }}>{txt(b)}</div>)}
             </div>
             <div style={{ display: 'grid', gap: 8, justifyItems: 'center' }}>{rtOrEnd}{fireBtn(narrow ? 84 : 104)}</div>
-            <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: '1fr 1fr', gap: 6, alignItems: 'flex-end', width: narrow ? `calc((${vw(100)} - 16px - 84px - 12px) / 2)` : undefined }}>
+            <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, alignItems: 'flex-end', minWidth: 0 }}>
               {itemsR.map((b, i) => <div key={i} style={{ minWidth: 0 }}>{txt(b)}</div>)}
             </div>
           </div>
