@@ -98,6 +98,53 @@ function aimClips(clips: THREE.AnimationClip[]): THREE.AnimationClip[] {
 // Все оружия лежат в модели узлами в руке; показываем только выбранное (пустая строка — без оружия)
 const WEAPON_NODES = ['AK', 'GrenadeLauncher', 'Knife_1', 'Knife_2', 'Pistol', 'Revolver', 'Revolver_Small', 'RocketLauncher', 'ShortCannon', 'Shotgun', 'Shovel', 'SMG', 'Sniper', 'Sniper_2'];
 
+/** Пятнистый камуфляж: пятна по координатам вершины в позе привязки, поэтому не «плывут» при анимации. */
+function camo(mat: THREE.MeshStandardMaterial) {
+  mat.customProgramCacheKey = () => 'camo';
+  mat.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCP;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCP = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vCP;
+float h3(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
+float vn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+return mix(mix(mix(h3(i),h3(i+vec3(1,0,0)),f.x),mix(h3(i+vec3(0,1,0)),h3(i+vec3(1,1,0)),f.x),f.y),mix(mix(h3(i+vec3(0,0,1)),h3(i+vec3(1,0,1)),f.x),mix(h3(i+vec3(0,1,1)),h3(i+vec3(1,1,1)),f.x),f.y),f.z);}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+float ca=vn(vCP*3.2), cb=vn(vCP*3.2+vec3(7.3,1.1,4.2));
+vec3 cc=vec3(.10,.14,.04); if(ca>.55) cc=vec3(.26,.27,.10); if(cb>.62) cc=vec3(.12,.08,.03); if(ca<.3) cc=vec3(.04,.065,.03);
+diffuseColor.rgb=cc;`);
+  };
+}
+
+/** Снаряжение: разгрузка с магазинами и гранатами на груди, сапёрная лопатка на бедре. Крепится к костям. */
+function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE.AnimationAction) {
+  if (aim) { aim.play(); mixer.update(0); }
+  const bone = (n: string) => inner.getObjectByName(n);
+  const torso = bone('Torso'), hips = bone('Hips');
+  if (!torso || !hips) return;
+  const mat = (c: number, r = 0.9) => new THREE.MeshStandardMaterial({ color: c, roughness: r, flatShading: true });
+  const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, host: THREE.Object3D) => {
+    const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); o.castShadow = true; inner.add(o); return { o, host };
+  };
+  const items: { o: THREE.Object3D; host: THREE.Object3D }[] = [];
+  const vest = mat(0x3a4430), pouch = mat(0x262b1f), tip = mat(0xb0a27a), grn = mat(0x2f4a23), met = mat(0x8c8f93, 0.5), wood = mat(0x6b4a2a);
+  items.push(box(0.62, 0.4, 0.42, vest, 0, 0.97, 0.0, torso));
+  for (const x of [-0.2, 0, 0.2]) { // подсумки с магазинами
+    items.push(box(0.15, 0.22, 0.1, pouch, x, 0.88, 0.25, torso));
+    items.push(box(0.1, 0.05, 0.08, tip, x, 1.0, 0.25, torso));
+  }
+  for (const x of [-0.24, 0.24]) { // гранаты
+    const g = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), grn); g.scale.set(1, 1.25, 1); g.position.set(x, 1.1, 0.23); g.castShadow = true; inner.add(g); items.push({ o: g, host: torso });
+    items.push(box(0.03, 0.05, 0.03, met, x, 1.25, 0.24, torso));
+  }
+  // лопатка на левом бедре: черенок и штык
+  items.push(box(0.05, 0.5, 0.05, wood, 0.37, 0.7, -0.02, hips));
+  items.push(box(0.17, 0.2, 0.025, met, 0.37, 0.4, -0.02, hips));
+  inner.updateMatrixWorld(true);
+  for (const it of items) it.host.attach(it.o);
+  if (aim) aim.stop();
+}
+
 export function spawnModel(name: ModelName, height: number, tint?: number, weapon = 'AK'): Spawned | null {
   const m = cache.get(name);
   if (!m) return null;
@@ -111,6 +158,7 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
     mesh.castShadow = true;
     const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
     if (tint !== undefined && mat.color) mat.color.lerp(new THREE.Color(tint), 0.5);
+    if (name === 'Soldier' && (mat.name === 'Pants' || mat.name === 'Character_Main')) camo(mat);
     mesh.material = mat;
   });
   obj.add(inner);
@@ -120,6 +168,7 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   if (weapon) { // с оружием: стоя и на колене ствол направлен вперёд
     for (const c of aimClips(m.clips)) { const a = mixer.clipAction(c); a.timeScale = c.name === 'KneelShoot' ? 1 : 0; actions.set(c.name === 'IdleAim' ? 'Idle' : c.name, a); }
   }
+  if (name === 'Soldier') addGear(inner, mixer, actions.get('Idle'));
   const arms: THREE.Object3D[] = [];
   inner.traverse(o => { if (/^UpperArm[._]?[LR]$/.test(o.name)) arms.push(o); });
   return { obj, inner, mixer, actions, arms };
