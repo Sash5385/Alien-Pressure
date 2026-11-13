@@ -5,7 +5,7 @@ import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
 import { ARMORS, WEAPONS } from './game/weapons';
-import { btn, cta, glass, NM } from './ui';
+import { btn, cta, glass, NM, UI_NAMES, UI_SCALES, useUiSize } from './ui';
 import { Silhouette } from './Silhouette';
 import { DEFEND_KINDS } from './game/mission';
 
@@ -204,9 +204,16 @@ export function Camp({ c, onChange, onStart, onMenu }: {
 }
 
 export function Screen({ children }: { children: React.ReactNode }) {
+  const [ui, setUi] = useUiSize();
   return (
     <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', color: NM.fg, background: NM.bg, backgroundAttachment: 'fixed', fontFamily: "system-ui, sans-serif", fontSize: 14 }}>
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: 16, display: 'grid', gap: 14 }}>{children}</div>
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: 16, display: 'grid', gap: 14, zoom: UI_SCALES[ui] }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', fontSize: 12, color: NM.dim }}>
+          Размер интерфейса
+          {UI_NAMES.map((n, i) => <button key={n} style={{ ...btn(i === ui), padding: '4px 10px', fontSize: 12 }} onClick={() => setUi(i)}>{n}</button>)}
+        </div>
+        {children}
+      </div>
     </div>
   );
 }

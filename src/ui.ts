@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 
 /** Стекло: полупрозрачные панели с размытием на сине-зелёном фоне, голубой акцент. */
 export const NM = {
@@ -27,3 +27,14 @@ export const cta = (off = false): CSSProperties => ({
 
 export const VERSION = `v${__APP_VERSION__}`;
 export const BUILD = __BUILD__;
+
+/** Размер интерфейса: пять ступеней, выбор общий для лагеря, меню и боя. */
+export const UI_SCALES = [0.8, 0.9, 1, 1.15, 1.3];
+export const UI_NAMES = ['XS', 'S', 'M', 'L', 'XL'];
+const UI_KEY = 'alien-pressure:ui';
+export const loadUi = (): number => { try { const raw = localStorage.getItem(UI_KEY); const v = Number(raw); return raw !== null && v >= 0 && v < UI_SCALES.length ? v : 2; } catch { return 2; } };
+export const saveUi = (i: number) => { try { localStorage.setItem(UI_KEY, String(i)); } catch { /* ignore */ } };
+export const useUiSize = (): [number, (i: number) => void] => {
+  const [i, set] = useState(loadUi);
+  return [i, (n: number) => { set(n); saveUi(n); }];
+};

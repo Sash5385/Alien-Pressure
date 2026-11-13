@@ -3,7 +3,7 @@ import { runAlienTurn } from './game/ai';
 import { aimedShot, bandage, canLaunch, LAUNCH, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState, Unit } from './game/types';
-import { btn, cta, glass, VERSION } from './ui';
+import { btn, cta, glass, loadUi, saveUi, UI_NAMES, UI_SCALES, VERSION } from './ui';
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
 import { GameView, setTimeScale, WEATHER_NAME, weatherOf, type Weather } from './render/GameView';
@@ -14,9 +14,6 @@ import { BIOME_NAME } from './game/difficulty';
 import { ARMORS, WEAPONS } from './game/weapons';
 
 /** Миникарта: рельеф, укрытия, туман войны, бойцы и видимые пришельцы; клик — перенос камеры. */
-const UI_SCALES = [0.8, 0.9, 1, 1.15, 1.3];
-const UI_NAMES = ['XS', 'S', 'M', 'L', 'XL'];
-
 function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick: (x: number, y: number) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const px = s.size <= 44 ? 3 : 2;
@@ -72,7 +69,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const [more, setMore] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showMap, setShowMap] = useState(true);
-  const [uiIdx, setUiIdx] = useState(() => { try { const v = Number(localStorage.getItem('alien-pressure:ui')); return v >= 0 && v < UI_SCALES.length && localStorage.getItem('alien-pressure:ui') !== null ? v : 2; } catch { return 2; } });
+  const [uiIdx, setUiIdx] = useState(loadUi);
   const z = UI_SCALES[uiIdx];
   const vwE = (typeof window !== 'undefined' ? window.innerWidth : 1280) / z; // ширина интерфейса с учётом размера
   const vw = (n: number) => `calc(${n} * 1vw / ${z})`;
@@ -451,7 +448,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
             <div style={{ display: 'grid', gap: 4 }}>
               <span style={{ opacity: 0.7, fontSize: 11 }}>Размер интерфейса</span>
               <div style={{ display: 'flex', gap: 4 }}>
-                {UI_NAMES.map((n, i) => <button key={n} style={{ ...nb(i === uiIdx, false), minWidth: 0, minHeight: 34, padding: '4px 8px', width: 'auto', fontSize: 12, borderRadius: 10 }} onClick={() => { setUiIdx(i); try { localStorage.setItem('alien-pressure:ui', String(i)); } catch { /* ignore */ } }}>{n}</button>)}
+                {UI_NAMES.map((n, i) => <button key={n} style={{ ...nb(i === uiIdx, false), minWidth: 0, minHeight: 34, padding: '4px 8px', width: 'auto', fontSize: 12, borderRadius: 10 }} onClick={() => { setUiIdx(i); saveUi(i); }}>{n}</button>)}
               </div>
             </div>
             <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палец — двигать карту, 2 — вращать, щипок — масштаб, долгое нажатие — повернуть бойца.' : 'ПКМ — повернуть бойца, СКМ — сдвиг камеры.'}</div>
@@ -502,7 +499,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       )}
       {s.status !== 'playing' && (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#0b0f18cc' }}>
-          <div style={{ textAlign: 'center', ...glass, borderRadius: 22, padding: '24px 32px', maxWidth: 'calc(100vw - 32px)' }}>
+          <div style={{ textAlign: 'center', ...glass, zoom: z, borderRadius: 22, padding: '24px 32px', maxWidth: 'calc(100vw - 32px)' }}>
             <h1 style={{ margin: 0 }}>{s.status === 'won' ? 'Зачистка завершена' : 'Отряд уничтожен'}</h1>
             <p>Ходов: {s.turnNo} · выжило: {living(s, 'human').length}/{s.units.filter(u => u.team === 'human').length}</p>
             {s.status === 'lost' && <button style={{ ...cta(), marginRight: 8 }} onClick={() => onExit(s, true)}>Повторить миссию</button>}

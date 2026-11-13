@@ -904,7 +904,7 @@ export class GameView {
     if (u && u.team === 'alien' && !isVisible(this.state, u)) return; // в тумане не ждём: игрок этого не видит
     if (u) this.stepFx(u);
     if (u && isVisible(this.state, u)) this.focusOn(u.x, u.y);
-    await sleep(Math.round(1000 / speedOf(u)));
+    await sleep(Math.round((this.state.rt ? 800 : 1000) / speedOf(u))); // в реальном времени следующий шаг выдаётся до прихода в клетку
   }
 
   /** Экранные координаты клетки (для отладки и тестов). */
