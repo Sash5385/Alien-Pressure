@@ -72,6 +72,7 @@ export class GameView {
   private beaconMeshes = new Map<string, THREE.Object3D>();
   private mineMeshes = new Map<string, THREE.Object3D>();
   private trenchMeshes = new Map<string, THREE.Object3D>();
+  private trenchSig = '';
   private bridgeMeshes = new Map<string, THREE.Object3D>();
   private houseMeshes = new Map<number, { g: THREE.Object3D; hs: { x: number; y: number; w: number; h: number } }>();
   private waterMat?: THREE.MeshStandardMaterial;
@@ -350,31 +351,53 @@ export class GameView {
     });
   }
 
-  /** Окопы: тёмная яма в кольце мешков с песком. */
+  /** Окопы: траншея. Соседние клетки сливаются в одну линию; вдоль закрытых сторон лежат мешки с песком в два ряда
+   * и земляной бруствер, внутри тёмное дно с настилом. Боец стоит в траншее ниже бруствера. */
   private syncTrenches() {
-    const live = new Set(this.state.trenches.map(t => `${t.x},${t.y}`));
+    const keys = this.state.trenches.map(t => `${t.x},${t.y}`).sort();
+    const sig = keys.join(';');
+    if (sig === this.trenchSig) return;
+    this.trenchSig = sig;
+    const fresh = keys.some(k => !this.trenchMeshes.has(k));
+    for (const g of this.trenchMeshes.values()) this.scene.remove(g);
+    this.trenchMeshes.clear();
+    const has = new Set(keys);
+    const bag = [0x9a8a62, 0x8c7d57, 0xa5956b].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }));
+    const earth = new THREE.MeshStandardMaterial({ color: 0x5d4a30, roughness: 1, flatShading: true });
+    const wall = new THREE.MeshStandardMaterial({ color: 0x3e2f1e, roughness: 1 });
+    const floor = new THREE.MeshBasicMaterial({ color: 0x1f160d });
+    const wood = new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 1 });
+    const bagG = new THREE.BoxGeometry(0.33, 0.13, 0.19);
     for (const t of this.state.trenches) {
       const k = `${t.x},${t.y}`;
-      if (this.trenchMeshes.has(k)) continue;
       const g = new THREE.Group();
       g.position.set(t.x + 0.5, this.hy(t.x, t.y), t.y + 0.5);
-      const pit = new THREE.Mesh(new THREE.CircleGeometry(0.46, 16), new THREE.MeshBasicMaterial({ color: 0x1c150d }));
-      pit.rotation.x = -Math.PI / 2; pit.position.y = 0.03;
-      g.add(pit);
-      const bag = new THREE.MeshStandardMaterial({ color: 0x9a8a62, roughness: 1 });
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2;
-        const sb = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.17, 0.16), bag);
-        sb.position.set(Math.cos(a) * 0.42, 0.09, Math.sin(a) * 0.42);
-        sb.rotation.y = -a + Math.PI / 2;
-        sb.castShadow = true;
-        g.add(sb);
+      const h = (t.x * 7 + t.y * 13) | 0;
+      const f = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), floor);
+      f.rotation.x = -Math.PI / 2; f.position.y = 0.03;
+      g.add(f);
+      const ew = has.has(`${t.x + 1},${t.y}`) || has.has(`${t.x - 1},${t.y}`);
+      const dk = new THREE.Mesh(new THREE.BoxGeometry(ew ? 1 : 0.55, 0.02, ew ? 0.55 : 1), wood); // настил
+      dk.position.y = 0.045; dk.receiveShadow = true;
+      g.add(dk);
+      // стороны: [dx, dy, поворот] — если за краем нет окопа, строим стенку
+      for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]] as const) {
+        if (has.has(`${t.x + dx},${t.y + dy}`)) continue;
+        const along = dx === 0; // стенка идёт вдоль x, если сторона северная/южная
+        const rot = along ? 0 : Math.PI / 2;
+        const put = (m: THREE.Mesh, off: number, y: number, d: number) => {
+          m.position.set(along ? off : dx * d, y, along ? dy * d : off);
+          m.rotation.y = rot; m.castShadow = true; m.receiveShadow = true; g.add(m);
+        };
+        put(new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.14, 0.06), wall), 0, 0.07, 0.4); // внутренняя стенка ямы
+        put(new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.12, 0.3), earth), 0, 0.06, 0.58); // земляной вал
+        for (let i = 0; i < 3; i++) put(new THREE.Mesh(bagG, bag[(h + i + dx + dy * 2 + 9) % 3]), -0.33 + i * 0.33 + ((h >> i) % 3 - 1) * 0.015, 0.19, 0.5); // нижний ряд
+        for (let i = 0; i < 2; i++) put(new THREE.Mesh(bagG, bag[(h + i + 1) % 3]), -0.17 + i * 0.34, 0.32, 0.5); // верхний ряд со смещением
       }
       this.scene.add(g);
       this.trenchMeshes.set(k, g);
-      if (this.sndReady) sfx('dig');
     }
-    for (const [k, g] of this.trenchMeshes) if (!live.has(k)) { this.scene.remove(g); this.trenchMeshes.delete(k); }
+    if (fresh && this.sndReady) sfx('dig');
   }
 
   /** Запасной вид: куст (половинное укрытие) или дерево из примитивов. */
@@ -781,7 +804,8 @@ export class GameView {
       if (u.hp <= 0) continue;
       alive.add(u.id);
       let m = this.unitMeshes.get(u.id);
-      const goal = new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y), u.y + 0.5);
+      const inTrench = this.state.trenches.some(t => t.x === u.x && t.y === u.y);
+      const goal = new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) - (inTrench && u.hp > 0 ? 0.2 : 0), u.y + 0.5); // в траншее боец стоит ниже бруствера
       const key = `${u.x},${u.y}`, prev = this.lastPos.get(u.id);
       if (prev && prev !== key) { const [px, py] = prev.split(',').map(Number); u.facing = Math.atan2(u.x - px, u.y - py); }
       this.lastPos.set(u.id, key);

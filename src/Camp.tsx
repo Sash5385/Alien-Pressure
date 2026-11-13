@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CLASS_IDS, CLASSES } from './game/classes';
-import { chooseOption, setMapSize, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
+import { chooseOption, sandboxMission, setMapSize, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
@@ -54,9 +54,36 @@ export function Camp({ c, onChange, onStart, onMenu }: {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'baseline' }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>Подпольная база</h1>
         <span>Сложность: {DIFF[c.difficulty].label}</span>
-        <b style={{ color: NM.accent }}>Трофеи: {c.scrap}</b>
+        <b style={{ color: NM.accent }}>{c.sandbox ? 'Песочница: всё открыто' : `Трофеи: ${c.scrap}`}</b>
       </div>
-      <div style={{ ...panel, display: 'grid', gap: 10 }}>
+      {c.sandbox && (() => {
+        const cur = { objective: c.objective, biome: c.biome, boss: c.boss, risky: c.risky, variant: c.variant ?? 0 };
+        const set = (patch: Partial<typeof cur>) => act(x => sandboxMission(x, { ...cur, ...patch }));
+        const chip = (on: boolean, label: string, click: () => void, title?: string) => <button key={label} title={title} style={{ ...btn(on), padding: '5px 10px', fontSize: 12 }} onClick={click}>{label}</button>;
+        return (
+          <div style={{ ...panel, display: 'grid', gap: 10 }}>
+            <b>Песочница · выбери любую миссию</b>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ opacity: 0.7, fontSize: 12, width: 64 }}>Задание</span>
+              {(Object.keys(OBJECTIVE_NAME) as (keyof typeof OBJECTIVE_NAME)[]).map(o => chip(c.objective === o && !c.boss, OBJECTIVE_NAME[o], () => set({ objective: o, boss: false })))}
+            </div>
+            {c.objective === 'defend' && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ opacity: 0.7, fontSize: 12, width: 64 }}>Оборона</span>
+                {DEFEND_KINDS.map((d, i) => chip((c.variant ?? 0) === i, d.name, () => set({ variant: i })))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ opacity: 0.7, fontSize: 12, width: 64 }}>Местность</span>
+              {(Object.keys(BIOME_NAME) as (keyof typeof BIOME_NAME)[]).map(b => chip(c.biome === b, BIOME_NAME[b], () => set({ biome: b })))}
+              <span style={{ opacity: 0.7, fontSize: 12, marginLeft: 8 }}>Условия</span>
+              {chip(c.boss, 'Босс', () => set({ boss: !c.boss, objective: !c.boss ? 'assassinate' : c.objective }), 'Босс «Тиран» со свитой')}
+              {chip(c.risky, 'Рискованная', () => set({ risky: !c.risky }), '+2 врага')}
+            </div>
+          </div>
+        );
+      })()}
+      {!c.sandbox && (      <div style={{ ...panel, display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, alignItems: 'baseline' }}>
           <b>Карта операций · миссия {c.missionNo}</b>
           <span style={{ fontSize: 12, opacity: 0.7 }}>{c.options.length > 1 ? 'Выбери задание' : c.options[0]?.boss ? 'Босс: выбора нет' : 'Единственное задание'}</span>
@@ -82,6 +109,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
           })}
         </div>
       </div>
+      )}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
         <span style={{ opacity: 0.7 }}>Режим боя:</span>
         <button style={{ ...btn(!c.rt), padding: '4px 10px', fontSize: 12 }} onClick={() => act(x => setRt(x, false))}>Пошаговый</button>

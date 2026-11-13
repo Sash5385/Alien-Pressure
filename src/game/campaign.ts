@@ -29,6 +29,7 @@ export interface Campaign {
   variant: number; // вариант обороны (DEFEND_KINDS)
   rt: boolean; // бой в реальном времени (с паузой)
   options: MissionOption[]; // карта операций: выбор следующей миссии
+  sandbox?: boolean; // песочница: всё открыто и бесплатно, любая миссия, отряд не кончается
 }
 
 export const OBJECTIVE_NAME: Record<Objective, string> = {
@@ -58,7 +59,7 @@ function mkSoldier(c: Campaign, name: string, bio: string, cls?: ClassId): Soldi
   return { id: c.nextId++, name, bio, traits: pickTraits(c), hpLoss: 0, fracture: false, kills: 0, missions: 0, xp: 0, rank: 0, perks: [], perkPoints: 0, weapon: 'rifle', armor: 'none', cls };
 }
 
-export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Campaign {
+export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0, sandbox = false): Campaign {
   const c: Campaign = {
     v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', biome: 'ruins', mapSize: 44, roster: [], fallen: [], scrap: 3,
     tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg'], armors: ['none'], boss: false, risky: false, variant: 0, rt: false, options: [],
@@ -66,7 +67,26 @@ export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Ca
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
   c.biome = pickBiome(c);
   c.options = [{ objective: 'clear', biome: c.biome, boss: false, risky: false }, ...pickOptions(c).filter(o => o.objective === 'defend').slice(0, 2)];
+  if (sandbox) fillSandbox(c);
   return c;
+}
+
+/** Песочница: открыто всё оружие, броня и технологии, трофеев сколько угодно, отряд полный и здоровый. */
+export function fillSandbox(c: Campaign) {
+  c.sandbox = true;
+  c.weapons = Object.keys(WEAPONS) as WeaponId[];
+  c.armors = Object.keys(ARMORS) as ArmorId[];
+  c.tech = { armor: true, optics: true, kits: true, grenades: true };
+  c.scrap = 9999; c.over = false;
+  for (let i = 0; i < 12 && c.roster.length < MAX_ROSTER; i++) if (recruit(c)) break;
+  c.scrap = 9999;
+  for (const x of c.roster) { x.hpLoss = 0; x.fracture = false; }
+}
+
+/** Песочница: выбрать любую миссию (задание, оборона, биом, босс, риск). */
+export function sandboxMission(c: Campaign, o: MissionOption): string | null {
+  c.options = [o];
+  return chooseOption(c, 0);
 }
 
 const pickBiome = (c: Campaign): Biome => (['ruins', 'forest', 'lake'] as const)[Math.floor(rand(c) * 3)];
@@ -127,6 +147,7 @@ export function chooseOption(c: Campaign, i: number): string | null {
 }
 
 export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
+  const keep: MissionOption = { objective: c.objective, biome: c.biome, boss: c.boss, risky: c.risky, variant: c.variant };
   for (const sol of [...c.roster]) {
     if (!deployed.includes(sol.id)) continue;
     const u = s.units.find(x => x.id === sol.id);
@@ -151,6 +172,7 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
     chooseOption(c, 0);
   } else c.over = true;
   if (c.roster.length === 0) c.over = true;
+  if (c.sandbox) { fillSandbox(c); sandboxMission(c, keep); } // песочница: миссия и отряд сохраняются
 }
 
 export function save(c: Campaign) {

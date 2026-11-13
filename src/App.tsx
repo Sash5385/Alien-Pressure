@@ -18,7 +18,7 @@ export function App() {
   const [midSave] = useState(() => loadMission());
 
   const update = (n: Campaign) => { setC(n); setSaved(n); save(n); };
-  const start = (d: Difficulty) => { clearSave(); clearMission(); const n = newCampaign(d); update(n); setScreen('camp'); };
+  const start = (d: Difficulty, sandbox = false) => { clearSave(); clearMission(); const n = newCampaign(d, undefined, sandbox); update(n); setScreen('camp'); };
 
   const launch = (c0: Campaign, deployed: number[]) => {
     clearMission();
@@ -72,6 +72,11 @@ export function App() {
         {(Object.keys(DIFF) as Difficulty[]).map(d => (
           <button key={d} style={btn()} onClick={() => start(d)}>{DIFF[d].label}</button>
         ))}
+      </div>
+      <b>Песочница</b>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button style={btn(true)} title="Всё оружие, броня и технологии открыты и бесплатны, любая миссия на выбор, отряд не кончается" onClick={() => start('normal', true)}>Режим песочницы</button>
+        <span style={{ fontSize: 12, opacity: 0.7 }}>всё доступно: оружие, броня, любая миссия</span>
       </div>
       <p style={{ fontSize: 12, opacity: 0.5 }}>Версия {VERSION} · сборка {BUILD}</p>
       <p style={{ fontSize: 12, opacity: 0.6 }}>Прогресс хранится в браузере (localStorage). Новая игра перезапишет сохранение.</p>
