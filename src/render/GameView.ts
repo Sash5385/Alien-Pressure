@@ -1120,7 +1120,7 @@ export class GameView {
     if (!u) return;
     this.ring(u.x, u.y, 0xffd34d);
     if (!s.busy && s.aiming !== 'grenade') { // обзор выбранного бойца
-      const vm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.045, depthWrite: false }), vg = new THREE.PlaneGeometry(1, 1), R = 9;
+      const vm = new THREE.MeshBasicMaterial({ color: s.lookMode ? 0x7ee0ff : 0xffffff, transparent: true, opacity: s.lookMode ? 0.2 : 0.045, depthWrite: false }), vg = new THREE.PlaneGeometry(1, 1), R = s.lookMode ? Math.min(u.range, 14) : 9;
       for (let y = Math.max(0, u.y - R); y <= Math.min(s.size - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(s.size - 1, u.x + R); x++) {
         if (Math.hypot(x - u.x, y - u.y) > R || s.cover[y][x] !== 'none' || !los(s, u, { x, y })) continue;
         const p = new THREE.Mesh(vg, vm); p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, this.hy(x, y) + 0.022, y + 0.5); this.highlight.add(p);

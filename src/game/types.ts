@@ -133,6 +133,7 @@ export interface GameState {
   rt?: { speed: 0.5 | 1; paused: boolean; clock: number; pulseAt: number; planAt: number; auto: boolean }; // режим реального времени
   smokes?: { x: number; y: number; ttl: number }[]; // дым: закрывает обзор
   smokeMode?: boolean; // прицел дымовой гранаты
+  lookMode?: boolean; // режим «Осмотр»: подсветка зоны обзора выбранного бойца
   launch?: LaunchKind; // прицел гранатомёта/миномёта/подствольника (вместе с aiming 'grenade')
   weather?: string; // принудительная погода миссии
   sides?: 'all' | 'ns'; // откуда идут волны обороны
