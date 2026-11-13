@@ -9,8 +9,11 @@ import { alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke,
 import { sfx, setAmbient, type Sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
 import { reachable, findPath } from '../game/pathfinding';
+import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
 
-const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+let TS = 1; // масштаб времени (реальный режим: ×0.5 / ×1)
+export const setTimeScale = (x: number) => { TS = x; };
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms / TS));
 const SPEED = 3.6; // клеток в секунду (было 6,5 — медленнее по просьбе)
 const BULLET_SPEED = 18; // клеток/с: пулю видно в полёте (было 60)
 const BURST_GAP = 190; // мс между патронами очереди (было 75)
@@ -196,7 +199,7 @@ export class GameView {
           const dx = g.x - m.position.x, dz = g.z - m.position.z, dist = Math.hypot(dx, dz);
           // разгон и торможение; бег ускоряется вместе со скоростью
           const vel = this.vel.get(id) ?? 0;
-          const want = dist > 1.6 ? dist * 5 : dist > 0.04 ? speedOf(u) : 0;
+          const want = (dist > 1.6 ? dist * 5 : dist > 0.04 ? speedOf(u) : 0) * TS;
           const nv = vel + (want - vel) * (1 - Math.exp(-(want > vel ? 14 : 22) * dt));
           this.vel.set(id, nv);
           if (dist > 0.001) {
@@ -226,11 +229,11 @@ export class GameView {
           const d = Math.atan2(Math.sin(u.facing - m.rotation.y), Math.cos(u.facing - m.rotation.y));
           m.rotation.y += d * (1 - Math.exp(-14 * dt));
         }
-        this.rigs.get(id)?.mixer.update(dt);
+        this.rigs.get(id)?.mixer.update(dt * TS);
       }
       const tt = this.clock.elapsedTime;
       for (const g of this.fireMeshes.values()) g.children.forEach((c, i) => { c.scale.y = 0.7 + 0.55 * Math.abs(Math.sin(tt * 9 + (g.userData.phase as number) + i)); });
-      for (const tw of this.tweens) { tw.t += rawDt; const k = Math.min(1, tw.t / tw.dur); tw.fn(k); if (k >= 1) tw.done(); }
+      for (const tw of this.tweens) { tw.t += rawDt * TS; const k = Math.min(1, tw.t / tw.dur); tw.fn(k); if (k >= 1) tw.done(); }
       this.tweens = this.tweens.filter(tw => tw.t < tw.dur);
       for (const f of this.floats) {
         f.t += 0.016; f.sprite.position.y += 0.012;
@@ -837,7 +840,7 @@ export class GameView {
     return true;
   }
   panTo(x: number, y: number) { this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
-  focusOn(x: number, y: number) { if (this.autoCam) this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
+  focusOn(x: number, y: number) { if (this.autoCam && !this.state.rt) this.focus = new THREE.Vector3(x + 0.5, 0, y + 0.5); }
   unfocus() { this.focus = null; }
   /* ---------- погода, следы, подсказки ---------- */
   private hemi!: THREE.HemisphereLight;
@@ -1091,6 +1094,8 @@ export class GameView {
     const s = this.state;
     for (const o of s.units) if (o.hp > 0 && o.overwatch && (o.team === 'human' || isVisible(s, o))) this.ring(o.x, o.y, o.team === 'human' ? 0x35e0e0 : 0xff6a3a, 0.46, 0.52);
     for (const o of s.units) if (o.hp > 0 && o.down) this.ring(o.x, o.y, 0xffffff, 0.3, 0.36);
+    for (const o of s.units) if (o.hp > 0 && o.team === 'human' && o.dest) this.ring(o.dest.x, o.dest.y, 0x4fd7ff, 0.18, 0.28);
+    for (const o of s.units) if (o.hp > 0 && o.team === 'human' && o.atk !== undefined) { const t = s.units.find(v => v.id === o.atk && v.hp > 0); if (t && isVisible(s, t)) this.ring(t.x, t.y, 0xff4a2a, 0.56, 0.62); }
     for (const o of s.units) if (o.hp > 0 && o.team === 'alien' && isVisible(s, o) && !o.overwatch && o.alert) this.ring(o.x, o.y, 0xb03030, 0.5, 0.53);
     // конусы огня пришельцев на overwatch
     const cone = new THREE.MeshBasicMaterial({ color: 0xff4a2a, transparent: true, opacity: 0.16, depthWrite: false }), cg = new THREE.PlaneGeometry(0.92, 0.92);
@@ -1132,7 +1137,7 @@ export class GameView {
       }
       return;
     }
-    if (u.ap <= 0 || s.busy) return;
+    if (u.ap <= 0 || s.busy || s.rt) return;
     const mat = new THREE.MeshBasicMaterial({ color: 0x4fa3ff, transparent: true, opacity: 0.35 });
     const matCover = new THREE.MeshBasicMaterial({ color: 0x4fe08a, transparent: true, opacity: 0.4 });
     const geo = new THREE.PlaneGeometry(0.92, 0.92);
@@ -1445,7 +1450,7 @@ export class GameView {
     const s = this.state;
     const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     this.clearPath();
-    if (e.pointerType === 'touch' || !u || s.busy || s.turn !== 'human' || s.status !== 'playing' || s.turning) { this.blast.visible = false; this.setHover(null); return; }
+    if (e.pointerType === 'touch' || !u || (s.busy && !s.rt) || s.turn !== 'human' || s.status !== 'playing' || s.turning) { this.blast.visible = false; this.setHover(null); return; }
     const t = this.tileAt(e);
     if (s.aiming === 'grenade') {
       this.setHover(null);
@@ -1467,14 +1472,14 @@ export class GameView {
       this.setHover({ sx, sy, text: ch === null ? `${at.name} · нет линии огня` : `${at.name} · шанс ${ch}%${cs ? ` · укрытие −${cs.bonus}%` : ch !== null && isFlanked(s, u, at) ? ' · фланг +10%' : ''}` });
       return;
     }
-    if (!at && u.ap > 0 && reachable(s, u.x, u.y, moveRange(u)).has(`${t.x},${t.y}`)) {
-      const path = findPath(s, u.x, u.y, t.x, t.y, moveRange(u));
+    if (!at && (s.rt || u.ap > 0) && reachable(s, u.x, u.y, s.rt ? 80 : moveRange(u)).has(`${t.x},${t.y}`)) {
+      const path = findPath(s, u.x, u.y, t.x, t.y, s.rt ? 80 : moveRange(u));
       if (path.length) {
         const pts = [new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) + 0.12, u.y + 0.5), ...path.map(([x, y]) => new THREE.Vector3(x + 0.5, this.hy(x, y) + 0.12, y + 0.5))];
         this.pathLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xffd34d }));
         this.scene.add(this.pathLine);
         const cov = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => (s.cover[t.y + dy]?.[t.x + dx] ?? 'none') !== 'none');
-        this.setHover({ sx, sy, text: `${path.length} кл. · −1 AP${cov ? ' · есть укрытие' : ''}` });
+        this.setHover({ sx, sy, text: s.rt ? `${path.length} кл. · ~${(path.length * CD_PER_AP / Math.max(1, moveRange(u))).toFixed(1)} с${cov ? ' · есть укрытие' : ''}` : `${path.length} кл. · −1 AP${cov ? ' · есть укрытие' : ''}` });
         return;
       }
     }
@@ -1507,7 +1512,7 @@ export class GameView {
 
   private async click(e: PointerEvent) {
     const s = this.state;
-    if (s.turn !== 'human' || s.busy || s.status !== 'playing') return;
+    if (s.turn !== 'human' || (s.busy && !s.rt) || s.status !== 'playing') return;
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera);
     const hit = this.ray.intersectObject(this.ground)[0];
@@ -1528,8 +1533,11 @@ export class GameView {
     const at = s.units.find(v => v.hp > 0 && v.x === x && v.y === y && isVisible(s, v));
     const sel = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     if (at?.team === 'human') { s.selectedId = at.id; s.targetId = null; s.targetBarrel = null; s.aiming = null; this.focusOn(at.x, at.y); sfx('select'); }
-    else if (at?.team === 'alien') { if (sel) { s.targetId = at.id; s.targetBarrel = null; } }
+    else if (at?.team === 'alien') { if (sel) { s.targetId = at.id; s.targetBarrel = null; if (s.rt && !sel.down) { orderAttack(sel, at); sfx('click'); } } }
     else if (barrelAt(s, x, y)) { if (sel) { s.targetBarrel = { x, y }; s.targetId = null; } }
+    else if (s.rt) { // реальное время: приказ идти
+      if (sel && !sel.down && reachable(s, sel.x, sel.y, 80).has(`${x},${y}`)) { orderMove(sel, x, y); s.targetId = null; sfx('click'); }
+    }
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
       const before = { id: sel.id, x: sel.x, y: sel.y, ap: sel.ap, stance: sel.stance, overwatch: sel.overwatch, facing: sel.facing };
       const visBefore = s.units.filter(v => v.team === 'alien' && v.hp > 0 && isVisible(s, v)).length;

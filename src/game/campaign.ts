@@ -27,6 +27,7 @@ export interface Campaign {
   boss: boolean; // следующая миссия — с боссом
   risky: boolean; // рискованная: +2 пехотинца, +3 трофея
   variant: number; // вариант обороны (DEFEND_KINDS)
+  rt: boolean; // бой в реальном времени (с паузой)
   options: MissionOption[]; // карта операций: выбор следующей миссии
 }
 
@@ -60,7 +61,7 @@ function mkSoldier(c: Campaign, name: string, bio: string, cls?: ClassId): Soldi
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0): Campaign {
   const c: Campaign = {
     v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', biome: 'ruins', mapSize: 44, roster: [], fallen: [], scrap: 3,
-    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg'], armors: ['none'], boss: false, risky: false, variant: 0, options: [],
+    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg'], armors: ['none'], boss: false, risky: false, variant: 0, rt: false, options: [],
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
   c.biome = pickBiome(c);
@@ -166,7 +167,7 @@ export function load(): Campaign | null {
     c.mapSize ??= 44;
     c.weapons ??= ['rifle', 'smg'];
     c.armors ??= ['none'];
-    c.boss ??= false; c.risky ??= false; c.variant ??= 0;
+    c.boss ??= false; c.risky ??= false; c.variant ??= 0; c.rt ??= false;
     c.options ??= [{ objective: c.objective, biome: c.biome, boss: false, risky: false }];
     for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; s.weapon ??= 'rifle'; s.armor ??= 'none'; s.cls ??= 'assault'; }
     return c;
@@ -229,6 +230,8 @@ export function setClass(c: Campaign, soldierId: number, cls: ClassId): string |
   s.cls = cls;
   return null;
 }
+
+export function setRt(c: Campaign, on: boolean): string | null { c.rt = on; return null; }
 
 export function setMapSize(c: Campaign, size: 44 | 64): string | null {
   c.mapSize = size;

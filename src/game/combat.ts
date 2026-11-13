@@ -253,6 +253,32 @@ export function alienReactions(s: GameState, mover: Unit): ShotResult[] {
   return out;
 }
 
+/** Реальное время: периодические эффекты (раз в «ход»): кровотечение, упавшие, паника, огонь, дым. */
+export function humanPulse(s: GameState) {
+  for (const a of living(s)) a.suppressed = false;
+  tickFire(s);
+  if (s.smokes) s.smokes = s.smokes.map(m => ({ ...m, ttl: m.ttl - 1 })).filter(m => m.ttl > 0);
+  for (const u of living(s, 'human')) {
+    if (u.down) {
+      u.bleedOut = (u.bleedOut ?? 3) - 1;
+      if (u.bleedOut <= 0) { u.hp = 0; u.down = false; log(s, `${u.name} не дождался помощи.`); living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); }); }
+      else log(s, `${u.name} лежит без сил (осталось ${u.bleedOut} хода).`);
+      continue;
+    }
+    if (u.bleeding) {
+      u.hp -= 1;
+      log(s, `${u.name} истекает кровью (−1 HP).`);
+      if (u.hp <= 0) { log(s, `${u.name} умер от кровопотери.`); living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); }); }
+    }
+  }
+  checkEnd(s);
+  for (const u of living(s, 'human')) {
+    const was = u.panic;
+    u.panic = u.morale < panicAt(u);
+    if (u.panic && !was) { u.cd = (u.cd ?? 0) + 6; u.morale = 40; u.dest = undefined; u.atk = undefined; log(s, `${u.name} в панике и теряет время.`); }
+  }
+}
+
 /** Начало хода людей: кровотечение, паника, восстановление AP. */
 export function startHumanTurn(s: GameState) {
   for (const a of living(s, 'alien')) a.suppressed = false;

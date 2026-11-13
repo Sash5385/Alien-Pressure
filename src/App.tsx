@@ -3,6 +3,7 @@ import { Camp, Screen } from './Camp';
 import { clearMission, clearSave, finishMission, load, loadMission, newCampaign, save, saveMission, type Campaign } from './game/campaign';
 import { DIFF } from './game/difficulty';
 import { createMission } from './game/mission';
+import { rtInit } from './game/rt';
 import type { Difficulty, GameState } from './game/types';
 import { Mission } from './Mission';
 import { btn, BUILD, cta, VERSION } from './ui';
@@ -21,15 +22,12 @@ export function App() {
 
   const launch = (c0: Campaign, deployed: number[]) => {
     clearMission();
-    setMission({
-      deployed,
-      before: structuredClone(c0),
-      run: Date.now(),
-      state: createMission({
+    const st = createMission({
         rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, objective: c0.objective, biome: c0.biome, size: c0.mapSize, boss: c0.boss, risky: c0.risky, variant: c0.variant, tech: c0.tech,
         soldiers: c0.roster.filter(s => deployed.includes(s.id)),
-      }),
     });
+    if (c0.rt) rtInit(st);
+    setMission({ deployed, before: structuredClone(c0), run: Date.now(), state: st });
     setScreen('mission');
   };
 
@@ -60,7 +58,7 @@ export function App() {
       <h1 style={{ margin: '24px 0 0', fontSize: 32 }}>Alien Pressure <span style={{ fontSize: 14, opacity: 0.6, fontWeight: 400 }}>{VERSION}</span></h1>
       <p style={{ margin: 0, opacity: 0.8 }}>Подпольный отряд землян против пришельцев. Кровь, паника, патроны на счёт.</p>
       {midSave && saved && !saved.over && (
-        <button style={cta()} onClick={() => { setC(midSave.before); setMission({ state: midSave.state, deployed: midSave.deployed, before: midSave.before, run: Date.now() }); setScreen('mission'); }}>
+        <button style={cta()} onClick={() => { setC(midSave.before); if (midSave.state.rt) midSave.state.rt.paused = true; setMission({ state: midSave.state, deployed: midSave.deployed, before: midSave.before, run: Date.now() }); setScreen('mission'); }}>
           Продолжить миссию {midSave.before.missionNo} (ход {midSave.state.turnNo})
         </button>
       )}

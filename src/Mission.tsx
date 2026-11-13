@@ -6,7 +6,8 @@ import type { GameState, Unit } from './game/types';
 import { btn, cta, NM, VERSION } from './ui';
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
-import { GameView, WEATHER_NAME, weatherOf, type Weather } from './render/GameView';
+import { GameView, setTimeScale, WEATHER_NAME, weatherOf, type Weather } from './render/GameView';
+import { rtTick, orderAttack, type RtHooks } from './game/rt';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
@@ -72,7 +73,36 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const lift = typeof window !== 'undefined' && window.innerWidth < 1400; // на средних экранах угловые блоки поднимаем над диском
   const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   // автосохранение: в начале хода и после каждого действия игрока
-  useEffect(() => { if (s.turn === 'human' && !s.busy && s.status === 'playing') onSave(s); });
+  useEffect(() => { if (s.status === 'playing' && (s.rt ? s.rt.paused : s.turn === 'human' && !s.busy)) onSave(s); });
+  // реальное время: игровой цикл, пауза по пробелу
+  useEffect(() => {
+    if (!state.current.rt) return;
+    let raf = 0, last = performance.now(), acc = 0;
+    const hooks: RtHooks = {
+      moved: async u => { await view.current!.moved(u); },
+      step: async u => { await view.current!.moved(u); },
+      alerted: ids => view.current!.alertFx(ids),
+      blast: async r => { await view.current!.blastFx(r); },
+      shot: async r => { await view.current!.shotFx(r); view.current!.syncUnits(); },
+    };
+    const loop = (now: number) => {
+      raf = requestAnimationFrame(loop);
+      const dt = Math.min(0.25, (now - last) / 1000); last = now;
+      const st = state.current, v = view.current;
+      if (!v || !st.rt) return;
+      setTimeScale(st.rt.speed);
+      rtTick(st, dt, hooks);
+      acc += dt;
+      if (acc > 0.2) { acc = 0; v.syncUnits(); rerender(); }
+    };
+    raf = requestAnimationFrame(loop);
+    const key = (e: KeyboardEvent) => {
+      const st = state.current;
+      if (e.code === 'Space' && st.rt && st.status === 'playing') { e.preventDefault(); st.rt.paused = !st.rt.paused; sfx('click'); rerender(); }
+    };
+    window.addEventListener('keydown', key);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('keydown', key); setTimeScale(1); };
+  }, []);
   useEffect(() => { if (s.status === 'won') sfx('win'); else if (s.status === 'lost') sfx('lose'); }, [s.status]);
   const sel = s.units.find(u => u.id === s.selectedId && u.hp > 0);
   const tgt = s.units.find(u => u.id === s.targetId && u.hp > 0);
@@ -80,7 +110,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const direct = sel && tgt ? hitChance(s, sel, tgt) : null;
   const peek = sel && tgt && direct === null ? peekTile(s, sel, tgt) : null;
   const chance = direct ?? peek?.chance ?? null;
-  const canAct = !!view.current && s.turn === 'human' && !s.busy && s.status === 'playing';
+  const canAct = !!view.current && s.status === 'playing' && (s.rt ? true : s.turn === 'human' && !s.busy);
   const tb = s.targetBarrel;
   const barrelOk = canAct && !!sel && !!tb && canShootBarrel(s, sel, tb.x, tb.y);
   const canFire = wl ? canAct && !!sel && sel.ap >= LAUNCH[wl].ap && sel.ammo >= LAUNCH[wl].rounds : (canAct && !!sel && sel.ap > 0 && chance !== null) || barrelOk;
@@ -197,6 +227,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     }
     if (!canFire || !sel || !tgt) return;
     s.busy = true;
+    if (s.rt) orderAttack(sel, tgt);
     const r = (direct === null ? peekShot(s, sel, tgt) : null) ?? shoot(s, sel, tgt);
     sel.overwatch = false;
     rerender();
@@ -271,7 +302,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const leave = () => onExit(s);
 
   const info = sel
-    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · AP ${sel.ap}/${sel.maxAp} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}${sel.down ? ` · ТЯЖЕЛО РАНЕН (${sel.bleedOut ?? 3} хода)` : ''}`
+    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · ${s.rt ? ((sel.cd ?? 0) > 0 ? `ждёт ${(sel.cd ?? 0).toFixed(1)} с` : 'готов') : `AP ${sel.ap}/${sel.maxAp}`} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}${sel.down ? ` · ТЯЖЕЛО РАНЕН (${sel.bleedOut ?? 3} хода)` : ''}`
     : 'Выбери бойца';
   const cmd = s.units.find(u => u.kind === 'commander' && u.hp > 0);
   const goal = {
@@ -317,7 +348,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
       <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? '94vw' : 560, pointerEvents: 'none', textAlign: 'center' }}>
         <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
-          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
+          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
         </div>
       </div>
       {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (
@@ -356,7 +387,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         {s.aiming === 'grenade' && s.launch && <div style={{ color: '#ffb36b' }}>{LAUNCH[s.launch].name}: кликни клетку в оранжевой зоне (дальность {LAUNCH[s.launch].min}–{LAUNCH[s.launch].range}, радиус {LAUNCH[s.launch].r}; есть разброс, бьёт и по своим). ПКМ — отмена.</div>}
         {s.aiming === 'grenade' && !s.launch && <div style={{ color: '#ffb36b' }}>Бросок гранаты: кликни клетку в оранжевой зоне (красный круг — радиус взрыва, бьёт и по своим). ПКМ — отмена.</div>}
         {tb && !tgt && <div style={{ color: '#ff8a8a' }}>Цель: взрывоопасная бочка · {barrelOk ? 'попадание 100%, взрыв радиусом 2' : 'нет линии огня'}</div>}
-        {!narrow && sel && !tgt && !s.aiming && !s.turning && <div style={{ fontSize: 12, opacity: 0.75 }}>Укрытие защищает со стороны, где оно стоит: <span style={{ color: '#3cff7a' }}>зелёная полоска</span> — полное (−40% к попаданию), <span style={{ color: '#ffd34d' }}>жёлтая</span> — половинное (−20%). Зелёные клетки — где можно укрыться.</div>}
+        {!narrow && sel && !tgt && !s.aiming && !s.turning && s.rt && <div style={{ fontSize: 12, opacity: 0.8 }}>Реальное время: клик по земле — идти, по пришельцу — атаковать (бойцы стреляют сами), Пробел — пауза, ×0.5 / ×1 — скорость.</div>}
+        {!narrow && sel && !tgt && !s.aiming && !s.turning && !s.rt && <div style={{ fontSize: 12, opacity: 0.75 }}>Укрытие защищает со стороны, где оно стоит: <span style={{ color: '#3cff7a' }}>зелёная полоска</span> — полное (−40% к попаданию), <span style={{ color: '#ffd34d' }}>жёлтая</span> — половинное (−20%). Зелёные клетки — где можно укрыться.</div>}
         {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `${peek ? 'стрейф из-за укрытия' : 'шанс'} ${chance}%`}{direct !== null && sel && (() => { const cs = coverSource(s, sel, tgt); return cs ? ` · укрытие −${cs.bonus}% (${cs.trench ? 'окоп' : cs.bonus === 40 ? 'полное' : 'половинное'})` : ' · без укрытия'; })()}</div>}
       </div>
       {/* ——— низ: миникарта и меню по углам, диск действий по центру ——— */}
@@ -398,7 +430,12 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
             {leftBtns.map((b, i) => <div key={i} style={{ marginBottom: narrow ? 0 : i * 16, minWidth: 0 }}>{b}</div>)}
           </div>
           <div style={{ display: 'grid', gap: 8, justifyItems: 'center' }}>
-            <button style={{ ...nb(false, !canAct), color: '#ffd34d', minWidth: narrow ? 84 : 110 }} disabled={!canAct} onClick={endTurn}>Конец хода</button>
+            {s.rt ? (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button style={{ ...nb(s.rt.paused), minWidth: 0, padding: '6px 12px' }} title="Пауза (Пробел)" onClick={() => { s.rt!.paused = !s.rt!.paused; sfx('click'); rerender(); }}>{s.rt.paused ? '▶' : 'II'}</button>
+                {([0.5, 1] as const).map(v => <button key={v} style={{ ...nb(s.rt!.speed === v), minWidth: 0, padding: '6px 10px' }} title={`Скорость ×${v}`} onClick={() => { s.rt!.speed = v; sfx('click'); rerender(); }}>×{v}</button>)}
+              </div>
+            ) : <button style={{ ...nb(false, !canAct), color: '#ffd34d', minWidth: narrow ? 84 : 110 }} disabled={!canAct} onClick={endTurn}>Конец хода</button>}
             <button disabled={!canFire} onClick={fire} style={{ width: narrow ? 84 : 104, height: narrow ? 84 : 104, borderRadius: '50%', border: 0, background: 'linear-gradient(145deg,#ffdf74,#e8b32a)', color: '#2b2410', fontWeight: 800, fontSize: narrow ? 14 : 16, font: 'inherit', cursor: canFire ? 'pointer' : 'default', opacity: canFire ? 1 : 0.45, boxShadow: OUT, display: 'grid', placeItems: 'center', alignContent: 'center' }}>
               <span style={{ fontWeight: 800 }}>{peek ? 'ВЫГЛЯНУТЬ' : wl && !tgt ? 'ЦЕЛЬ' : 'ОГОНЬ'}</span>
               <small style={{ fontWeight: 600, opacity: 0.75 }}>{wl ? LAUNCH[wl].name : chance !== null ? `${chance}%` : tb ? 'бочка' : ''}</small>
@@ -409,7 +446,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           </div>
         </div>
       </div>
-      {view.current?.hover && s.turn === 'human' && !s.busy && (
+      {view.current?.hover && s.turn === 'human' && (s.rt || !s.busy) && (
         <div style={{ position: 'fixed', left: Math.min(view.current.hover.sx + 16, window.innerWidth - 220), top: view.current.hover.sy + 18, ...nbBase, borderRadius: 10, boxShadow: OUTS, padding: '4px 10px', fontSize: 12, fontWeight: 700, pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 5 }}>{view.current.hover.text}</div>
       )}
       {s.status !== 'playing' && (

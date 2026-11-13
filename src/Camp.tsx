@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CLASS_IDS, CLASSES } from './game/classes';
-import { chooseOption, setMapSize, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
+import { chooseOption, setMapSize, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
@@ -83,7 +83,10 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
-        <span style={{ opacity: 0.7 }}>Размер карты:</span>
+        <span style={{ opacity: 0.7 }}>Режим боя:</span>
+        <button style={{ ...btn(!c.rt), padding: '4px 10px', fontSize: 12 }} onClick={() => act(x => setRt(x, false))}>Пошаговый</button>
+        <button style={{ ...btn(c.rt), padding: '4px 10px', fontSize: 12 }} title="Время идёт само, пауза на пробел, скорость ×0.5 или ×1" onClick={() => act(x => setRt(x, true))}>Реальное время</button>
+        <span style={{ opacity: 0.7, marginLeft: 10 }}>Размер карты:</span>
         {([44, 64] as const).map(n => (
           <button key={n} style={{ ...btn(c.mapSize === n), padding: '4px 10px', fontSize: 12 }} onClick={() => act(x => setMapSize(x, n))}>{n === 44 ? 'Средняя 44×44' : 'Большая 64×64'}</button>
         ))}

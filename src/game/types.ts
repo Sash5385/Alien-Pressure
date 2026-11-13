@@ -83,6 +83,10 @@ export interface Unit {
   grp?: number; // тактическая группа пришельцев
   retreatUntil?: number; // до какого хода держит оборону после отхода
   ugl?: number; // выстрелов подствольника
+  cd?: number; // реальное время: секунд до следующего действия
+  dest?: { x: number; y: number }; // приказ «идти» (реальное время)
+  atk?: number; // приказ «атаковать» (id цели)
+  busyRt?: boolean; // выполняет действие (анимация)
   down?: boolean; // тяжело ранен: лежит, можно поднять
   bleedOut?: number; // ходов до смерти
   revived?: boolean; // уже падал в этой миссии
@@ -126,6 +130,7 @@ export interface GameState {
   log: string[];
   rng: number; // состояние генератора (сид миссии)
   boss?: boolean; // миссия с боссом (ликвидация)
+  rt?: { speed: 0.5 | 1; paused: boolean; clock: number; pulseAt: number; planAt: number; auto: boolean }; // режим реального времени
   smokes?: { x: number; y: number; ttl: number }[]; // дым: закрывает обзор
   smokeMode?: boolean; // прицел дымовой гранаты
   launch?: LaunchKind; // прицел гранатомёта/миномёта/подствольника (вместе с aiming 'grenade')
