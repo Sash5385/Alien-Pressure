@@ -202,6 +202,10 @@ function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<Retur
     place(new THREE.CylinderGeometry(L * 0.018, L * 0.018, L * 0.1, 8), glass, at(0.45, L * 0.065));
   } else if (kind === 'SMG') {
     place(new THREE.CylinderGeometry(L * 0.04, L * 0.04, L * 0.24, 10), dark, at(1.1, -up * 0.45)); // глушитель на дуле
+  } else if (kind === 'RocketLauncher') {
+    place(new THREE.ConeGeometry(L * 0.07, L * 0.16, 12), dark, at(-0.06, -up * 0.5)).rotation.set(0, 0, 0); // раструб сзади
+    place(new THREE.ConeGeometry(L * 0.075, L * 0.18, 12), new THREE.MeshStandardMaterial({ color: 0x5a6a3a, roughness: 0.7 }), at(1.08, -up * 0.5)); // боевая часть спереди
+    place(new THREE.BoxGeometry(...(f.la === 'x' ? [L * 0.1, L * 0.05, L * 0.04] : f.la === 'z' ? [L * 0.04, L * 0.05, L * 0.1] : [L * 0.04, L * 0.1, L * 0.04]) as [number, number, number]), dark, at(0.4, L * 0.03), false); // прицел
   } else if (kind === 'Shotgun') {
     place(new THREE.CylinderGeometry(L * 0.04, L * 0.04, L * 0.22, 10), new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 0.9 }), at(0.6, -up * 0.6)); // цевьё
   }
@@ -234,6 +238,32 @@ function makeAgs(): { g: THREE.Group; hl: THREE.Object3D; hr: THREE.Object3D } {
   add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.05), steel), 0.1, 0.78, 0.2); // правая рукоять
   add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.04, 0.05), steel), 0, 0.88, 0.17); // спусковая планка между ручками
   add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, 0.12), steel), -0.06, 0.93, 0.5); // прицел
+  return { g, hl, hr };
+}
+
+/** Станковый миномёт: опорная плита, труба под углом, сошки, прицел; руки на верхней части трубы. */
+function makeMortar(): { g: THREE.Group; hl: THREE.Object3D; hr: THREE.Object3D } {
+  const g = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.55, metalness: 0.5, flatShading: true });
+  const green = new THREE.MeshStandardMaterial({ color: 0x4a5a33, roughness: 0.8, flatShading: true });
+  const add = (m: THREE.Mesh, v: THREE.Vector3) => { m.position.copy(v); m.castShadow = true; g.add(m); return m; };
+  const dir = new THREE.Vector3(0, Math.sin(1.26), Math.cos(1.26)); // труба ~72° к земле
+  const base = new THREE.Vector3(0, 0.05, 0.3);
+  add(new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.05, 20), steel), new THREE.Vector3(0, 0.025, 0.3)); // плита
+  const tube = add(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.95, 14), green), base.clone().addScaledVector(dir, 0.475));
+  tube.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  const ring = add(new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.012, 8, 16), steel), base.clone().addScaledVector(dir, 0.95)); ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  const cap = add(new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), steel), base.clone().addScaledVector(dir, 0.02)); cap.scale.y = 0.6;
+  const leg = (sx: number) => { // сошка
+    const a = base.clone().addScaledVector(dir, 0.6), b = new THREE.Vector3(sx * 0.34, 0, 0.62), d = b.clone().sub(a);
+    const m = add(new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, d.length(), 6), steel), a.clone().add(b).multiplyScalar(0.5));
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  };
+  leg(-1); leg(1);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.09), steel), base.clone().addScaledVector(dir, 0.5).add(new THREE.Vector3(0.08, 0, 0))); // прицел
+  const top = base.clone().addScaledVector(dir, 0.84);
+  const hl = new THREE.Object3D(); hl.position.copy(top).add(new THREE.Vector3(-0.07, 0, 0)); g.add(hl);
+  const hr = new THREE.Object3D(); hr.position.copy(top).add(new THREE.Vector3(0.07, 0, 0.0)); g.add(hr);
   return { g, hl, hr };
 }
 
@@ -276,8 +306,8 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   // оружие в руках: детали, хват второй рукой; АГС — отдельная станковая модель
   const rigL = findArm(inner, 'L') ?? undefined, rigR = findArm(inner, 'R') ?? undefined;
   let grip: Spawned['grip'], agsRig: Spawned['ags'];
-  if (name === 'Soldier' && weapon === 'AGS') {
-    const a = makeAgs(); a.g.scale.setScalar(height / 1.8); a.g.position.z = 0.35 * height / 1.8; obj.add(a.g);
+  if (name === 'Soldier' && (weapon === 'AGS' || weapon === 'MORTAR')) {
+    const a = weapon === 'AGS' ? makeAgs() : makeMortar(); a.g.scale.setScalar(height / 1.8); a.g.position.z = (weapon === 'AGS' ? 0.35 : 0.2) * height / 1.8; obj.add(a.g);
     agsRig = { hl: a.hl, hr: a.hr };
   } else if (name === 'Soldier' && weapon && rigR) {
     const node = inner.getObjectByName(weapon);

@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { applyTwoHands, loadModels, spawnModel } from './render/models';
 import type { ArmorId, WeaponId } from './game/types';
 
-const GUN: Record<WeaponId, string> = { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'ShortCannon', mortar: 'ShortCannon', ags: 'AGS' };
+const GUN: Record<WeaponId, string> = { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'RocketLauncher', mortar: 'MORTAR', ags: 'AGS' };
 
 /** Боец в 3D для экрана снаряжения: форма, разгрузка, броня и оружие видны на фигуре; вращается мышью или пальцем. */
 export function SoldierView({ weapon, armor, width, height }: { weapon: WeaponId; armor: ArmorId; width: number; height: number }) {

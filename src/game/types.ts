@@ -118,7 +118,7 @@ export interface GameState {
   beacons: { x: number; y: number; done: boolean }[];
   holdTurns: number;
   zone: { x: number; y: number; w: number; h: number } | null;
-  aiming: 'grenade' | null; // режим прицеливания гранаты
+  aiming: 'grenade' | 'roll' | null; // режим прицеливания гранаты или выбора клетки для переката
   mines: { x: number; y: number; owner: number }[];
   barrels: { x: number; y: number }[]; // взрывоопасные бочки (половинное укрытие)
   fires: { x: number; y: number; ttl: number }[]; // горящие клетки: непроходимы, жгут стоящих

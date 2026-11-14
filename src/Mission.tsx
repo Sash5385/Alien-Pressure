@@ -128,6 +128,13 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const canBandage = canAct && !!sel && sel.ap > 0 && s.medkits > 0 &&
     living(s, 'human').some(h => h.bleeding && Math.abs(h.x - sel.x) + Math.abs(h.y - sel.y) <= 1);
   const canGrenade = canAct && !!sel && sel.ap > 0 && sel.grenades > 0 && sel.stance !== 'prone';
+  const canRoll = canAct && !!sel && !sel.down && (s.rt ? (sel.cd ?? 0) <= 0 && !sel.busyRt : sel.ap > 0);
+  const toggleRoll = () => {
+    if (!canRoll) return;
+    s.smokeMode = false; s.launch = undefined; s.targetId = null;
+    s.aiming = s.aiming === 'roll' ? null : 'roll';
+    view.current!.syncUnits(); rerender();
+  };
   const toggleGrenade = () => {
     if (!canGrenade) return;
     s.smokeMode = false; s.launch = undefined;
@@ -343,6 +350,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const itemsL: Item[] = [
     it('↻', 'Заряд', sel ? `${sel.mags}` : '', false, !canReload, doReload, 'Перезарядка'),
     it('⛏', 'Окоп', '', false, !canDig || !sel, doDig, 'Окоп: укрытие со всех сторон, −1 урон от взрывов'),
+    it('⟲', 'Перекат', '', s.aiming === 'roll', !canRoll, toggleRoll, 'Перекат: 1 AP, до 2 клеток, быстрый кувырок, боец остаётся лёжа'),
     it('✚', 'Бинт', `${s.medkits}`, false, !canBandage, heal, 'Перевязка'),
     sel ? it('★', { assault: 'Подавл.', sniper: 'Снайп.', medic: 'Лечить', engineer: 'Мина' }[sel.cls], abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, `${abilityLabel}: ${CLASSES[sel.cls].desc}`) : it('★', 'Умение', '', false, true, () => {}),
     ...(downedAlly ? [it('⇪', 'Поднять', '', true, !canAct, doRevive, `Поднять: ${downedAlly.name}`)] : []),

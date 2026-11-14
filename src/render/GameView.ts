@@ -24,7 +24,8 @@ const BULLET_SPEED = 18; // клеток/с: пулю видно в полёте
 const BURST_GAP = 190; // мс между патронами очереди (было 75)
 const ALIEN_SPEED = 2.2; // пришельцы идут медленнее, чтобы их ход было видно
 const CRAWL = 1.1; // ползком лёжа
-const speedOf = (u?: Unit) => (u?.team === 'alien' ? ALIEN_SPEED : u?.stance === 'prone' ? CRAWL : SPEED);
+const ROLLING = new Set<number>(); // бойцы в перекате: движутся быстро
+const speedOf = (u?: Unit) => (u && ROLLING.has(u.id) ? 7.5 : u?.team === 'alien' ? ALIEN_SPEED : u?.stance === 'prone' ? CRAWL : SPEED);
 
 interface Float { sprite: THREE.Sprite; t: number }
 export type Weather = 'clear' | 'rain' | 'fog' | 'dusk' | 'dawn' | 'night';
@@ -49,6 +50,10 @@ export class GameView {
   /** Колесо зажато / отпущено: в реальном времени пока зажато — время стоит. */
   onMiddle?: (down: boolean) => void;
   private recoil = new Map<number, number>();
+  private rolls = new Map<number, { t0: number; dur: number }>();
+  private prints: { m: THREE.Mesh; t0: number }[] = [];
+  private printSide = 0;
+  private printGeo = new THREE.CircleGeometry(0.07, 8);
   private pathMat = new THREE.LineBasicMaterial({ color: 0x4fd7ff, transparent: true, opacity: 0.7 });
   /** Цели, по которым уже посчитан урон, но снаряд ещё в полёте: гибель и падение показываем только при попадании. */
   private held = new Map<number, number>();
@@ -217,6 +222,7 @@ export class GameView {
       const dt = Math.min(0.05, rawDt);
       this.stepRain(dt);
       tickWind(this.clock.elapsedTime);
+      if (this.prints.length) { const now = this.clock.elapsedTime; this.prints = this.prints.filter(p => { const k = (now - p.t0) / 40; if (k >= 1) { this.scene.remove(p.m); (p.m.material as THREE.Material).dispose(); return false; } (p.m.material as THREE.MeshBasicMaterial).opacity = 0.38 * (1 - k); return true; }); }
       if (this.leaves) { const tr = this.treeSpots.filter(t => this.coverMeshes.has(t.k)); this.leaves.ambient(dt, this.controls.target.x, this.controls.target.z, tr); this.leaves.update(dt); }
       for (const [id, m] of this.unitMeshes) {
         const g = this.goals.get(id);
@@ -240,6 +246,14 @@ export class GameView {
           const rn = this.rigs.get(id)?.actions.has('Run_Gun') && this.rigs.get(id)?.armed ? 'Run_Gun' : 'Run';
           if (dist > 0.12 && this.rigs.has(id)) this.play(id, rn);
           else if (this.anim.get(id) === 'Run' || this.anim.get(id) === 'Run_Gun') this.play(id, 'Idle');
+        }
+        { // перекат: кувырок вперёд с небольшим прыжком
+          const rl = this.rolls.get(id);
+          if (rl) {
+            const k = (this.clock.elapsedTime - rl.t0) / rl.dur;
+            if (k >= 1) { this.rolls.delete(id); ROLLING.delete(id); m.rotation.x = 0; }
+            else { m.rotation.x = Math.PI * 2 * k; m.position.y += Math.sin(Math.PI * k) * 0.35 * dt * 30; }
+          }
         }
         const sp = this.rigs.get(id);
         if (sp && u && !this.dying.has(id)) {
@@ -768,7 +782,7 @@ export class GameView {
     const height = { soldier: 1.05, trooper: 1.05, sniper: 1.15, psi: 1.05, heavy: 1.45, commander: 1.6 }[u.kind];
     const tint = { soldier: undefined, trooper: 0x7fd24a, sniper: 0x3f8f6a, psi: 0xb36bff, heavy: 0x6f8a2c, commander: 0xc0392b }[u.kind];
     const gun = u.team === 'human'
-      ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'ShortCannon', mortar: 'ShortCannon', ags: 'AGS' }[u.weapon]
+      ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'RocketLauncher', mortar: 'MORTAR', ags: 'AGS' }[u.weapon]
       : { soldier: '', trooper: 'AK', sniper: 'Sniper_2', psi: '', heavy: 'ShortCannon', commander: 'Revolver' }[u.kind];
     const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor);
     if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
@@ -835,7 +849,7 @@ export class GameView {
       this.lastAmmo.set(u.id, u.ammo); this.lastHp.set(u.id, u.hp); this.lastBleed.set(u.id, u.bleeding);
       this.lastStance.set(u.id, u.stance); this.lastOw.set(u.id, u.overwatch);
       if (this.sndReady && q.length && isVisible(this.state, u)) q.forEach((k, i) => setTimeout(() => sfx(k), i * 170));
-      if (!m) { m = this.makeUnit(u); m.position.copy(goal); m.rotation.y = u.facing; this.unitMeshes.set(u.id, m); this.scene.add(m); }
+      if (!m) { m = this.makeUnit(u); m.rotation.order = 'YXZ'; m.position.copy(goal); m.rotation.y = u.facing; this.unitMeshes.set(u.id, m); this.scene.add(m); }
       this.goals.set(u.id, goal);
       m.visible = isVisible(this.state, u);
       if (instant) m.position.copy(goal);
@@ -941,6 +955,25 @@ export class GameView {
     const pitch = u.team === 'alien' ? (heavy ? 0.7 : 0.85) : 1;
     sfx('step', { vol, pitch });
     setTimeout(() => sfx('step', { vol: vol * 0.8, pitch: pitch * 0.92 }), 1000 / speedOf(u) / 2);
+    this.footprint(u);
+  }
+
+  /** Следы: чередуются левая и правая нога, тёмные пятна, на песке и руинах светлее; медленно исчезают. Ползком — борозда. */
+  private footprint(u: Unit) {
+    if (this.state.terrain[u.y]?.[u.x] === 'water' || (u.team === 'alien' && !isVisible(this.state, u))) return;
+    const crawl = u.stance === 'prone', f = u.facing;
+    const sx = Math.cos(f), sz = -Math.sin(f); // вбок от направления взгляда
+    this.printSide = -this.printSide || 1;
+    const off = crawl ? 0 : 0.11 * this.printSide;
+    const col = this.state.biome === 'ruins' ? 0x4a4234 : 0x1d2a14;
+    const m = new THREE.Mesh(this.printGeo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.38, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2; m.rotation.z = f;
+    m.scale.set(crawl ? 2.4 : 0.9, crawl ? 1.2 : 1.6, 1);
+    m.position.set(u.x + 0.5 + sx * off - Math.sin(f) * 0.12, this.hy(u.x, u.y) + 0.025, u.y + 0.5 + sz * off - Math.cos(f) * 0.12);
+    this.scene.add(m);
+    this.prints.push({ m, t0: this.clock.elapsedTime });
+    if (this.prints.length > 260) { const o = this.prints.shift()!; this.scene.remove(o.m); (o.m.material as THREE.Material).dispose(); }
+    if (!crawl && u.stance !== 'kneel') this.burst(new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) + 0.05, u.y + 0.5), 0xb9a984, 3, 0.7, 380); // пыль из-под ног
   }
 
   /** Высота ствола/груди над землёй по стойке. */
@@ -1275,6 +1308,15 @@ export class GameView {
         if (Math.hypot(x - u.x, y - u.y) > R || s.cover[y][x] !== 'none' || !los(s, u, { x, y })) continue;
         const p = new THREE.Mesh(vg, vm); p.rotation.x = -Math.PI / 2; p.position.set(x + 0.5, this.hy(x, y) + 0.022, y + 0.5); this.highlight.add(p);
       }
+    }
+    if (s.aiming === 'roll' && !s.busy) {
+      const rm = new THREE.MeshBasicMaterial({ color: 0x7ee0ff, transparent: true, opacity: 0.28 }), rg = new THREE.PlaneGeometry(0.92, 0.92);
+      for (const k of reachable(s, u.x, u.y, 2).keys()) {
+        const [rx, ry] = k.split(',').map(Number);
+        if ((rx === u.x && ry === u.y) || s.units.some(v => v.hp > 0 && v.x === rx && v.y === ry)) continue;
+        const p = new THREE.Mesh(rg, rm); p.rotation.x = -Math.PI / 2; p.position.set(rx + 0.5, this.hy(rx, ry) + 0.03, ry + 0.5); this.highlight.add(p);
+      }
+      return;
     }
     if (s.aiming === 'grenade' && !s.busy) {
       const am = new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: 0.22 });
@@ -1693,6 +1735,30 @@ export class GameView {
     this.floats.push({ sprite, t: 0 });
   }
 
+  /** Перекат: до 2 клеток за 1 AP (в реальном времени — за один цикл ожидания), кувырок, боец остаётся лёжа. */
+  async rollTo(u: Unit, x: number, y: number) {
+    const s = this.state;
+    const free = !s.units.some(v => v.hp > 0 && v.x === x && v.y === y);
+    if (!free || u.down || !reachable(s, u.x, u.y, 2).has(`${x},${y}`)) { s.aiming = null; this.onChange(); return; }
+    const path = findPath(s, u.x, u.y, x, y, 2);
+    if (!path.length) return;
+    s.aiming = null; s.targetId = null;
+    if (s.rt) { if ((u.cd ?? 0) > 0 || u.busyRt) return; u.cd = CD_PER_AP; u.ap = 0; u.atk = undefined; u.dest = undefined; }
+    else { if (u.ap < 1) return; s.busy = true; u.ap -= 1; }
+    u.overwatch = false; u.facing = Math.atan2(x - u.x, y - u.y);
+    const dur = Math.max(0.45, path.length * 0.26);
+    ROLLING.add(u.id); this.rolls.set(u.id, { t0: this.clock.elapsedTime, dur });
+    sfx('stance');
+    for (const [px, py] of path) { u.x = px; u.y = py; this.stepFx(u); this.syncUnits(); await sleep(260); }
+    u.stance = 'prone';
+    if (!s.rt) {
+      for (const r of alienReactions(s, u)) { await this.shotFx(r); }
+      s.busy = false;
+    }
+    updateVision(s); checkEnd(s);
+    this.syncUnits(); this.onChange();
+  }
+
   private async click(e: PointerEvent) {
     const s = this.state;
     if (s.turn !== 'human' || (s.busy && !s.rt) || s.status !== 'playing') return;
@@ -1706,6 +1772,11 @@ export class GameView {
       if (tu) faceToward(tu, x, y);
       s.turning = false;
       this.onChange();
+      return;
+    }
+    if (s.aiming === 'roll') {
+      const ru = s.units.find(v => v.id === s.selectedId && v.hp > 0);
+      if (ru) await this.rollTo(ru, x, y);
       return;
     }
     if (s.aiming === 'grenade') {
