@@ -179,7 +179,7 @@ export class GameView {
     this.buildTerrain();
     this.applyWeather();
     this.buildCover();
-    this.leaves = new Leaves(this.scene, (x, z) => this.hy(x, z));
+    this.leaves = new Leaves(this.scene, (x, z) => this.hs(x, z));
     this.buildHouses();
     this.buildZone();
     this.buildBeacons();
@@ -449,27 +449,47 @@ export class GameView {
     return g;
   }
 
-  /** Ступенчатый рельеф: верх каждой клетки на своей высоте и отвесные стены между уровнями. */
+  /** Гладкий рельеф: вершины в центрах клеток (высота клетки там точная, бойцы и предметы стоят ровно), между ними пологие склоны.
+   * Вокруг карты кольцо из 7 клеток спадает неровной береговой линией, поэтому мир не обрывается квадратом. */
   private buildGround() {
     const { size: n, height } = this.state;
-    const pos: number[] = [], uvs: number[] = [], cols: number[] = [], idx: number[] = [];
-    const quad = (p: number[][], uv: number[][], c: number[]) => {
-      const i0 = pos.length / 3;
-      p.forEach((v, k) => { pos.push(v[0], v[1], v[2]); uvs.push(uv[k][0], uv[k][1]); cols.push(c[0], c[1], c[2]); });
-      idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
+    const B = 7, N = n + 2 * B;
+    const hash = (a: number, b: number) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >> 13)) * 1274126177; return ((h ^ (h >> 16)) >>> 0) / 4294967295; };
+    const vnoise = (x: number, y: number) => {
+      const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+      return (hash(xi, yi) * (1 - sx) + hash(xi + 1, yi) * sx) * (1 - sy) + (hash(xi, yi + 1) * (1 - sx) + hash(xi + 1, yi + 1) * sx) * sy;
     };
-    const H = (x: number, y: number) => (x < 0 || y < 0 || x >= n || y >= n ? -1.2 : height[y][x]) * STEP;
-    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-      const h = H(x, y);
-      const tone = 0.86 + height[y][x] * 0.07 + ((x * 31 + y * 17) % 5) * 0.012;
-      quad([[x, h, y], [x, h, y + 1], [x + 1, h, y + 1], [x + 1, h, y]], [[x / 4, y / 4], [x / 4, (y + 1) / 4], [(x + 1) / 4, (y + 1) / 4], [(x + 1) / 4, y / 4]], [tone, tone, tone]);
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nh = H(x + dx, y + dy);
-        if (nh >= h - 0.001) continue;
-        const wx = dx === 1 ? x + 1 : x, wz = dy === 1 ? y + 1 : y;
-        const [ax, az, bx, bz] = dx !== 0 ? [wx, y, wx, y + 1] : [x, wz, x + 1, wz];
-        quad([[ax, h, az], [bx, h, bz], [bx, nh, bz], [ax, nh, az]], [[0, 0], [0.25, 0], [0.25, (h - nh) / 4], [0, (h - nh) / 4]], [1.25, 1.0, 0.72]); // обрыв: тёплый земляной цвет поверх зелёной текстуры
+    const H = new Float32Array(N * N), D = new Float32Array(N * N);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const gi = i - B, gj = j - B, ci = Math.max(0, Math.min(n - 1, gi)), cj = Math.max(0, Math.min(n - 1, gj));
+      const d = Math.hypot(gi - ci, gj - cj);
+      let h = height[cj][ci] * STEP;
+      if (d > 0) { // за краем карты: спад с шумом, получается неровный берег
+        const r = d / B;
+        h -= 1.7 * Math.pow(r, 1.4) + 0.9 * r * (vnoise(gi * 0.32, gj * 0.32) - 0.35) + 0.35 * (vnoise(gi * 0.9, gj * 0.9) - 0.5) * r + 0.1 * d;
+      } else {
+        h += (vnoise(gi * 0.8, gj * 0.8) - 0.5) * 0.05; // лёгкая неровность внутри (клетки с укрытием не трогаем: смещение мало)
+        if (this.state.terrain[cj][ci] === 'water') h -= 0.65 + (vnoise(gi * 0.7, gj * 0.7) - 0.5) * 0.25; // русло: ниже уровня воды, берег получается плавным
       }
+      H[j * N + i] = h; D[j * N + i] = d;
+    }
+    // две вершины на клетку (0,2 и 0,8): середина клетки плоская (бойцы, укрытия и подсветка клеток лежат ровно), у краёв пологий склон
+    const V = 2 * N, pos: number[] = [], uvs: number[] = [], cols: number[] = [], idx: number[] = [];
+    const T = (i: number, j: number) => H[Math.max(0, Math.min(N - 1, j)) * N + Math.max(0, Math.min(N - 1, i))];
+    for (let vj = 0; vj < V; vj++) for (let vi = 0; vi < V; vi++) {
+      const i = vi >> 1, j = vj >> 1, ai = vi & 1, aj = vj & 1, gi = i - B, gj = j - B, k = j * N + i, h = H[k];
+      const wx = gi + (ai ? 0.8 : 0.2), wz = gj + (aj ? 0.8 : 0.2);
+      let jx = 0, jz = 0;
+      if (gi >= 0 && gj >= 0 && gi < n && gj < n && [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => this.state.terrain[Math.max(0, Math.min(n - 1, gj + dy))][Math.max(0, Math.min(n - 1, gi + dx))] === 'water')) { jx = (vnoise(wx * 1.7, wz * 1.7) - 0.5) * 0.3; jz = (vnoise(wx * 1.7 + 40, wz * 1.7 + 40) - 0.5) * 0.3; } // у воды берег извилистый
+      pos.push(wx + jx, h, wz + jz); uvs.push(wx / 4, wz / 4);
+      const slope = Math.max(Math.abs(h - T(i + (ai ? 1 : -1), j)), Math.abs(h - T(i, j + (aj ? 1 : -1)))) / STEP; // крутизна: склоны темнее и теплее
+      const tone = (0.86 + (D[k] > 0 ? 0 : height[gj][gi] * 0.07) + hash(gi, gj) * 0.06) * (1 - Math.min(0.55, D[k] / B * 0.55));
+      const f = Math.min(1, slope * 0.7);
+      cols.push(tone * (1 + 0.25 * f), tone * (1 - 0.1 * f), tone * (1 - 0.3 * f));
+    }
+    for (let vj = 0; vj < V - 1; vj++) for (let vi = 0; vi < V - 1; vi++) {
+      const a = vj * V + vi, b = a + 1, c = a + V, d = c + 1;
+      if ((vi + vj) % 2 === 0) idx.push(a, c, b, b, c, d); else idx.push(a, c, d, a, d, b); // диагонали чередуются
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -479,6 +499,21 @@ export class GameView {
     geo.computeVertexNormals();
     this.ground.geometry.dispose();
     this.ground.geometry = geo;
+  }
+
+  /** Высота рельефа в точке мира (плоская середина клетки, склон у границ) — для травы, следов, листвы. */
+  private hs(wx: number, wz: number) {
+    const n = this.state.size, h = this.state.height;
+    const axis = (w: number): [number, number, number] => {
+      const i = Math.floor(w), f = w - i;
+      const c = (v: number) => Math.max(0, Math.min(n - 1, v));
+      if (f < 0.2) return [c(i - 1), c(i), (f + 0.2) / 0.4];
+      if (f > 0.8) return [c(i), c(i + 1), (f - 0.8) / 0.4];
+      return [c(i), c(i), 0];
+    };
+    const sm = (t: number) => t * t * (3 - 2 * t);
+    const [x0, x1, tx] = axis(wx), [z0, z1, tz] = axis(wz), ux = sm(tx), uz = sm(tz);
+    return ((h[z0][x0] * (1 - ux) + h[z0][x1] * ux) * (1 - uz) + (h[z1][x0] * (1 - ux) + h[z1][x1] * ux) * uz) * STEP;
   }
 
   /** Земля по локации: цвет, трава (инстансы) и анимированная вода. */
@@ -545,7 +580,7 @@ export class GameView {
       const m4 = new THREE.Matrix4(), col = new THREE.Color();
       spots.forEach(([px, pz], i) => {
         const s = 0.7 + Math.random() * 0.9;
-        m4.compose(new THREE.Vector3(px, 0.13 * s + this.hy(Math.floor(px), Math.floor(pz)), pz), new THREE.Quaternion().setFromEuler(new THREE.Euler((Math.random() - 0.5) * 0.3, Math.random() * 6, (Math.random() - 0.5) * 0.3)), new THREE.Vector3(s, s, s));
+        m4.compose(new THREE.Vector3(px, 0.13 * s + this.hs(px, pz), pz), new THREE.Quaternion().setFromEuler(new THREE.Euler((Math.random() - 0.5) * 0.3, Math.random() * 6, (Math.random() - 0.5) * 0.3)), new THREE.Vector3(s, s, s));
         blades.setMatrixAt(i, m4);
         blades.setColorAt(i, col.set(dense ? [0x4f8a2a, 0x5f9a34, 0x3f7a22, 0x7bb33f][i % 4] : [0x6b6a3a, 0x7a7340][i % 2]));
       });
@@ -568,13 +603,12 @@ export class GameView {
     }
     this.waterTex = new THREE.CanvasTexture(cv);
     this.waterTex.wrapS = this.waterTex.wrapT = THREE.RepeatWrapping;
-    const water = new THREE.InstancedMesh(
-      new THREE.PlaneGeometry(1, 1),
-      (this.waterMat = new THREE.MeshStandardMaterial({ map: this.waterTex, color: 0xaad4ff, transparent: true, opacity: 0.85, roughness: 0.15, metalness: 0.25, emissive: 0x0a2236 })),
-      tiles.length,
-    );
-    const m4 = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-    tiles.forEach(([x, y], i) => { m4.setPosition(x + 0.5, 0.03, y + 0.5); water.setMatrixAt(i, m4); });
+    let x0 = n, x1 = 0, y0 = n, y1 = 0;
+    for (const [x, y] of tiles) { x0 = Math.min(x0, x); x1 = Math.max(x1, x + 1); y0 = Math.min(y0, y); y1 = Math.max(y1, y + 1); }
+    x0 -= 2; y0 -= 2; x1 += 2; y1 += 2; // вода шире русла: берег там, где рельеф уходит под воду (кромка плавная и неровная)
+    this.waterTex.repeat.set((x1 - x0) / 2, (y1 - y0) / 2);
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, y1 - y0), (this.waterMat = new THREE.MeshStandardMaterial({ map: this.waterTex, color: 0xaad4ff, transparent: true, opacity: 0.85, roughness: 0.15, metalness: 0.25, emissive: 0x0a2236 })));
+    water.rotation.x = -Math.PI / 2; water.position.set((x0 + x1) / 2, -0.25, (y0 + y1) / 2);
     water.receiveShadow = true;
     this.scene.add(water);
   }
@@ -835,7 +869,8 @@ export class GameView {
       alive.add(u.id);
       let m = this.unitMeshes.get(u.id);
       const inTrench = this.state.trenches.some(t => t.x === u.x && t.y === u.y);
-      const goal = new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) - (inTrench && u.hp > 0 ? 0.2 : 0), u.y + 0.5); // в траншее боец стоит ниже бруствера
+      const inWater = this.state.terrain[u.y]?.[u.x] === 'water';
+      const goal = new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) - (inTrench && u.hp > 0 ? 0.2 : 0) - (inWater ? 0.3 : 0), u.y + 0.5); // в траншее боец стоит ниже бруствера
       const key = `${u.x},${u.y}`, prev = this.lastPos.get(u.id);
       if (prev && prev !== key) { const [px, py] = prev.split(',').map(Number); u.facing = Math.atan2(u.x - px, u.y - py); }
       this.lastPos.set(u.id, key);
@@ -963,7 +998,7 @@ export class GameView {
     const x = u.x + 0.5, z = u.y + 0.5;
     this.burst(new THREE.Vector3(x, 0.08, z), 0xd8ecff, 7, 1.6, 420);
     const m = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 24), new THREE.MeshBasicMaterial({ color: 0xe6f4ff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
-    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.06, z);
+    m.rotation.x = -Math.PI / 2; m.position.set(x, -0.2, z);
     this.scene.add(m);
     void this.tween(900, k => { m.scale.setScalar(0.15 + k * 0.6); (m.material as THREE.MeshBasicMaterial).opacity = 0.6 * (1 - k); }).then(() => { this.scene.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); });
     if (this.sndReady) sfx('splash', { vol: 0.35 });
@@ -1112,7 +1147,7 @@ export class GameView {
       this.scene.add(m);
       const v = new THREE.Vector3((Math.random() - 0.5) * power, 2 + Math.random() * power, (Math.random() - 0.5) * power);
       const spin = new THREE.Vector3(Math.random() * 8, Math.random() * 8, Math.random() * 8);
-      const gy = this.hy(Math.floor(pos.x), Math.floor(pos.z)) + 0.05;
+      const gy = this.hs(pos.x, pos.z) + 0.05;
       let last = 0;
       void this.tween(900, k => {
         const d = ((k - last) * 900) / 1000; last = k;
@@ -1129,7 +1164,7 @@ export class GameView {
     m.position.copy(pos); this.scene.add(m);
     const side = facing + Math.PI / 2 + (Math.random() - 0.5) * 0.6;
     const v = new THREE.Vector3(Math.sin(side) * (1 + Math.random()), 1.6 + Math.random(), Math.cos(side) * (1 + Math.random()));
-    const gy = this.hy(Math.floor(pos.x), Math.floor(pos.z)) + 0.03;
+    const gy = this.hs(pos.x, pos.z) + 0.03;
     let last = 0;
     void this.tween(650, k => {
       const d = ((k - last) * 650) / 1000; last = k;
@@ -1160,7 +1195,7 @@ export class GameView {
   private decal(x: number, z: number, color: number, r: number, opacity = 0.6) {
     const m = new THREE.Mesh(new THREE.CircleGeometry(r, 10), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
     m.rotation.x = -Math.PI / 2;
-    m.position.set(x, this.hy(Math.floor(x), Math.floor(z)) + 0.03, z);
+    m.position.set(x, this.hs(x, z) + 0.03, z);
     this.scene.add(m);
     this.decals.push(m);
     if (this.decals.length > 80) { const o = this.decals.shift()!; this.scene.remove(o); o.geometry.dispose(); (o.material as THREE.Material).dispose(); }
@@ -1393,7 +1428,7 @@ export class GameView {
     this.burst(new THREE.Vector3(x, 0.15, z), 0xcfe8ff, 46, 4.2, 900);
     for (let i = 0; i < 3; i++) {
       const m = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 40), new THREE.MeshBasicMaterial({ color: 0xe6f4ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
-      m.rotation.x = -Math.PI / 2; m.position.set(x, 0.06, z);
+      m.rotation.x = -Math.PI / 2; m.position.set(x, -0.2, z);
       this.scene.add(m);
       void sleep(i * 220).then(() => this.tween(1300, k => { m.scale.setScalar(0.3 + k * r * 1.4); (m.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k); })).then(() => { this.scene.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); });
     }
