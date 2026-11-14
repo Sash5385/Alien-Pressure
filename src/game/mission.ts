@@ -528,11 +528,17 @@ function createHugeForest(o: MissionOpts): GameState {
     for (let k = 0; k < cnt; k++) {
       let x = c.x, y = c.y;
       for (let tries = 0; tries < 30; tries++) { x = c.x - 5 + Math.floor(rand(rng) * 11); y = c.y - 5 + Math.floor(rand(rng) * 11); if (cover[y][x] === 'none' && !aliens.some(a => a.x === x && a.y === y)) break; }
-      const kind = campKinds[(ci + k) % campKinds.length];
+      const hq = ci === 0 && k === 0; // лагерь 0 — штаб с командиром
+      const kind: AlienKind = hq ? 'commander' : campKinds[(ci + k) % campKinds.length];
       const a = alien(id++, kind, kind === 'trooper' ? ++tn : 0, x, y, o.difficulty);
+      if (hq) a.name = 'Командир штаба';
       a.grp = ci; a.dormant = true; a.alert = false;
       aliens.push(a);
     }
+  });
+  camps.forEach((c, ci) => { // склады: в лагерях с нечётным номером лежит запас снабжения
+    if (ci % 3 !== 1) return;
+    for (let k = 0; k < 4; k++) { const x = c.x - 3 + k * 2, y = c.y + 3; if (cover[y][x] === 'none') loot.push({ x, y, kind: (['mag', 'gren', 'mat', 'mag'] as const)[k], n: 1 }); }
   });
   pits.forEach((p, i) => {
     const a = alien(id++, i % 5 === 0 ? 'sniper' : 'trooper', ++tn, p.x, p.y, o.difficulty);
@@ -544,8 +550,8 @@ function createHugeForest(o: MissionOpts): GameState {
     size: n, cover, terrain, height, look, houses, trenches: [], biome: 'forest', units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels: [], fires: [], scorched: grid(n, false), bridges: [], targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
-    objective: 'clear', markId: null, beacons: [], holdTurns: HOLD_TURNS, zone: null, weather: undefined, sides: 'all', waveBoost: 0,
-    log: [`Миссия ${o.missionNo} · Огромный лес ${n}×${n}. Цель: прочесать лес. Пришельцы ждут в лагерях-развалинах и сидят в ямах (${pits.length}), пока не подойдёшь близко. Рекомендуется реальное время.`, `Лагерей: ${camps.length}. Пришельцев: ${aliens.length}.`],
+    objective: 'clear', markId: null, beacons: [], holdTurns: HOLD_TURNS, zone: null, weather: o.missionNo % 2 === 0 ? 'night' : undefined, sides: 'all', waveBoost: 0,
+    log: [`Миссия ${o.missionNo} · Огромный лес ${n}×${n}. Цель: прочесать лес. Пришельцы ждут в лагерях-развалинах и сидят в ямах (${pits.length}), пока не подойдёшь близко. Рекомендуется реальное время.`, `Лагерей: ${camps.length} (в первом штаб с командиром, в каждом третьем склад). Пришельцев: ${aliens.length}. Рация (📡) вызывает сброс снабжения раз в 90 секунд.`],
     rng: rng.rng, boss: false, pits, huge: true, mats: 8, loot,
   };
   return st;

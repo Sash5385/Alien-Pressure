@@ -792,3 +792,25 @@ export function setStance(s: GameState, u: Unit, st: Stance): boolean {
   log(s, `${u.name} ${STANCE_NAME[st]}.`);
   return true;
 }
+
+/** Рация: сброс снабжения рядом с отрядом (магазины, гранаты, материалы), раз в 90 секунд реального времени. */
+export function radioReady(s: GameState): number {
+  return Math.max(0, (s.radioAt ?? 0) - (s.rt?.clock ?? 0));
+}
+export function callSupply(s: GameState): boolean {
+  const hs = living(s, 'human');
+  if (!hs.length || radioReady(s) > 0) return false;
+  const cx = Math.round(hs.reduce((a, h) => a + h.x, 0) / hs.length), cy = Math.round(hs.reduce((a, h) => a + h.y, 0) / hs.length);
+  s.loot ??= [];
+  const kinds = ['mag', 'gren', 'mat'] as const;
+  let k = 0;
+  for (let r = 2; r <= 6 && k < 3; r++) for (let oy = -r; oy <= r && k < 3; oy++) for (let ox = -r; ox <= r && k < 3; ox++) {
+    if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+    const x = cx + ox, y = cy + oy;
+    if (s.cover[y]?.[x] !== 'none' || s.terrain[y][x] !== 'ground' || s.loot.some(l => l.x === x && l.y === y) || s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) continue;
+    s.loot.push({ x, y, kind: kinds[k], n: 1 }); k++;
+  }
+  s.radioAt = (s.rt?.clock ?? 0) + 90;
+  log(s, 'Рация: сброс снабжения совершён, ящики рядом с отрядом.');
+  return true;
+}

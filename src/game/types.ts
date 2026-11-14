@@ -136,6 +136,7 @@ export interface GameState {
   boss?: boolean; // миссия с боссом (ликвидация)
   rt?: { speed: 0.5 | 1; paused: boolean; clock: number; pulseAt: number; planAt: number; auto: boolean }; // режим реального времени
   smokes?: { x: number; y: number; ttl: number }[]; // дым: закрывает обзор
+  radioAt?: number; // реальное время, с которого рация снова готова
   noise?: { x: number; y: number }[]; // выстрелы бойцов с последней проверки (будят спящих)
   pits?: { x: number; y: number }[]; // ямы, в которых прячутся пришельцы (огромная карта)
   huge?: boolean; // огромная карта (лес): кусочная отрисовка, засады

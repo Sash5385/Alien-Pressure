@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { runAlienTurn } from './game/ai';
-import { aimedShot, bandage, canLaunch, LAUNCH, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
+import { callSupply, radioReady, aimedShot, bandage, canLaunch, LAUNCH, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState, Unit } from './game/types';
 import { btn, cta, glass, loadUi, saveUi, UI_NAMES, UI_SCALES, VERSION } from './ui';
@@ -528,6 +528,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <button style={round(showMap)} title="Миникарта" onClick={() => setShowMap(!showMap)}>🗺</button>
           {(() => { const k = s.undo, uu = k && s.units.find(v => v.id === k.id && v.hp > 0); const ok = !!k && !!uu && canAct && `${uu.x},${uu.y},${uu.ap},${uu.ammo},${uu.stance},${uu.overwatch},${s.log.length}` === k.fp; return ok ? <button style={round(false)} title="Отменить последний ход" onClick={() => { if (view.current?.undoMove()) { sfx('click'); } rerender(); }}>↶</button> : null; })()}
           <button style={round(s.turning)} title="Повернуть бойца" onClick={() => { s.turning = !s.turning; s.aiming = null; rerender(); }}>↻</button>
+          {s.huge && <button style={{ ...round(false), opacity: radioReady(s) > 0 ? 0.5 : 1 }} title={radioReady(s) > 0 ? `Рация: сброс снабжения через ${Math.ceil(radioReady(s))} с` : 'Рация: вызвать сброс снабжения (ящики рядом с отрядом)'} onClick={() => { if (callSupply(s)) { sfx('select'); view.current?.syncUnits(); } rerender(); }}>📡</button>}
           <button style={round(showLog)} title="Журнал боя" onClick={() => setShowLog(!showLog)}>📜</button>
           <button style={round(more)} title="Настройки" onClick={() => setMore(!more)}>⚙</button>
         </div>
