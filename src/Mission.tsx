@@ -360,6 +360,20 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     sabotage: `маяки ${s.beacons.filter(b => b.done).length}/${s.beacons.length}`,
   }[s.objective];
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
+  const campHint = (() => {
+    if (!s.huge) return '';
+    const hs = living(s, 'human');
+    if (!hs.length) return '';
+    const cx = hs.reduce((a, h) => a + h.x, 0) / hs.length, cy = hs.reduce((a, h) => a + h.y, 0) / hs.length;
+    const camps = s.units.filter(u => u.team === 'alien' && u.hp > 0 && (u.grp ?? 0) < 500);
+    if (!camps.length) return ' · лагеря зачищены';
+    let best = camps[0];
+    for (const a of camps) if (Math.hypot(a.x - cx, a.y - cy) < Math.hypot(best.x - cx, best.y - cy)) best = a;
+    const dx = best.x - cx, dy = best.y - cy, d = Math.round(Math.hypot(dx, dy) / 10) * 10;
+    const dirs = ['В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ', 'С', 'СВ'];
+    const dir = dirs[Math.round(((Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
+    return ` · лагерей: ${new Set(camps.map(a => a.grp)).size} · ближайший: ${dir} ~${d} кл.`;
+  })();
   const kindName: Record<string, string> = { trooper: 'пехота', heavy: 'тяжёлый', sniper: 'снайпер', psi: 'пси', commander: 'командир' };
   const waveText = (s.objective === 'defend' || s.objective === 'hold') && s.wavePlan?.length
     ? ` · волна: ${[...new Set(s.wavePlan.map(w => kindName[w.kind] ?? w.kind))].join(', ')} ×${s.wavePlan.length} через ${s.rt ? `${Math.max(0, Math.ceil(9 - (s.rt.clock - s.rt.pulseAt)))} с` : `${s.objective === 'defend' && s.turnNo < 2 ? 3 - s.turnNo : 1} ход.`}${s.objective === 'defend' && s.turnNo < 2 ? ' (подготовка)' : ''}`
@@ -438,7 +452,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
       <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? vw(94) : 560, pointerEvents: 'none', textAlign: 'center' }}>
         <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
-          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{waveText}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
+          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{waveText}{campHint}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
         </div>
       </div>
       {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (

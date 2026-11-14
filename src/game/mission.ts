@@ -511,6 +511,14 @@ function createHugeForest(o: MissionOpts): GameState {
     if (cover[y][x] !== 'none' || Math.hypot(x - startX, y - startY) < 60 || pits.some(p => Math.hypot(p.x - x, p.y - y) < 18) || camps.some(c => Math.hypot(c.x - x, c.y - y) < 14)) continue;
     pits.push({ x, y });
   }
+  // тайники снабжения по всей карте: магазины, гранаты и материалы вдали от базы
+  const loot: NonNullable<GameState['loot']> = [];
+  for (let t = 0, want = Math.round(n / 16); loot.length < want && t < want * 30; t++) {
+    const x = 5 + Math.floor(rand(rng) * (n - 10)), y = 5 + Math.floor(rand(rng) * (n - 30));
+    if (cover[y][x] !== 'none' || loot.some(l => Math.hypot(l.x - x, l.y - y) < 12)) continue;
+    const r = rand(rng);
+    loot.push({ x, y, kind: r < 0.4 ? 'mag' : r < 0.7 ? 'gren' : 'mat', n: 1 });
+  }
   const humans = o.soldiers.map((s, i) => human(s, startX - 3 + i * 2, startY, o.tech));
   const aliens: Unit[] = [];
   let id = 1000, tn = 0;
@@ -538,7 +546,7 @@ function createHugeForest(o: MissionOpts): GameState {
     aiming: null, mines: [], barrels: [], fires: [], scorched: grid(n, false), bridges: [], targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: 'clear', markId: null, beacons: [], holdTurns: HOLD_TURNS, zone: null, weather: undefined, sides: 'all', waveBoost: 0,
     log: [`Миссия ${o.missionNo} · Огромный лес ${n}×${n}. Цель: прочесать лес. Пришельцы ждут в лагерях-развалинах и сидят в ямах (${pits.length}), пока не подойдёшь близко. Рекомендуется реальное время.`, `Лагерей: ${camps.length}. Пришельцев: ${aliens.length}.`],
-    rng: rng.rng, boss: false, pits, huge: true, mats: 8, loot: [],
+    rng: rng.rng, boss: false, pits, huge: true, mats: 8, loot,
   };
   return st;
 }

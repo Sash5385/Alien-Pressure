@@ -60,6 +60,7 @@ export class GameView {
   onMiddle?: (down: boolean) => void;
   private recoil = new Map<number, number>();
   private rolls = new Map<number, { t0: number; dur: number }>();
+  private emerges = new Map<number, number>(); // пришелец вылезает из ямы: время начала
   private prints: { m: THREE.Mesh; t0: number }[] = [];
   private printSide = 0;
   private printGeo = new THREE.CircleGeometry(0.07, 8);
@@ -256,6 +257,13 @@ export class GameView {
           const rn = this.rigs.get(id)?.actions.has('Run_Gun') && this.rigs.get(id)?.armed ? 'Run_Gun' : 'Run';
           if (dist > 0.12 && this.rigs.has(id)) this.play(id, rn);
           else if (this.anim.get(id) === 'Run' || this.anim.get(id) === 'Run_Gun') this.play(id, 'Idle');
+        }
+        { // вылезание из ямы: поднимается снизу
+          const et = this.emerges.get(id);
+          if (et !== undefined) {
+            const k = (this.clock.elapsedTime - et) / 0.8;
+            if (k >= 1) this.emerges.delete(id); else m.position.y -= (1 - k) * (1 - k) * 0.9;
+          }
         }
         { // перекат: кувырок вперёд с небольшим прыжком
           const rl = this.rolls.get(id);
@@ -1161,7 +1169,8 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       if (u.hp <= 0 && !this.held.has(u.id)) continue;
       alive.add(u.id);
       let m = this.unitMeshes.get(u.id);
-      if (!m && u.team === 'alien' && !isVisible(this.state, u)) continue; // пришельцев без видимости не создаём (огромные карты: сотни спящих)
+      if (!m && u.team === 'alien' && !isVisible(this.state, u)) continue;
+      const fromPit = !m && u.team === 'alien' && !!this.state.pits?.some(p => p.x === u.x && p.y === u.y); // пришельцев без видимости не создаём (огромные карты: сотни спящих)
       const inTrench = this.state.trenches.some(t => t.x === u.x && t.y === u.y);
       const inWater = this.state.terrain[u.y]?.[u.x] === 'water';
       const goal = new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) - (inTrench && u.hp > 0 ? 0.2 : 0) - (inWater ? 0.3 : 0), u.y + 0.5); // в траншее боец стоит ниже бруствера
@@ -1178,7 +1187,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       this.lastAmmo.set(u.id, u.ammo); this.lastHp.set(u.id, u.hp); this.lastBleed.set(u.id, u.bleeding);
       this.lastStance.set(u.id, u.stance); this.lastOw.set(u.id, u.overwatch);
       if (this.sndReady && q.length && isVisible(this.state, u)) q.forEach((k, i) => setTimeout(() => sfx(k), i * 170));
-      if (!m) { m = this.makeUnit(u); m.rotation.order = 'YXZ'; m.position.copy(goal); m.rotation.y = u.facing; this.unitMeshes.set(u.id, m); this.scene.add(m); }
+      if (!m) { m = this.makeUnit(u); m.rotation.order = 'YXZ'; m.position.copy(goal); m.rotation.y = u.facing; this.unitMeshes.set(u.id, m); this.scene.add(m); if (fromPit) { this.emerges.set(u.id, this.clock.elapsedTime); sfx('emerge'); this.burst(new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) + 0.1, u.y + 0.5), 0x7a6a4a, 18, 2.2, 700); } }
       this.goals.set(u.id, goal);
       m.visible = isVisible(this.state, u);
       if (instant) m.position.copy(goal);
