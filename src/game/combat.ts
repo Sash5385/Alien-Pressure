@@ -107,6 +107,7 @@ export function faceToward(u: Unit, x: number, y: number) {
 
 export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 0): ShotResult {
   faceToward(a, t.x, t.y);
+  if (a.team === 'human') (s.noise ??= []).push({ x: a.x, y: a.y }); // выстрел слышно: ближайшие лагеря просыпаются
   const chance = hitChance(s, a, t, reaction, bonus) ?? 0;
   a.ammo -= 1;
   if (!reaction) a.ap -= 1;
@@ -207,6 +208,7 @@ export function checkEnd(s: GameState) {
   if (s.objective === 'hold' || s.objective === 'defend') { if (s.turnNo > s.holdTurns) s.status = 'won'; return; }
   if (s.objective === 'assassinate') { if (!living(s, 'alien').some(a => a.kind === 'commander')) s.status = 'won'; return; }
   if (s.objective === 'sabotage') { if (s.beacons.length > 0 && s.beacons.every(b => b.done)) s.status = 'won'; return; }
+  if (s.huge) { if (!living(s, 'alien').some(a => (a.grp ?? 0) < 500)) s.status = 'won'; return; } // огромный лес: победа, когда зачищены все лагеря (ямы — по желанию)
   if (living(s, 'alien').length === 0) s.status = 'won';
   else if (s.objective === 'extract' && z && humans.every(h => h.x >= z.x && h.x < z.x + z.w && h.y >= z.y && h.y < z.y + z.h)) s.status = 'won';
 }
@@ -284,6 +286,7 @@ export function throwSmoke(s: GameState, u: Unit, x: number, y: number) {
 export function alienReactions(s: GameState, mover: Unit): ShotResult[] {
   const out: ShotResult[] = [];
   for (const a of living(s, 'alien')) {
+    if (a.dormant) continue;
     if (mover.hp <= 0) break;
     if (!a.overwatch || hitChance(s, a, mover, true) === null) continue;
     a.overwatch = false;
@@ -387,8 +390,24 @@ export function psiAttack(s: GameState, a: Unit, t: Unit): ShotResult {
 export const SIGHT = 12;
 
 /** Пересчёт зоны видимости бойцов (радиус + линия видимости) и карты исследованного. */
+const visMarks = new WeakMap<GameState, number[]>();
 export function updateVision(s: GameState) {
   const n = s.size;
+  if (s.huge) { // огромная карта: сетку не пересоздаём, чистим только прошлые отметки
+    const prev = visMarks.get(s) ?? [];
+    for (const k of prev) s.vis[(k / n) | 0][k % n] = false;
+    const marks: number[] = [];
+    for (const h of living(s, 'human')) {
+      for (let y = Math.max(0, h.y - SIGHT); y <= Math.min(n - 1, h.y + SIGHT); y++) {
+        for (let x = Math.max(0, h.x - SIGHT); x <= Math.min(n - 1, h.x + SIGHT); x++) {
+          if (!s.vis[y][x] && Math.hypot(x - h.x, y - h.y) <= SIGHT && los(s, h, { x, y })) { s.vis[y][x] = true; s.seen[y][x] = true; marks.push(y * n + x); }
+        }
+      }
+    }
+    visMarks.set(s, marks);
+    wakeTick(s);
+    return;
+  }
   const vis = Array.from({ length: n }, () => Array<boolean>(n).fill(false));
   for (const h of living(s, 'human')) {
     for (let y = Math.max(0, h.y - SIGHT); y <= Math.min(n - 1, h.y + SIGHT); y++) {
@@ -399,9 +418,32 @@ export function updateVision(s: GameState) {
   }
   s.vis = vis;
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (vis[y][x]) s.seen[y][x] = true;
+  wakeTick(s);
 }
 
-export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || u.id === s.markId || s.vis[u.y][u.x] || s.revealed.includes(u.id);
+/** Засады: пришельцы в лагерях и ямах спят, пока рядом нет бойцов (12 клеток и видимость, либо 6 клеток) или поблизости не прозвучал выстрел. Просыпается вся группа. */
+export function wakeTick(s: GameState) {
+  const dorm = s.units.filter(u => u.team === 'alien' && u.hp > 0 && u.dormant);
+  if (!dorm.length) { s.noise = []; return; }
+  const hs = living(s, 'human'), noise = s.noise ?? [];
+  const woke = new Set<number>();
+  for (const a of dorm) {
+    if (a.hp < a.maxHp) { woke.add(a.grp ?? a.id); continue; }
+    if (noise.some(q => Math.hypot(q.x - a.x, q.y - a.y) <= 22)) { woke.add(a.grp ?? a.id); continue; }
+    for (const h of hs) {
+      const d = Math.hypot(h.x - a.x, h.y - a.y);
+      if (d <= (a.hidden ? 4.5 : 6) || (!a.hidden && d <= 12 && los(s, a, h))) { woke.add(a.grp ?? a.id); break; }
+    }
+  }
+  s.noise = [];
+  if (!woke.size) return;
+  let count = 0;
+  for (const a of dorm) if (woke.has(a.grp ?? a.id)) { a.dormant = false; a.hidden = false; a.alert = true; count++; }
+  s.revealed = [...new Set([...s.revealed, ...dorm.filter(a => woke.has(a.grp ?? a.id)).map(a => a.id)])];
+  log(s, `Засада! Пришельцы поднялись: ${count}.`);
+}
+
+export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || u.id === s.markId || ((s.vis[u.y][u.x] || s.revealed.includes(u.id)) && !(u.hidden && !living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= 3.2)));
 
 /** Перезарядка: 1 AP; у людей тратит запасной магазин. */
 export function reload(s: GameState, u: Unit): boolean {

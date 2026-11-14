@@ -87,6 +87,9 @@ export interface Unit {
   dest?: { x: number; y: number }; // приказ «идти» (реальное время)
   atk?: number; // приказ «атаковать» (id цели)
   busyRt?: boolean;
+  route?: [number, number][]; // кэш маршрута к далёкой цели (огромные карты)
+  dormant?: boolean; // ждёт засады: не действует, пока рядом нет бойцов
+  hidden?: boolean; // прячется в яме: невидим, пока бойцы не подойдут вплотную
   looted?: boolean; // трофей с этого пришельца уже разыгран // выполняет действие (анимация)
   down?: boolean; // тяжело ранен: лежит, можно поднять
   bleedOut?: number; // ходов до смерти
@@ -133,6 +136,9 @@ export interface GameState {
   boss?: boolean; // миссия с боссом (ликвидация)
   rt?: { speed: 0.5 | 1; paused: boolean; clock: number; pulseAt: number; planAt: number; auto: boolean }; // режим реального времени
   smokes?: { x: number; y: number; ttl: number }[]; // дым: закрывает обзор
+  noise?: { x: number; y: number }[]; // выстрелы бойцов с последней проверки (будят спящих)
+  pits?: { x: number; y: number }[]; // ямы, в которых прячутся пришельцы (огромная карта)
+  huge?: boolean; // огромная карта (лес): кусочная отрисовка, засады
   mats?: number; // стройматериалы: окоп и мешки с песком стоят по 1; пополняются за волны и трофеи
   loot?: { x: number; y: number; kind: 'mag' | 'gren' | 'mat'; n: number }[]; // трофеи с убитых пришельцев
   wavePlan?: { x: number; y: number; kind: UnitKind }[]; // следующая волна: откуда и кто придёт (видно заранее)

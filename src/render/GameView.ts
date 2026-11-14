@@ -9,6 +9,7 @@ import { STEP, type GameState, type Unit } from '../game/types';
 import { buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
 import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
 import { reachable, findPath } from '../game/pathfinding';
@@ -23,6 +24,11 @@ const SPEED = 3.6; // клеток в секунду (было 6,5 — медл�
 const BULLET_SPEED = 18; // клеток/с: пулю видно в полёте (было 60)
 const BURST_GAP = 190; // мс между патронами очереди (было 75)
 const ALIEN_SPEED = 2.2; // пришельцы идут медленнее, чтобы их ход было видно
+const nhash = (a: number, b: number) => { let h = (Math.imul(a, 374761393) + Math.imul(b, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+const vnoise = (x: number, y: number) => {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return (nhash(xi, yi) * (1 - sx) + nhash(xi + 1, yi) * sx) * (1 - sy) + (nhash(xi, yi + 1) * (1 - sx) + nhash(xi + 1, yi + 1) * sx) * sy;
+};
 const CRAWL = 1.1; // ползком лёжа
 const ROLLING = new Set<number>(); // бойцы в перекате: движутся быстро
 const speedOf = (u?: Unit) => (u && ROLLING.has(u.id) ? 7.5 : u?.team === 'alien' ? ALIEN_SPEED : u?.stance === 'prone' ? CRAWL : SPEED);
@@ -47,6 +53,8 @@ export class GameView {
   private rigs = new Map<number, Spawned>();
   private leaves: Leaves | null = null;
   private mistTex: THREE.CanvasTexture | null = null;
+  private skyMesh: THREE.Mesh | null = null;
+  private fogInit = false;
   private middle = false;
   /** Колесо зажато / отпущено: в реальном времени пока зажато — время стоит. */
   onMiddle?: (down: boolean) => void;
@@ -223,6 +231,7 @@ export class GameView {
       const dt = Math.min(0.05, rawDt);
       this.stepRain(dt);
       tickWind(this.clock.elapsedTime);
+      if (this.state.huge) { if (this.skyMesh) this.skyMesh.position.set(this.controls.target.x, 0, this.controls.target.z); this.hugeT += rawDt; if (this.hugeT > 0.15) { this.hugeT = 0; this.updateHuge(); } }
       if (this.prints.length) { const now = this.clock.elapsedTime; this.prints = this.prints.filter(p => { const k = (now - p.t0) / 40; if (k >= 1) { this.scene.remove(p.m); (p.m.material as THREE.Material).dispose(); return false; } (p.m.material as THREE.MeshLambertMaterial).opacity = 0.38 * (1 - k); return true; }); }
       if (this.leaves) { const tr = this.treeSpots.filter(t => this.coverMeshes.has(t.k)); this.leaves.ambient(dt, this.controls.target.x, this.controls.target.z, tr); this.leaves.update(dt); }
       for (const [id, m] of this.unitMeshes) {
@@ -280,7 +289,7 @@ export class GameView {
           m.rotation.y += d * (1 - Math.exp(-10 * dt));
         }
         if (sp?.modBase) { sp.mod.forEach((b, i) => b.quaternion.copy(sp.modBase![i])); sp.modBase = undefined; } // микшер пишет кости только при смене позы
-        this.rigs.get(id)?.mixer.update(dt * TS);
+        if (m.visible) this.rigs.get(id)?.mixer.update(dt * TS);
         if (sp && u && !this.dying.has(id)) { sp.modBase = sp.mod.map(b => b.quaternion.clone()); const pk = Math.max(0, sp.inner.rotation.x - 0.1) / 1.35; this.proneArms(sp, pk); this.lookAtTarget(sp, m, u, id, dt, pk); applyTwoHands(sp); }
       }
       const tt = this.clock.elapsedTime;
@@ -349,7 +358,7 @@ export class GameView {
 
   /** Дома: целые (деревня в лесу и у реки) или разрушенные (руины). Полное укрытие, не разрушаются. */
   private buildHouses() {
-    const ruined = this.state.biome === 'ruins';
+    const ruined = this.state.biome === 'ruins' || !!this.state.huge;
     const walls = [0xcfc3a8, 0xb8a58a, 0xd9cdb4, 0xa79883];
     this.state.houses.forEach((hs, i) => {
       const g = new THREE.Group();
@@ -514,13 +523,208 @@ export class GameView {
   private static readonly RIM = 7;
 
   private buildGround() {
+    this.computeSg();
+    if (this.state.huge) { this.setupHuge(); return; }
+    const B = GameView.RIM, N = this.state.size + 2 * B, n = this.state.size;
+    const geo = this.groundGeo(-B, -B, n + B, n + B, n > 50 ? 2 : 3);
+    this.ground.geometry.dispose();
+    this.ground.geometry = geo;
+    this.tileGeos.clear();
+    void N;
+  }
+
+  /** Геометрия земли для прямоугольника мира [x0,x1]×[z0,z1]: вершины с мягкой высотой, цветом и маской грунта/песка. */
+  private groundGeo(x0: number, z0: number, x1: number, z1: number, sub: number) {
+    const n = this.state.size, B = GameView.RIM;
+    const VX = Math.round((x1 - x0) * sub) + 1, VZ = Math.round((z1 - z0) * sub) + 1;
+    const pos: number[] = [], uvs: number[] = [], cols: number[] = [], idx: number[] = [], sand: number[] = [], nrm: number[] = [];
+    const sstep = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) {
+      const wx = x0 + vi / sub, wz = z0 + vj / sub;
+      const h = this.hs(wx, wz);
+      pos.push(wx, h, wz); uvs.push(wx / 4, wz / 4);
+      const e = 0.35, dhx = (this.hs(wx + e, wz) - this.hs(wx - e, wz)) / (2 * e), dhz = (this.hs(wx, wz + e) - this.hs(wx, wz - e)) / (2 * e), gx = dhx / STEP, gz = dhz / STEP;
+      const nl = Math.hypot(dhx, 1, dhz); nrm.push(-dhx / nl, 1 / nl, -dhz / nl);
+      const slope = Math.hypot(gx, gz);
+      const dx = Math.max(0.5 - wx, 0, wx - (n - 0.5)), dz = Math.max(0.5 - wz, 0, wz - (n - 0.5)), d = Math.hypot(dx, dz);
+      const tone = (0.88 + (vnoise(wx * 0.6, wz * 0.6) - 0.5) * 0.18 + Math.max(-0.1, Math.min(0.14, h / STEP * 0.05))) * (1 - Math.min(0.55, d / B * 0.55));
+      const f = Math.min(1, slope * 0.9);
+      cols.push(tone * (1 + 0.22 * f), tone * (1 - 0.08 * f), tone * (1 - 0.28 * f));
+      const dry = sstep(0.58, 0.84, vnoise(wx * 0.16 + 9, wz * 0.16 + 4)) * 0.4 + sstep(0.5, 1.4, slope) * 0.3;
+      const shore = sstep(-0.62, -0.4, h) * (1 - sstep(-0.22, -0.05, h));
+      sand.push(Math.min(0.92, Math.max(dry, shore * 0.95)));
+    }
+    for (let vj = 0; vj < VZ - 1; vj++) for (let vi = 0; vi < VX - 1; vi++) {
+      const a = vj * VX + vi, b = a + 1, c = a + VX, d = c + 1;
+      if ((vi + vj) % 2 === 0) idx.push(a, c, b, b, c, d); else idx.push(a, c, d, a, d, b);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    geo.setAttribute('sand', new THREE.Float32BufferAttribute(sand, 1));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setIndex(idx);
+    return geo;
+  }
+
+  // ---------- огромная карта: земля, лес и трава кусками вокруг камеры ----------
+  private static readonly CH = 32;
+  private groundGroup = new THREE.Group();
+  private chunks = new Map<string, { terrain: THREE.Mesh; objs: THREE.Object3D[]; grass: THREE.Object3D | null; sig: number }>();
+  private hugeT = 0; private hugeSigT = 0;
+  private treeGeo!: THREE.BufferGeometry; private treeMat!: THREE.Material;
+  private bushGeo!: THREE.BufferGeometry; private rockGeo!: THREE.BufferGeometry; private boxGeo!: THREE.BufferGeometry;
+  private bushMat!: THREE.Material; private rockMat!: THREE.Material; private boxMat!: THREE.Material; private grassMat!: THREE.Material; private grassGeo!: THREE.BufferGeometry;
+
+  private setupHuge() {
+    this.ground.visible = false;
+    this.scene.add(this.groundGroup);
+    const col = (g: THREE.BufferGeometry, c: number) => { const k = new THREE.Color(c), a: number[] = []; for (let i = 0; i < g.attributes.position.count; i++) a.push(k.r, k.g, k.b); g.setAttribute('color', new THREE.Float32BufferAttribute(a, 3)); return g; };
+    const trunk = col(new THREE.CylinderGeometry(0.07, 0.11, 0.8, 6).translate(0, 0.4, 0), 0x5a3f25);
+    const c1 = col(new THREE.ConeGeometry(0.55, 1.1, 7).translate(0, 1.0, 0), 0x3f7a2e);
+    const c2 = col(new THREE.ConeGeometry(0.38, 0.9, 7).translate(0, 1.6, 0), 0x4a8a30);
+    this.treeGeo = mergeGeometries([trunk, c1, c2])!;
+    this.treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
+    sway(this.treeMat, { amp: 0.05, h: 2.1, base: 0, oh: 2.1 });
+    this.bushGeo = new THREE.IcosahedronGeometry(0.42, 0); this.bushGeo.scale(1.1, 0.8, 1.1); this.bushGeo.translate(0, 0.3, 0);
+    this.bushMat = new THREE.MeshStandardMaterial({ color: 0x3f7a2e, flatShading: true }); sway(this.bushMat, { amp: 0.025, h: 0.7, base: 0, oh: 0.7 });
+    this.rockGeo = new THREE.IcosahedronGeometry(0.5, 0); this.rockGeo.scale(1.05, 0.8, 0.95); this.rockGeo.translate(0, 0.28, 0);
+    this.rockMat = new THREE.MeshStandardMaterial({ color: 0x7d7a72, roughness: 1, flatShading: true });
+    this.boxGeo = new THREE.BoxGeometry(0.9, 1, 0.9).translate(0, 0.5, 0);
+    this.boxMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+    this.grassGeo = new THREE.ConeGeometry(0.05, 0.3, 4);
+    this.grassMat = new THREE.MeshStandardMaterial({ roughness: 1 }); sway(this.grassMat, { amp: 0.07, h: 1 });
+    const fog = this.scene.fog as THREE.Fog; fog.near = 45; fog.far = 135;
+    // ямы: тёмный круг и земляной вал
+    const pits = this.state.pits ?? [];
+    if (pits.length) {
+      const disc = new THREE.InstancedMesh(new THREE.CircleGeometry(0.5, 14).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x14100a }), pits.length);
+      const ring = new THREE.InstancedMesh(new THREE.RingGeometry(0.5, 0.8, 14).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5d4a30, roughness: 1 }), pits.length);
+      const m4 = new THREE.Matrix4();
+      pits.forEach((p, i) => { m4.setPosition(p.x + 0.5, this.hy(p.x, p.y) + 0.04, p.y + 0.5); disc.setMatrixAt(i, m4); m4.setPosition(p.x + 0.5, this.hy(p.x, p.y) + 0.06, p.y + 0.5); ring.setMatrixAt(i, m4); });
+      disc.frustumCulled = ring.frustumCulled = false;
+      this.scene.add(disc, ring);
+    }
+    this.updateHuge(true);
+  }
+
+  private chunkKey = (cx: number, cz: number) => `${cx},${cz}`;
+
+  /** Кусок земли и объекты (деревья, кусты, камни, ящики) в клетках [x0,x1)×[z0,z1). */
+  private buildChunkObjects(cx: number, cz: number) {
+    const s = this.state, n = s.size, CH = GameView.CH;
+    const x0 = Math.max(0, cx * CH), x1 = Math.min(n, (cx + 1) * CH), z0 = Math.max(0, cz * CH), z1 = Math.min(n, (cz + 1) * CH);
+    const lists: Record<string, { x: number; y: number }[]> = { tree: [], bush: [], rock: [], crate: [], container: [] };
+    let sig = 0;
+    for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) {
+      if (s.cover[y][x] === 'none') continue;
+      const l = s.look[y][x];
+      if (lists[l]) { lists[l].push({ x, y }); sig++; }
+    }
+    const objs: THREE.Object3D[] = [];
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
+    const make = (geo: THREE.BufferGeometry, mat: THREE.Material, list: { x: number; y: number }[], f: (t: { x: number; y: number }, i: number) => { sx: number; sy: number; color?: number }, shadow = false) => {
+      if (!list.length) return;
+      const im = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((t, i) => {
+        const r = f(t, i), yaw = nhash(t.x * 7 + 1, t.y * 13 + 5) * 6.28;
+        q.setFromEuler(e.set(0, yaw, 0)); v.set(t.x + 0.5, this.hy(t.x, t.y), t.y + 0.5); sc.set(r.sx, r.sy, r.sx);
+        im.setMatrixAt(i, m4.compose(v, q, sc));
+        if (r.color !== undefined) im.setColorAt(i, c.set(r.color));
+      });
+      im.castShadow = shadow; im.receiveShadow = true;
+      im.computeBoundingSphere();
+      this.scene.add(im); objs.push(im);
+    };
+    const greens = [0xb8c8b0, 0xffffff, 0xd8e8c8, 0xa8d090];
+    make(this.treeGeo, this.treeMat, lists.tree, t => { const k = 0.85 + nhash(t.x, t.y * 3) * 0.5; return { sx: k, sy: k * (0.9 + nhash(t.y, t.x) * 0.3), color: greens[(t.x + t.y) % 4] }; }, true);
+    make(this.bushGeo, this.bushMat, lists.bush, t => ({ sx: 0.9 + nhash(t.x, t.y) * 0.4, sy: 1 }));
+    make(this.rockGeo, this.rockMat, lists.rock, (t) => { const full = s.cover[t.y][t.x] === 'full'; return { sx: full ? 1.1 : 0.85, sy: full ? 1.9 : 1 }; }, true);
+    make(this.boxGeo, this.boxMat, lists.crate, () => ({ sx: 0.85, sy: 0.7, color: 0xb0743a }), true);
+    make(this.boxGeo, this.boxMat, lists.container, () => ({ sx: 1, sy: 1.5, color: 0x4a5a78 }), true);
+    return { objs, sig };
+  }
+
+  private buildGrass(cx: number, cz: number) {
+    const s = this.state, n = s.size, CH = GameView.CH;
+    const x0 = Math.max(0, cx * CH), x1 = Math.min(n, (cx + 1) * CH), z0 = Math.max(0, cz * CH), z1 = Math.min(n, (cz + 1) * CH);
+    const spots: [number, number][] = [];
+    for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) {
+      if (s.cover[y][x] !== 'none' || s.terrain[y][x] === 'water') continue;
+      for (let i = 0; i < 3; i++) if (nhash(x * 3 + i, y * 5 + 11) < 0.7) spots.push([x + nhash(x + i * 31, y), y + nhash(y + i * 17, x)]);
+    }
+    if (!spots.length) return null;
+    const im = new THREE.InstancedMesh(this.grassGeo, this.grassMat, spots.length);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
+    const cols = [0x4f8a2a, 0x5f9a34, 0x3f7a22, 0x7bb33f];
+    spots.forEach(([px, pz], i) => {
+      const k = 0.7 + nhash(i, x0 + z0) * 0.9;
+      q.setFromEuler(e.set((nhash(i, 3) - 0.5) * 0.3, nhash(i, 9) * 6, (nhash(i, 5) - 0.5) * 0.3)); v.set(px, 0.13 * k + this.hs(px, pz), pz); sc.set(1, k, 1);
+      im.setMatrixAt(i, m4.compose(v, q, sc)); im.setColorAt(i, c.set(cols[i % 4]));
+    });
+    im.computeBoundingSphere();
+    this.scene.add(im);
+    return im;
+  }
+
+  private disposeChunk(k: string) {
+    const ch = this.chunks.get(k);
+    if (!ch) return;
+    this.groundGroup.remove(ch.terrain); ch.terrain.geometry.dispose();
+    for (const o of ch.objs) { this.scene.remove(o); (o as THREE.InstancedMesh).dispose?.(); }
+    if (ch.grass) { this.scene.remove(ch.grass); (ch.grass as THREE.InstancedMesh).dispose?.(); }
+    this.chunks.delete(k);
+  }
+
+  /** Подгрузка и выгрузка кусков вокруг камеры; перестройка кусков, где разрушили укрытия. */
+  private updateHuge(first = false) {
+    const CH = GameView.CH, n = this.state.size, B = GameView.RIM, t = this.controls.target;
+    const ccx = Math.floor(t.x / CH), ccz = Math.floor(t.z / CH), R = 4, RG = 2;
+    const need: [number, number, number][] = [];
+    for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
+      const cx = ccx + dx, cz = ccz + dz;
+      if ((cx + 1) * CH <= -B || cx * CH >= n + B || (cz + 1) * CH <= -B || cz * CH >= n + B) continue;
+      need.push([cx, cz, dx * dx + dz * dz]);
+    }
+    need.sort((a, b) => a[2] - b[2]);
+    let budget = first ? 40 : 3;
+    const keep = new Set<string>();
+    for (const [cx, cz, d2] of need) {
+      const k = this.chunkKey(cx, cz); keep.add(k);
+      let ch = this.chunks.get(k);
+      if (!ch) {
+        if (budget <= 0) continue;
+        budget--;
+        const x0 = Math.max(-B, cx * CH), x1 = Math.min(n + B, (cx + 1) * CH), z0 = Math.max(-B, cz * CH), z1 = Math.min(n + B, (cz + 1) * CH);
+        const mesh = new THREE.Mesh(this.groundGeo(x0, z0, x1, z1, 2), this.ground.material);
+        mesh.receiveShadow = true; this.groundGroup.add(mesh);
+        const ob = this.buildChunkObjects(cx, cz);
+        ch = { terrain: mesh, objs: ob?.objs ?? [], grass: null, sig: ob?.sig ?? 0 };
+        this.chunks.set(k, ch);
+      }
+      if (d2 <= RG * RG * 2 && !ch.grass && cx >= 0 && cz >= 0 && budget >= 0) { ch.grass = this.buildGrass(cx, cz); budget--; }
+      else if (d2 > RG * RG * 2 + 4 && ch.grass) { this.scene.remove(ch.grass); (ch.grass as THREE.InstancedMesh).dispose?.(); ch.grass = null; }
+    }
+    for (const k of [...this.chunks.keys()]) if (!keep.has(k)) this.disposeChunk(k);
+    // разрушенное укрытие: перестраиваем объекты куска
+    if (this.clock.elapsedTime - this.hugeSigT > 1) {
+      this.hugeSigT = this.clock.elapsedTime;
+      for (const [k, ch] of this.chunks) {
+        const [cx, cz] = k.split(',').map(Number);
+        if (cx < 0 || cz < 0) continue;
+        let sig = 0;
+        const x0 = cx * CH, x1 = Math.min(n, x0 + CH), z0 = cz * CH, z1 = Math.min(n, z0 + CH);
+        for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) if (this.state.cover[y][x] !== 'none' && ['tree', 'bush', 'rock', 'crate', 'container'].includes(this.state.look[y][x])) sig++;
+        if (sig !== ch.sig) { for (const o of ch.objs) { this.scene.remove(o); (o as THREE.InstancedMesh).dispose?.(); } const ob = this.buildChunkObjects(cx, cz); ch.objs = ob?.objs ?? []; ch.sig = ob?.sig ?? 0; }
+      }
+    }
+  }
+
+  /** Размытая сетка высот (центры клеток + кольцо вокруг карты). */
+  private computeSg() {
     const { size: n, height, terrain } = this.state;
     const B = GameView.RIM, N = n + 2 * B;
-    const hash = (a: number, b: number) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >> 13)) * 1274126177; return ((h ^ (h >> 16)) >>> 0) / 4294967295; };
-    const vnoise = (x: number, y: number) => {
-      const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-      return (hash(xi, yi) * (1 - sx) + hash(xi + 1, yi) * sx) * (1 - sy) + (hash(xi, yi + 1) * (1 - sx) + hash(xi + 1, yi + 1) * sx) * sy;
-    };
     let H = new Float32Array(N * N);
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const gi = i - B, gj = j - B, ci = Math.max(0, Math.min(n - 1, gi)), cj = Math.max(0, Math.min(n - 1, gj));
@@ -530,12 +734,12 @@ export class GameView {
         const r = d / B;
         h -= 1.7 * Math.pow(r, 1.4) + 0.9 * r * (vnoise(gi * 0.32, gj * 0.32) - 0.35) + 0.35 * (vnoise(gi * 0.9, gj * 0.9) - 0.5) * r + 0.1 * d;
       } else {
-        h += (vnoise(gi * 0.5, gj * 0.5) - 0.5) * 0.12 + (vnoise(gi * 1.3, gj * 1.3) - 0.5) * 0.03; // пологие кочки
-        if (terrain[cj][ci] === 'water') h -= 1.4 + (vnoise(gi * 0.7, gj * 0.7) - 0.5) * 0.3; // русло (после размытия берег плавный)
+        h += (vnoise(gi * 0.5, gj * 0.5) - 0.5) * 0.12 + (vnoise(gi * 1.3, gj * 1.3) - 0.5) * 0.03;
+        if (terrain[cj][ci] === 'water') h -= 1.4 + (vnoise(gi * 0.7, gj * 0.7) - 0.5) * 0.3;
       }
       H[j * N + i] = h;
     }
-    for (let pass = 0; pass < 2; pass++) { // размытие [1 2 1]: ступени превращаются в длинные пологие склоны
+    for (let pass = 0; pass < 2; pass++) {
       const T = new Float32Array(N * N);
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const l = H[j * N + Math.max(0, i - 1)], c = H[j * N + i], r = H[j * N + Math.min(N - 1, i + 1)]; T[j * N + i] = (l + 2 * c + r) / 4; }
       const U = new Float32Array(N * N);
@@ -543,38 +747,6 @@ export class GameView {
       H = U;
     }
     this.sg = H; this.sgN = N;
-    // сетка вершин: 3 на клетку (2 на большой карте), высота — гладкая интерполяция размытых центров
-    const sub = n > 50 ? 2 : 3, V = N * sub + 1, pos: number[] = [], uvs: number[] = [], cols: number[] = [], idx: number[] = [], sand: number[] = [];
-    const sstep = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-    for (let vj = 0; vj < V; vj++) for (let vi = 0; vi < V; vi++) {
-      const wx = -B + vi / sub, wz = -B + vj / sub; // мир: клетка i занимает [i, i+1)
-      const h = this.hs(wx, wz);
-      pos.push(wx, h, wz); uvs.push(wx / 4, wz / 4);
-      const e = 0.35, gx = (this.hs(wx + e, wz) - this.hs(wx - e, wz)) / (2 * e) / STEP, gz = (this.hs(wx, wz + e) - this.hs(wx, wz - e)) / (2 * e) / STEP;
-      const slope = Math.hypot(gx, gz); // крутизна: склоны темнее и теплее
-      const dx = Math.max(0.5 - wx, 0, wx - (n - 0.5)), dz = Math.max(0.5 - wz, 0, wz - (n - 0.5)), d = Math.hypot(dx, dz);
-      const tone = (0.88 + (vnoise(wx * 0.6, wz * 0.6) - 0.5) * 0.18 + Math.max(-0.1, Math.min(0.14, h / STEP * 0.05))) * (1 - Math.min(0.55, d / B * 0.55));
-      const f = Math.min(1, slope * 0.9);
-      cols.push(tone * (1 + 0.22 * f), tone * (1 - 0.08 * f), tone * (1 - 0.28 * f));
-      // плавные границы местности: сухие пролысины грунта по крупному шуму, на склонах грунт проступает, у воды влажный песок
-      const dry = sstep(0.58, 0.84, vnoise(wx * 0.16 + 9, wz * 0.16 + 4)) * 0.4 + sstep(0.5, 1.4, slope) * 0.3;
-      const shore = sstep(-0.62, -0.4, h) * (1 - sstep(-0.22, -0.05, h)); // узкая полоса вокруг уровня воды (−0,3)
-      sand.push(Math.min(0.92, Math.max(dry, shore * 0.95)));
-    }
-    for (let vj = 0; vj < V - 1; vj++) for (let vi = 0; vi < V - 1; vi++) {
-      const a = vj * V + vi, b = a + 1, c = a + V, d = c + 1;
-      if ((vi + vj) % 2 === 0) idx.push(a, c, b, b, c, d); else idx.push(a, c, d, a, d, b);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-    geo.setAttribute('sand', new THREE.Float32BufferAttribute(sand, 1));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    this.ground.geometry.dispose();
-    this.ground.geometry = geo;
-    this.tileGeos.clear();
   }
 
   /** Высота рельефа в точке мира: плавная (smoothstep) интерполяция между центрами клеток размытой сетки. */
@@ -646,7 +818,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     ground.needsUpdate = true;
     this.buildGround();
     // дальний план и небо, туман в цвет горизонта
-    const outer = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), new THREE.MeshStandardMaterial({ color: pal.outer, roughness: 1 }));
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(this.state.huge ? n + 600 : 260, this.state.huge ? n + 600 : 260), new THREE.MeshStandardMaterial({ color: pal.outer, roughness: 1 }));
     outer.rotation.x = -Math.PI / 2;
     outer.position.set(n / 2, -0.75, n / 2);
     outer.receiveShadow = true;
@@ -662,6 +834,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     );
     sky.position.set(n / 2, 0, n / 2);
     sky.renderOrder = -10;
+    this.skyMesh = sky;
     this.scene.add(sky);
     this.scene.background = new THREE.Color(pal.hor);
     (this.scene.fog as THREE.Fog).color.set(pal.hor);
@@ -687,8 +860,9 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     // трава: небольшие конусы на свободных клетках (в руинах — редкая и сухая)
     const dense = biome !== 'ruins';
     const spots: [number, number][] = [];
+    if (this.state.huge) spots.length = 0;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-      if (cover[y][x] !== 'none' || terrain[y][x] === 'water') continue;
+      if (this.state.huge || cover[y][x] !== 'none' || terrain[y][x] === 'water') continue;
       const k = dense ? 4 : 1;
       for (let i = 0; i < k; i++) if (Math.random() < (dense ? 0.8 : 0.35)) spots.push([x + Math.random(), y + Math.random()]);
     }
@@ -732,6 +906,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
   }
 
   private buildCover() {
+    if (this.state.huge) return; // огромная карта: объекты строятся кусками вместе с землёй
     const { cover, size, look } = this.state;
     const mat = { half: new THREE.MeshStandardMaterial({ color: 0x6b6254 }), full: new THREE.MeshStandardMaterial({ color: 0x4a4f57 }) };
     const boxOf = (t: 'half' | 'full', x: number, y: number) => {
@@ -986,6 +1161,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       if (u.hp <= 0 && !this.held.has(u.id)) continue;
       alive.add(u.id);
       let m = this.unitMeshes.get(u.id);
+      if (!m && u.team === 'alien' && !isVisible(this.state, u)) continue; // пришельцев без видимости не создаём (огромные карты: сотни спящих)
       const inTrench = this.state.trenches.some(t => t.x === u.x && t.y === u.y);
       const inWater = this.state.terrain[u.y]?.[u.x] === 'water';
       const goal = new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) - (inTrench && u.hp > 0 ? 0.2 : 0) - (inWater ? 0.3 : 0), u.y + 0.5); // в траншее боец стоит ниже бруствера
@@ -1390,6 +1566,17 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
   /** Туман войны: неисследованное тёмное, исследованное притемнено, видимое чистое. */
   private updateFog() {
     const { size: n, vis, seen } = this.state;
+    if (this.state.huge) { // огромная карта: пересчитываем туман только в окнах вокруг бойцов
+      if (!this.fogInit) { this.fogInit = true; for (let i = 3; i < this.fogData.length; i += 4) this.fogData[i] = 115; }
+      for (const u of this.state.units) {
+        if (u.team !== 'human' || u.hp <= 0) continue;
+        for (let y = Math.max(0, u.y - 18); y <= Math.min(n - 1, u.y + 18); y++) for (let x = Math.max(0, u.x - 18); x <= Math.min(n - 1, u.x + 18); x++) {
+          this.fogData[((n - 1 - y) * n + x) * 4 + 3] = vis[y][x] ? 0 : seen[y][x] ? 40 : 115;
+        }
+      }
+      this.fogTex.needsUpdate = true;
+      return;
+    }
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
       const i = ((n - 1 - y) * n + x) * 4;
       this.fogData[i + 3] = vis[y][x] ? 0 : seen[y][x] ? 40 : 115;
@@ -1436,7 +1623,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     for (const o of s.units) if (o.hp > 0 && o.team === 'human' && o.dest) {
       this.ring(o.dest.x, o.dest.y, 0x4fd7ff, 0.18, 0.28);
       if (s.rt) { // линия пути до цели приказа
-        const path = findPath(s, o.x, o.y, o.dest.x, o.dest.y, 80);
+        const path = s.huge ? (o.route ?? []) : findPath(s, o.x, o.y, o.dest.x, o.dest.y, 80);
         if (path.length) {
           const pts = [new THREE.Vector3(o.x + 0.5, this.hy(o.x, o.y) + 0.1, o.y + 0.5), ...path.map(([x, y]) => new THREE.Vector3(x + 0.5, this.hy(x, y) + 0.1, y + 0.5))];
           const geo = new THREE.BufferGeometry().setFromPoints(pts);
@@ -1828,7 +2015,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
   private tileAt(e: PointerEvent): { x: number; y: number } | null {
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera);
-    const hit = this.ray.intersectObject(this.ground)[0];
+    const hit = this.ray.intersectObject(this.state.huge ? this.groundGroup : this.ground, true)[0];
     return hit ? { x: Math.floor(hit.point.x), y: Math.floor(hit.point.z) } : null;
   }
 
@@ -1864,6 +2051,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       this.setHover({ sx, sy, text: ch === null ? `${at.name} · нет линии огня` : `${at.name} · шанс ${ch}%${cs ? ` · укрытие −${cs.bonus}%` : ch !== null && isFlanked(s, u, at) ? ' · фланг +10%' : ''}` });
       return;
     }
+    if (s.huge && s.rt && !at) { this.setHover({ sx, sy, text: s.cover[t.y]?.[t.x] === 'none' ? `до цели ${Math.round(Math.hypot(t.x - u.x, t.y - u.y))} кл.` : 'занято' }); return; }
     if (!at && (s.rt || u.ap > 0) && reachable(s, u.x, u.y, s.rt ? 80 : moveRange(u)).has(`${t.x},${t.y}`)) {
       const path = findPath(s, u.x, u.y, t.x, t.y, s.rt ? 80 : moveRange(u));
       if (path.length) {
@@ -1931,7 +2119,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     if (s.turn !== 'human' || (s.busy && !s.rt) || s.status !== 'playing') return;
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera);
-    const hit = this.ray.intersectObject(this.ground)[0];
+    const hit = this.ray.intersectObject(this.state.huge ? this.groundGroup : this.ground, true)[0];
     if (!hit) return;
     const x = Math.floor(hit.point.x), y = Math.floor(hit.point.z);
     if (s.turning) {
@@ -1963,7 +2151,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     else if (at?.team === 'alien') { if (sel) { s.targetId = at.id; s.targetBarrel = null; if (s.rt && !sel.down) { orderAttack(sel, at); sfx('click'); } } }
     else if (barrelAt(s, x, y)) { if (sel) { s.targetBarrel = { x, y }; s.targetId = null; } }
     else if (s.rt) { // реальное время: приказ идти
-      if (sel && !sel.down && reachable(s, sel.x, sel.y, 80).has(`${x},${y}`)) { orderMove(sel, x, y); s.targetId = null; sfx('click'); }
+      if (sel && !sel.down && (s.huge ? (s.cover[y]?.[x] === 'none' && s.terrain[y]?.[x] === 'ground') : reachable(s, sel.x, sel.y, 80).has(`${x},${y}`))) { orderMove(sel, x, y); s.targetId = null; sfx('click'); }
     }
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
       const before = { id: sel.id, x: sel.x, y: sel.y, ap: sel.ap, stance: sel.stance, overwatch: sel.overwatch, facing: sel.facing };

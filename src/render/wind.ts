@@ -13,12 +13,12 @@ export function windBlast(x: number, z: number, power: number) {
 
 /** Качание материала. ground — высота земли у основания (для деревьев и кустов: качается верх, считая по миру);
  * без неё высота берётся по локальной y вершины от -0.15 до 0.15 (трава). */
-export function sway(mat: THREE.Material, o: { amp: number; h: number; ground?: number }) {
+export function sway(mat: THREE.Material, o: { amp: number; h: number; ground?: number; base?: number; oh?: number }) {
   const worldMode = o.ground !== undefined;
   mat.customProgramCacheKey = () => (worldMode ? 'swayW' : 'swayO');
   mat.onBeforeCompile = sh => {
     sh.uniforms.uTime = WIND.uTime; sh.uniforms.uBlast = WIND.uBlast;
-    sh.uniforms.uAmp = { value: o.amp }; sh.uniforms.uH = { value: o.h }; sh.uniforms.uGround = { value: o.ground ?? 0 };
+    sh.uniforms.uAmp = { value: o.amp }; sh.uniforms.uH = { value: worldMode ? o.h : (o.oh ?? 0.3) }; sh.uniforms.uGround = { value: worldMode ? o.ground ?? 0 : (o.base ?? 0.15) };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime; uniform vec4 uBlast[4]; uniform float uAmp, uH, uGround;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -28,7 +28,7 @@ export function sway(mat: THREE.Material, o: { amp: number; h: number; ground?: 
   sm = modelMatrix * instanceMatrix;
   #endif
   vec3 bw = sm[3].xyz;
-  ${worldMode ? 'float hh = clamp(((sm * vec4(transformed, 1.0)).y - uGround) / uH, 0.0, 1.0);' : 'float hh = clamp((position.y + 0.15) / 0.3, 0.0, 1.0);'}
+  ${worldMode ? 'float hh = clamp(((sm * vec4(transformed, 1.0)).y - uGround) / uH, 0.0, 1.0);' : 'float hh = clamp((position.y + uGround) / uH, 0.0, 1.0);'}
   hh *= hh;
   float ph = bw.x * 0.7 + bw.z * 0.5;
   float w = sin(uTime * 1.3 + ph) * 0.5 + sin(uTime * 2.3 + ph * 1.7) * 0.25 + 0.35 * sin(uTime * 0.45 + bw.x * 0.12 + bw.z * 0.1);

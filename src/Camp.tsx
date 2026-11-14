@@ -116,8 +116,8 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         <button style={{ ...btn(!c.rt), padding: '4px 10px', fontSize: 12 }} onClick={() => act(x => setRt(x, false))}>Пошаговый</button>
         <button style={{ ...btn(c.rt), padding: '4px 10px', fontSize: 12 }} title="Время идёт само, пауза на пробел, скорость ×0.5 или ×1" onClick={() => act(x => setRt(x, true))}>Реальное время</button>
         <span style={{ opacity: 0.7, marginLeft: 10 }}>Размер карты:</span>
-        {([44, 64] as const).map(n => (
-          <button key={n} style={{ ...btn(c.mapSize === n), padding: '4px 10px', fontSize: 12 }} onClick={() => act(x => setMapSize(x, n))}>{n === 44 ? 'Средняя 44×44' : 'Большая 64×64'}</button>
+        {([44, 64, 640, 1024] as const).map(n => (
+          <button key={n} style={{ ...btn(c.mapSize === n), padding: '4px 10px', fontSize: 12 }} title={n >= 640 ? 'Огромный лес: пришельцы ждут в лагерях-развалинах и сидят в ямах, пока не подойдёшь. Только реальное время, без сохранения посреди миссии' : undefined} onClick={() => act(x => setMapSize(x, n))}>{n === 44 ? 'Средняя 44×44' : n === 64 ? 'Большая 64×64' : n === 640 ? 'Огромный лес 640×640' : 'Гигант 1024×1024'}</button>
         ))}
       </div>
 

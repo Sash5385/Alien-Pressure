@@ -37,7 +37,7 @@ export function App() {
       <Mission
         key={c.missionNo + ':' + mission.run}
         initial={mission.state}
-        onSave={s => saveMission({ state: s, deployed: mission.deployed, before: mission.before })}
+        onSave={s => { if (!s.huge) saveMission({ state: s, deployed: mission.deployed, before: mission.before }); }}
         onExit={(s, repeat) => {
           clearMission();
           if (repeat) { launch(mission.before, mission.deployed); return; }

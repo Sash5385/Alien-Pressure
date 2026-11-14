@@ -57,7 +57,7 @@ export interface MissionOpts {
   missionNo: number;
   objective: Objective;
   biome: Biome;
-  size?: 44 | 64;
+  size?: number;
   variant?: number;
   boss?: boolean;
   risky?: boolean;
@@ -278,6 +278,7 @@ function fortify(g: Grids, n: number, kind: typeof DEFEND_KINDS[number]['geo'], 
 }
 
 export function createMission(o: MissionOpts): GameState {
+  if ((o.size ?? 0) >= 256) return createHugeForest(o);
   const rng = { rng: o.rng };
   const n = o.size ?? MAP_SIZE, cx = n >> 1;
   const zone: Zone | null = o.objective === 'extract'
@@ -451,4 +452,93 @@ export function reinforce(s: GameState) {
   s.mats = (s.mats ?? 0) + 2; // снабжение после каждой волны
   log(s, s.objective === 'defend' ? `Волна пришельцев: ${spawned}! Снабжение: +2 материала.` : 'Подкрепление пришельцев!');
   planWave(s);
+}
+
+
+// ---------- ОГРОМНЫЙ ЛЕС ----------
+const hhash = (a: number, b: number, seed: number) => { let h = (Math.imul(a, 374761393) + Math.imul(b, 668265263) + Math.imul(seed, 1597334677)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+const hnoise = (x: number, y: number, seed: number) => {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return (hhash(xi, yi, seed) * (1 - sx) + hhash(xi + 1, yi, seed) * sx) * (1 - sy) + (hhash(xi, yi + 1, seed) * (1 - sx) + hhash(xi + 1, yi + 1, seed) * sx) * sy;
+};
+
+/** Огромная карта (до 1024): лес, холмы и поляны; развалины-лагеря и ямы, где пришельцы ждут засады. Линейная по размеру генерация. */
+function createHugeForest(o: MissionOpts): GameState {
+  const n = o.size!, seed = o.rng & 0xffff, rng = { rng: o.rng };
+  const cover: Cover[][] = grid(n, 'none' as Cover), terrain: Terrain[][] = grid(n, 'ground' as Terrain), look: Look[][] = grid(n, '' as Look), height: number[][] = grid(n, 0);
+  const houses: House[] = [];
+  // холмы: крупный и средний шум
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const v = hnoise(x / 70, y / 70, seed) * 0.65 + hnoise(x / 24, y / 24, seed + 3) * 0.35;
+    height[y][x] = v < 0.42 ? 0 : v < 0.55 ? 1 : v < 0.66 ? 2 : 3;
+  }
+  const startX = n >> 1, startY = n - 6;
+  const clear = (x: number, y: number) => Math.hypot(x - startX, y - startY) < 16; // посадочная поляна
+  // лес: густота по шуму, поляны и чащи
+  for (let y = 2; y < n - 2; y++) for (let x = 1; x < n - 1; x++) {
+    if (clear(x, y)) continue;
+    const d = hnoise(x / 40, y / 40, seed + 11) * 0.7 + hnoise(x / 9, y / 9, seed + 17) * 0.3;
+    const r = hhash(x, y, seed + 5);
+    if (r < Math.max(0, d - 0.38) * 0.55) { const tree = hhash(x, y, seed + 9) < 0.72; cover[y][x] = tree ? 'full' : 'half'; look[y][x] = tree ? 'tree' : 'bush'; }
+    else if (r > 0.9985) { const full = hhash(x, y, seed + 13) < 0.4; cover[y][x] = full ? 'full' : 'half'; look[y][x] = 'rock'; }
+  }
+  // лагеря в развалинах: 3–4 дома, ящики и бочки вокруг; пришельцы внутри ждут
+  const camps: { x: number; y: number }[] = [];
+  const nCamps = Math.max(6, Math.round(n / 40));
+  for (let t = 0; camps.length < nCamps && t < nCamps * 40; t++) {
+    const cx = 30 + Math.floor(rand(rng) * (n - 60)), cy = 20 + Math.floor(rand(rng) * (n - 90));
+    if (Math.hypot(cx - startX, cy - startY) < 80 || camps.some(c => Math.hypot(c.x - cx, c.y - cy) < 60)) continue;
+    camps.push({ x: cx, y: cy });
+    for (let yy = cy - 9; yy <= cy + 9; yy++) for (let xx = cx - 9; xx <= cx + 9; xx++) { // расчистка под лагерь
+      if (Math.hypot(xx - cx, yy - cy) < 9.5 && cover[yy]?.[xx] !== undefined) { cover[yy][xx] = 'none'; look[yy][xx] = ''; height[yy][xx] = height[cy][cx]; }
+    }
+    const lo = height[cy][cx];
+    for (let i = 0; i < 3 + Math.floor(rand(rng) * 2); i++) {
+      const w = 3, h = rand(rng) < 0.5 ? 3 : 2, a = rand(rng) * 6.28, r = 2 + rand(rng) * 5, hx = Math.round(cx + Math.cos(a) * r) - 1, hy = Math.round(cy + Math.sin(a) * r) - 1;
+      let ok = true;
+      for (let yy = hy - 1; yy <= hy + h && ok; yy++) for (let xx = hx - 1; xx <= hx + w && ok; xx++) if (cover[yy]?.[xx] === 'full' && look[yy][xx] === 'house') ok = false;
+      if (!ok) continue;
+      for (let yy = hy; yy < hy + h; yy++) for (let xx = hx; xx < hx + w; xx++) { cover[yy][xx] = 'full'; look[yy][xx] = 'house'; height[yy][xx] = lo; }
+      houses.push({ x: hx, y: hy, w, h, id: houses.length, hp: 6 });
+    }
+    for (let i = 0; i < 8; i++) { const xx = cx - 8 + Math.floor(rand(rng) * 17), yy = cy - 8 + Math.floor(rand(rng) * 17); if (cover[yy][xx] === 'none') { const half = rand(rng) < 0.6; cover[yy][xx] = half ? 'half' : 'full'; look[yy][xx] = half ? 'crate' : 'container'; } }
+  }
+  // ямы: по одной, по лесу; в яме сидит пришелец
+  const pits: { x: number; y: number }[] = [];
+  const nPits = Math.round(n / 14);
+  for (let t = 0; pits.length < nPits && t < nPits * 30; t++) {
+    const x = 6 + Math.floor(rand(rng) * (n - 12)), y = 6 + Math.floor(rand(rng) * (n - 40));
+    if (cover[y][x] !== 'none' || Math.hypot(x - startX, y - startY) < 60 || pits.some(p => Math.hypot(p.x - x, p.y - y) < 18) || camps.some(c => Math.hypot(c.x - x, c.y - y) < 14)) continue;
+    pits.push({ x, y });
+  }
+  const humans = o.soldiers.map((s, i) => human(s, startX - 3 + i * 2, startY, o.tech));
+  const aliens: Unit[] = [];
+  let id = 1000, tn = 0;
+  const campKinds: AlienKind[] = ['trooper', 'trooper', 'heavy', 'sniper', 'trooper'];
+  camps.forEach((c, ci) => {
+    const cnt = 3 + (ci % 2);
+    for (let k = 0; k < cnt; k++) {
+      let x = c.x, y = c.y;
+      for (let tries = 0; tries < 30; tries++) { x = c.x - 5 + Math.floor(rand(rng) * 11); y = c.y - 5 + Math.floor(rand(rng) * 11); if (cover[y][x] === 'none' && !aliens.some(a => a.x === x && a.y === y)) break; }
+      const kind = campKinds[(ci + k) % campKinds.length];
+      const a = alien(id++, kind, kind === 'trooper' ? ++tn : 0, x, y, o.difficulty);
+      a.grp = ci; a.dormant = true; a.alert = false;
+      aliens.push(a);
+    }
+  });
+  pits.forEach((p, i) => {
+    const a = alien(id++, i % 5 === 0 ? 'sniper' : 'trooper', ++tn, p.x, p.y, o.difficulty);
+    a.grp = 500 + i; a.dormant = true; a.hidden = true; a.alert = false;
+    aliens.push(a);
+  });
+  const seen = grid(n, false);
+  const st: GameState = {
+    size: n, cover, terrain, height, look, houses, trenches: [], biome: 'forest', units: [...humans, ...aliens], selectedId: null, targetId: null,
+    turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
+    aiming: null, mines: [], barrels: [], fires: [], scorched: grid(n, false), bridges: [], targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
+    objective: 'clear', markId: null, beacons: [], holdTurns: HOLD_TURNS, zone: null, weather: undefined, sides: 'all', waveBoost: 0,
+    log: [`Миссия ${o.missionNo} · Огромный лес ${n}×${n}. Цель: прочесать лес. Пришельцы ждут в лагерях-развалинах и сидят в ямах (${pits.length}), пока не подойдёшь близко. Рекомендуется реальное время.`, `Лагерей: ${camps.length}. Пришельцев: ${aliens.length}.`],
+    rng: rng.rng, boss: false, pits, huge: true, mats: 8, loot: [],
+  };
+  return st;
 }

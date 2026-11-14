@@ -52,7 +52,7 @@ export interface Grp { members: Unit[]; ratio: number; mode: 'assault' | 'retrea
 
 export function planGroups(s: GameState): Map<number, Grp> {
   const out = new Map<number, Grp>();
-  const all = s.units.filter(u => u.team === 'alien');
+  const all = s.units.filter(u => u.team === 'alien' && !u.dormant);
   const humans = living(s, 'human');
   for (const g of new Set(all.map(u => u.grp).filter((x): x is number => x !== undefined))) {
     const mem = all.filter(u => u.grp === g);
@@ -182,6 +182,7 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
   for (const a of living(s, 'alien')) a.overwatch = false;
   const groups = planGroups(s);
   for (const u of living(s, 'alien')) {
+    if (u.dormant) continue;
     u.ap = Math.max(1, u.maxAp - (u.suppressed ? 1 : 0));
     const g = u.grp !== undefined ? groups.get(u.grp) : undefined;
     const st: AiSt = { shots: 0, retreated: false };

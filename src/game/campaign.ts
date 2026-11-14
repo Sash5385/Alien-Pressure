@@ -15,7 +15,7 @@ export interface Campaign {
   missionNo: number;
   objective: Objective;
   biome: Biome;
-  mapSize: 44 | 64; // размер карты миссий
+  mapSize: 44 | 64 | 640 | 1024; // размер карты миссий (640 и 1024 — огромный лес с засадами)
   roster: Soldier[];
   fallen: { name: string; mission: number }[];
   scrap: number;
@@ -256,7 +256,8 @@ export function setClass(c: Campaign, soldierId: number, cls: ClassId): string |
 
 export function setRt(c: Campaign, on: boolean): string | null { c.rt = on; return null; }
 
-export function setMapSize(c: Campaign, size: 44 | 64): string | null {
+export function setMapSize(c: Campaign, size: 44 | 64 | 640 | 1024): string | null {
   c.mapSize = size;
+  if (size >= 640) c.rt = true; // на огромной карте пошаговый режим неудобен
   return null;
 }

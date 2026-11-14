@@ -16,12 +16,33 @@ import { ARMORS, WEAPONS } from './game/weapons';
 /** Миникарта: рельеф, укрытия, туман войны, бойцы и видимые пришельцы; клик — перенос камеры. */
 function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick: (x: number, y: number) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const px = s.size <= 44 ? 3 : 2;
+  const huge = s.size > 200;
+  const px = huge ? 1 : s.size <= 44 ? 3 : 2;
+  const MS = huge ? 190 : s.size * px; // размер холста; на огромной карте рисуем выборкой тайлов
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
     const g = c.getContext('2d')!;
     const n = s.size;
+    if (huge) { // выборка: каждый пиксель — одна клетка из квадрата n/MS
+      const img = g.createImageData(MS, MS), d = img.data, k = n / MS;
+      for (let py = 0; py < MS; py++) for (let pxx = 0; pxx < MS; pxx++) {
+        const x = Math.floor(pxx * k), y = Math.floor(py * k), o = (py * MS + pxx) * 4;
+        let r = 40 + s.height[y][x] * 14, gg = 70 + s.height[y][x] * 14, b = 34;
+        const l = s.look[y][x];
+        if (s.cover[y][x] !== 'none') { if (l === 'tree') { r = 26; gg = 70; b = 28; } else if (l === 'house') { r = 200; gg = 180; b = 140; } else if (l === 'bush') { r = 50; gg = 96; b = 40; } else { r = 120; gg = 118; b = 108; } }
+        const f = s.vis[y][x] ? 1 : s.seen[y][x] ? 0.62 : 0.22;
+        d[o] = r * f; d[o + 1] = gg * f; d[o + 2] = b * f; d[o + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+      for (const p of s.pits ?? []) if (s.seen[p.y][p.x]) { g.fillStyle = '#1c150d'; g.fillRect(p.x / k - 1, p.y / k - 1, 2, 2); }
+      for (const u of s.units) {
+        if (u.hp <= 0) continue;
+        if (u.team === 'human') { g.fillStyle = u.id === s.selectedId ? '#ffd34d' : '#4fc3ff'; g.fillRect(u.x / k - 2, u.y / k - 2, 5, 5); }
+        else if (isVisible(s, u)) { g.fillStyle = '#ff6b6b'; g.fillRect(u.x / k - 2, u.y / k - 2, 4, 4); }
+      }
+      return;
+    }
     const cov: Record<string, string> = { tree: '#2f6a2a', bush: '#3f7a2e', rock: '#8a8a84', house: '#c9b88f', crate: '#8a6a42', container: '#4a5a72' };
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
       let col = s.terrain[y][x] === 'water' ? '#2d6aa0' : s.cover[y][x] !== 'none' ? (cov[s.look[y][x]] ?? '#6b6254') : `hsl(95 22% ${22 + s.height[y][x] * 7}%)`;
@@ -41,9 +62,9 @@ function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick:
   });
   return (
     <canvas
-      ref={ref} width={s.size * px} height={s.size * px}
+      ref={ref} width={MS} height={MS}
       onClick={e => { const r = e.currentTarget.getBoundingClientRect(); onPick(Math.floor(((e.clientX - r.left) / r.width) * s.size), Math.floor(((e.clientY - r.top) / r.height) * s.size)); }}
-      style={{ border: '1px solid #667', borderRadius: 4, background: '#000', width: s.size * px * (narrow ? 0.75 : 1), imageRendering: 'pixelated', pointerEvents: 'auto', display: 'block' }}
+      style={{ border: '1px solid #667', borderRadius: 4, background: '#000', width: MS * (narrow ? 0.75 : 1), imageRendering: 'pixelated', pointerEvents: 'auto', display: 'block' }}
     />
   );
 }

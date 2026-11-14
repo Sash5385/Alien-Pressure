@@ -25,7 +25,7 @@ const aiState = new WeakMap<Unit, AiSt>();
 let plan = new Map<number, Grp>();
 
 /** Приказ идти (бойцы выполняют по клетке за раз). */
-export function orderMove(u: Unit, x: number, y: number) { u.dest = { x, y }; u.atk = undefined; }
+export function orderMove(u: Unit, x: number, y: number) { u.dest = { x, y }; u.atk = undefined; u.route = undefined; }
 /** Приказ атаковать цель до её гибели. */
 export function orderAttack(u: Unit, t: Unit) { u.atk = t.id; u.dest = undefined; }
 
@@ -81,14 +81,34 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
   }
   if (u.dest) {
     if (u.dest.x === u.x && u.dest.y === u.y) { u.dest = undefined; return; }
-    const path = findPath(s, u.x, u.y, u.dest.x, u.dest.y, 80);
+    let path: [number, number][];
+    if (s.huge) { // далёкие цели: маршрут считается кусками по 60 клеток и кэшируется
+      const nxt = u.route?.[0];
+      if (!u.route?.length || (nxt && s.units.some(v => v.hp > 0 && v.id !== u.id && v.x === nxt[0] && v.y === nxt[1]))) {
+        const dx = u.dest.x - u.x, dy = u.dest.y - u.y, dd = Math.hypot(dx, dy);
+        let tx = u.dest.x, ty = u.dest.y;
+        if (dd > 60) { tx = Math.round(u.x + dx / dd * 60); ty = Math.round(u.y + dy / dd * 60); }
+        let best: [number, number] | null = null; // ближайшая свободная клетка к промежуточной точке
+        for (let r = 0; r <= 12 && !best; r++) for (let oy = -r; oy <= r && !best; oy++) for (let ox = -r; ox <= r; ox++) {
+          if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+          const x = tx + ox, y = ty + oy;
+          if (x >= 1 && y >= 1 && x < s.size - 1 && y < s.size - 1 && s.cover[y][x] === 'none' && s.terrain[y][x] === 'ground' && !s.units.some(v => v.hp > 0 && v.x === x && v.y === y)) { best = [x, y]; break; }
+        }
+        u.route = best ? findPath(s, u.x, u.y, best[0], best[1], 110) : [];
+        if (!u.route.length) { u.dest = undefined; u.route = undefined; return; }
+      }
+      path = u.route!;
+      if (path.length === 1 && Math.hypot(u.dest.x - path[0][0], u.dest.y - path[0][1]) <= 1.5) u.dest = u.dest; // дошли до конца кэша: пересчитаем в следующем шаге
+    } else {
+      path = findPath(s, u.x, u.y, u.dest.x, u.dest.y, 80);
+    }
     if (!path.length) { u.dest = undefined; return; }
     const step = Math.hypot(path[0][0] - u.x, path[0][1] - u.y);
-    [u.x, u.y] = path[0]; if (u.stance !== 'prone') u.stance = 'stand'; u.overwatch = false; // лёжа ползёт, не вставая
+    [u.x, u.y] = path[0]; if (s.huge) u.route = u.route!.slice(1); if (u.stance !== 'prone') u.stance = 'stand'; u.overwatch = false; // лёжа ползёт, не вставая
     // следующий шаг назначается раньше, чем боец дойдёт до клетки, поэтому бег непрерывный (без остановок на каждой клетке)
     u.cd = step * 0.8 / (u.stance === 'prone' ? CRAWL_SPEED : RUN_SPEED); u.ap = 0;
     void hooks.step(u).catch(() => {});
-    if (path.length === 1) u.dest = undefined;
+    if (!s.huge && path.length === 1) u.dest = undefined;
     return;
   }
   if (s.rt?.auto && !launcher(u)) { // огонь по готовности
@@ -118,7 +138,7 @@ export function rtTick(s: GameState, dt: number, hooks: RtHooks) {
     if (rt.clock - rt.planAt >= 1) { rt.planAt = rt.clock; plan = planGroups(s); }
     for (const u of living(s, 'human')) if (u.ap === u.maxAp && (u.cd ?? 0) <= 0) humanThink(s, u, hooks);
     for (const u of living(s, 'alien')) {
-      if (u.busyRt || u.ap < u.maxAp || (u.cd ?? 0) > 0) continue;
+      if (u.dormant || u.busyRt || u.ap < u.maxAp || (u.cd ?? 0) > 0) continue;
       const g = u.grp !== undefined ? plan.get(u.grp) : undefined;
       const st = aiState.get(u) ?? { shots: 0, retreated: false };
       aiState.set(u, st);
