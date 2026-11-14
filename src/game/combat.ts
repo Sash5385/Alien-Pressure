@@ -107,7 +107,7 @@ export function faceToward(u: Unit, x: number, y: number) {
 
 export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 0): ShotResult {
   faceToward(a, t.x, t.y);
-  if (a.team === 'human') (s.noise ??= []).push({ x: a.x, y: a.y }); // выстрел слышно: ближайшие лагеря просыпаются
+  if (a.team === 'human') (s.noise ??= []).push({ x: a.x, y: a.y, r: 22 }); // выстрел слышно: ближайшие лагеря просыпаются
   const chance = hitChance(s, a, t, reaction, bonus) ?? 0;
   a.ammo -= 1;
   if (!reaction) a.ap -= 1;
@@ -404,6 +404,12 @@ export function updateVision(s: GameState) {
         }
       }
     }
+    const dr = s.drone;
+    if (dr && (s.rt?.clock ?? 0) < dr.until) { // дрон: всё в радиусе 24 видно без учёта леса
+      for (let y = Math.max(0, dr.y - 24); y <= Math.min(n - 1, dr.y + 24); y++) for (let x = Math.max(0, dr.x - 24); x <= Math.min(n - 1, dr.x + 24); x++) {
+        if (!s.vis[y][x] && Math.hypot(x - dr.x, y - dr.y) <= 24) { s.vis[y][x] = true; s.seen[y][x] = true; marks.push(y * n + x); }
+      }
+    } else if (dr) s.drone = undefined;
     visMarks.set(s, marks);
     wakeTick(s);
     return;
@@ -429,10 +435,11 @@ export function wakeTick(s: GameState) {
   const woke = new Set<number>();
   for (const a of dorm) {
     if (a.hp < a.maxHp) { woke.add(a.grp ?? a.id); continue; }
-    if (noise.some(q => Math.hypot(q.x - a.x, q.y - a.y) <= 22)) { woke.add(a.grp ?? a.id); continue; }
+    if (noise.some(q => Math.hypot(q.x - a.x, q.y - a.y) <= (q.r ?? 22))) { woke.add(a.grp ?? a.id); continue; }
     for (const h of hs) {
       const d = Math.hypot(h.x - a.x, h.y - a.y);
-      if (d <= (a.hidden ? 4.5 : 6) || (!a.hidden && d <= 12 && los(s, a, h))) { woke.add(a.grp ?? a.id); break; }
+      const sn = a.kind === 'sniper' && (a.grp ?? 0) >= 700; // снайперское гнездо на холме: замечает издалека, если есть прямая видимость
+      if (d <= (a.hidden ? 4.5 : 6) || (sn ? d <= 15 && los(s, a, h) : !a.hidden && d <= 12 && los(s, a, h))) { woke.add(a.grp ?? a.id); break; }
     }
   }
   s.noise = [];
@@ -812,5 +819,15 @@ export function callSupply(s: GameState): boolean {
   }
   s.radioAt = (s.rt?.clock ?? 0) + 90;
   log(s, 'Рация: сброс снабжения совершён, ящики рядом с отрядом.');
+  return true;
+}
+
+export function droneReady(s: GameState): number { return Math.max(0, (s.droneAt ?? 0) - (s.rt?.clock ?? 0)); }
+/** Разведдрон: 25 секунд видит всё в радиусе 24 клеток от выбранной точки (ямы с затаившимися не видит); перезарядка 120 секунд. */
+export function launchDrone(s: GameState, x: number, y: number): boolean {
+  if (droneReady(s) > 0 || x < 0 || y < 0 || x >= s.size || y >= s.size) return false;
+  const clock = s.rt?.clock ?? 0;
+  s.drone = { x, y, until: clock + 25 }; s.droneAt = clock + 120;
+  log(s, 'Разведдрон запущен: 25 секунд видим всё вокруг точки.');
   return true;
 }

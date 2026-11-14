@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
-import { buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
 import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -31,7 +31,7 @@ const vnoise = (x: number, y: number) => {
 };
 const CRAWL = 1.1; // ползком лёжа
 const ROLLING = new Set<number>(); // бойцы в перекате: движутся быстро
-const speedOf = (u?: Unit) => (u && ROLLING.has(u.id) ? 7.5 : u?.team === 'alien' ? ALIEN_SPEED : u?.stance === 'prone' ? CRAWL : SPEED);
+const speedOf = (u?: Unit) => (u && ROLLING.has(u.id) ? 7.5 : u?.team === 'alien' ? ALIEN_SPEED : u?.stance === 'prone' ? CRAWL : u?.stance === 'kneel' ? 1.9 : SPEED);
 
 interface Float { sprite: THREE.Sprite; t: number }
 export type Weather = 'clear' | 'rain' | 'fog' | 'dusk' | 'dawn' | 'night';
@@ -475,6 +475,7 @@ export class GameView {
   private lootMeshes = new Map<string, THREE.Object3D>();
   private waveMarks: THREE.Group | null = null;
   private waveSig = '';
+  private droneRing: THREE.Mesh | null = null;
 
   /** Мешки с песком, трофеи и метки следующей волны. */
   private syncTactics() {
@@ -504,6 +505,13 @@ export class GameView {
       this.scene.add(g); this.lootMeshes.set(k, g);
     }
     for (const [k, g] of this.lootMeshes) if (!live.has(k)) { this.scene.remove(g); this.lootMeshes.delete(k); }
+    // разведдрон: кольцо зоны обзора
+    const dr = s.drone && (s.rt?.clock ?? 0) < s.drone.until ? s.drone : null;
+    if (dr && !this.droneRing) {
+      this.droneRing = new THREE.Mesh(new THREE.RingGeometry(23.6, 24, 64), new THREE.MeshBasicMaterial({ color: 0x7ee0ff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+      this.droneRing.rotation.x = -Math.PI / 2; this.droneRing.position.set(dr.x + 0.5, this.hs(dr.x, dr.y) + 0.5, dr.y + 0.5);
+      this.scene.add(this.droneRing);
+    } else if (!dr && this.droneRing) { this.scene.remove(this.droneRing); this.droneRing = null; }
     // метки следующей волны: красные кольца с шевронами на клетках появления
     const plan = (s.objective === 'defend' || s.objective === 'hold') ? s.wavePlan ?? [] : [];
     const sig = plan.map(p => `${p.x},${p.y},${p.kind}`).join(';');
@@ -2136,6 +2144,11 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       if (tu) faceToward(tu, x, y);
       s.turning = false;
       this.onChange();
+      return;
+    }
+    if (s.aiming === 'drone') {
+      if (launchDrone(s, x, y)) { sfx('select'); this.syncUnits(); }
+      s.aiming = null; this.onChange();
       return;
     }
     if (s.aiming === 'bags') {

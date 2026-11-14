@@ -10,6 +10,7 @@ export const CD_PER_AP = 2.4;
 /** Скорость бега в клетках в секунду (совпадает с GameView). */
 export const RUN_SPEED = 3.6;
 export const CRAWL_SPEED = 1.1; // ползком, клеток в секунду
+export const SNEAK_SPEED = 1.9; // крадучись (на колене), клеток в секунду, без шума
 export const TURN_SECS = 9;
 
 export interface RtHooks extends AiHooks {
@@ -104,9 +105,10 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
     }
     if (!path.length) { u.dest = undefined; return; }
     const step = Math.hypot(path[0][0] - u.x, path[0][1] - u.y);
-    [u.x, u.y] = path[0]; if (s.huge) u.route = u.route!.slice(1); if (u.stance !== 'prone') u.stance = 'stand'; u.overwatch = false; // лёжа ползёт, не вставая
+    [u.x, u.y] = path[0]; if (s.huge) u.route = u.route!.slice(1); if (u.stance === 'stand' || u.stance === undefined) u.stance = 'stand'; u.overwatch = false; // лёжа ползёт, на колене крадётся
+    if (s.huge && u.stance === 'stand') (s.noise ??= []).push({ x: u.x, y: u.y, r: 8 }); // бег шумит: лагеря в 8 клетках просыпаются
     // следующий шаг назначается раньше, чем боец дойдёт до клетки, поэтому бег непрерывный (без остановок на каждой клетке)
-    u.cd = step * 0.8 / (u.stance === 'prone' ? CRAWL_SPEED : RUN_SPEED); u.ap = 0;
+    u.cd = step * 0.8 / (u.stance === 'prone' ? CRAWL_SPEED : u.stance === 'kneel' ? SNEAK_SPEED : RUN_SPEED); u.ap = 0;
     void hooks.step(u).catch(() => {});
     if (!s.huge && path.length === 1) u.dest = undefined;
     return;

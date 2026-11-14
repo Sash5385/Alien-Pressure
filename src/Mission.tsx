@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { runAlienTurn } from './game/ai';
-import { callSupply, radioReady, aimedShot, bandage, canLaunch, LAUNCH, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
+import { callSupply, radioReady, droneReady, aimedShot, bandage, canLaunch, LAUNCH, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState, Unit } from './game/types';
 import { btn, cta, glass, loadUi, saveUi, UI_NAMES, UI_SCALES, VERSION } from './ui';
@@ -488,6 +488,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           </div>
         )}
         {s.turning && <div style={{ color: '#9be86a' }}>Поворот: нажми клетку, куда смотреть бойцу (долгое нажатие на карте делает то же).</div>}
+        {s.aiming === 'drone' && <div style={{ color: '#7ee0ff' }}>Разведдрон: кликни точку на карте: 25 секунд виден весь радиус 24 клеток, кроме ям с затаившимися. ПКМ — отмена.</div>}
         {s.aiming === 'bags' && <div style={{ color: '#7ee0ff' }}>Мешки с песком: кликни клетку в голубой зоне (до 2 шагов). Красные метки на карте — откуда придёт следующая волна. ПКМ — отмена.</div>}
         {s.aiming === 'grenade' && s.launch && <div style={{ color: '#ffb36b' }}>{LAUNCH[s.launch].name}: кликни клетку в оранжевой зоне (дальность {LAUNCH[s.launch].min}–{LAUNCH[s.launch].range}, радиус {LAUNCH[s.launch].r}; есть разброс, бьёт и по своим). ПКМ — отмена.</div>}
         {s.aiming === 'grenade' && !s.launch && <div style={{ color: '#ffb36b' }}>Бросок гранаты: кликни клетку в оранжевой зоне (красный круг — радиус взрыва, бьёт и по своим). ПКМ — отмена.</div>}
@@ -528,6 +529,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <button style={round(showMap)} title="Миникарта" onClick={() => setShowMap(!showMap)}>🗺</button>
           {(() => { const k = s.undo, uu = k && s.units.find(v => v.id === k.id && v.hp > 0); const ok = !!k && !!uu && canAct && `${uu.x},${uu.y},${uu.ap},${uu.ammo},${uu.stance},${uu.overwatch},${s.log.length}` === k.fp; return ok ? <button style={round(false)} title="Отменить последний ход" onClick={() => { if (view.current?.undoMove()) { sfx('click'); } rerender(); }}>↶</button> : null; })()}
           <button style={round(s.turning)} title="Повернуть бойца" onClick={() => { s.turning = !s.turning; s.aiming = null; rerender(); }}>↻</button>
+          {s.huge && <button style={{ ...round(s.aiming === 'drone'), opacity: droneReady(s) > 0 ? 0.5 : 1 }} title={droneReady(s) > 0 ? `Разведдрон: готов через ${Math.ceil(droneReady(s))} с` : 'Разведдрон: выбери точку на карте, 25 секунд видно всё в радиусе 24 клеток'} onClick={() => { if (droneReady(s) > 0) return; s.aiming = s.aiming === 'drone' ? null : 'drone'; rerender(); }}>🛸</button>}
           {s.huge && <button style={{ ...round(false), opacity: radioReady(s) > 0 ? 0.5 : 1 }} title={radioReady(s) > 0 ? `Рация: сброс снабжения через ${Math.ceil(radioReady(s))} с` : 'Рация: вызвать сброс снабжения (ящики рядом с отрядом)'} onClick={() => { if (callSupply(s)) { sfx('select'); view.current?.syncUnits(); } rerender(); }}>📡</button>}
           <button style={round(showLog)} title="Журнал боя" onClick={() => setShowLog(!showLog)}>📜</button>
           <button style={round(more)} title="Настройки" onClick={() => setMore(!more)}>⚙</button>

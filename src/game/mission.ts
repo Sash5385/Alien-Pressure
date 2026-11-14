@@ -545,6 +545,14 @@ function createHugeForest(o: MissionOpts): GameState {
     a.grp = 500 + i; a.dormant = true; a.hidden = true; a.alert = false;
     aliens.push(a);
   });
+  // снайперские гнёзда: на холмах, далеко от старта; сидят скрытно и замечают издалека
+  for (let t = 0, want = Math.round(n / 40), made = 0; made < want && t < want * 60; t++) {
+    const x = 8 + Math.floor(rand(rng) * (n - 16)), y = 8 + Math.floor(rand(rng) * (n - 50));
+    if (height[y][x] < 2 || cover[y][x] !== 'none' || Math.hypot(x - startX, y - startY) < 90 || aliens.some(a => Math.hypot(a.x - x, a.y - y) < 10)) continue;
+    const a = alien(id++, 'sniper', 0, x, y, o.difficulty);
+    a.grp = 700 + made; a.dormant = true; a.hidden = true; a.alert = false;
+    aliens.push(a); made++;
+  }
   const seen = grid(n, false);
   const st: GameState = {
     size: n, cover, terrain, height, look, houses, trenches: [], biome: 'forest', units: [...humans, ...aliens], selectedId: null, targetId: null,

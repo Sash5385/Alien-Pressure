@@ -122,7 +122,7 @@ export interface GameState {
   beacons: { x: number; y: number; done: boolean }[];
   holdTurns: number;
   zone: { x: number; y: number; w: number; h: number } | null;
-  aiming: 'grenade' | 'roll' | 'bags' | null; // режим прицеливания гранаты или выбора клетки для переката
+  aiming: 'grenade' | 'roll' | 'bags' | 'drone' | null; // режим прицеливания гранаты или выбора клетки для переката
   mines: { x: number; y: number; owner: number }[];
   barrels: { x: number; y: number }[]; // взрывоопасные бочки (половинное укрытие)
   fires: { x: number; y: number; ttl: number }[]; // горящие клетки: непроходимы, жгут стоящих
@@ -136,8 +136,10 @@ export interface GameState {
   boss?: boolean; // миссия с боссом (ликвидация)
   rt?: { speed: 0.5 | 1; paused: boolean; clock: number; pulseAt: number; planAt: number; auto: boolean }; // режим реального времени
   smokes?: { x: number; y: number; ttl: number }[]; // дым: закрывает обзор
+  drone?: { x: number; y: number; until: number }; // разведдрон: видит всё вокруг точки, пока не истечёт время
+  droneAt?: number; // дрон снова готов
   radioAt?: number; // реальное время, с которого рация снова готова
-  noise?: { x: number; y: number }[]; // выстрелы бойцов с последней проверки (будят спящих)
+  noise?: { x: number; y: number; r?: number }[]; // выстрелы бойцов с последней проверки (будят спящих)
   pits?: { x: number; y: number }[]; // ямы, в которых прячутся пришельцы (огромная карта)
   huge?: boolean; // огромная карта (лес): кусочная отрисовка, засады
   mats?: number; // стройматериалы: окоп и мешки с песком стоят по 1; пополняются за волны и трофеи
