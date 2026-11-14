@@ -9,7 +9,7 @@ import { STEP, type GameState, type Unit } from '../game/types';
 import { alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
 import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
-import { sway, tickWind, windBlast, windVec } from './wind';
+import { sway, tickWind, WIND, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
 import { reachable, findPath } from '../game/pathfinding';
 import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
@@ -46,6 +46,7 @@ export class GameView {
   private unitMeshes = new Map<number, THREE.Object3D>();
   private rigs = new Map<number, Spawned>();
   private leaves: Leaves | null = null;
+  private mistTex: THREE.CanvasTexture | null = null;
   private middle = false;
   /** Колесо зажато / отпущено: в реальном времени пока зажато — время стоит. */
   onMiddle?: (down: boolean) => void;
@@ -300,6 +301,7 @@ export class GameView {
         (f.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - f.t / 1.1);
       }
       this.floats = this.floats.filter(f => (f.t < 1.1 ? true : (this.scene.remove(f.sprite), false)));
+      if (this.mistTex) { this.mistTex.offset.x += rawDt * 0.004; this.mistTex.offset.y += rawDt * 0.0015; }
       if (this.waterTex) { this.waterTex.offset.x += rawDt * 0.03; this.waterTex.offset.y += rawDt * 0.015; }
       this.stepCamera(dt);
       this.controls.update();
@@ -488,7 +490,8 @@ export class GameView {
     }
     this.sg = H; this.sgN = N;
     // сетка вершин: 3 на клетку (2 на большой карте), высота — гладкая интерполяция размытых центров
-    const sub = n > 50 ? 2 : 3, V = N * sub + 1, pos: number[] = [], uvs: number[] = [], cols: number[] = [], idx: number[] = [];
+    const sub = n > 50 ? 2 : 3, V = N * sub + 1, pos: number[] = [], uvs: number[] = [], cols: number[] = [], idx: number[] = [], sand: number[] = [];
+    const sstep = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     for (let vj = 0; vj < V; vj++) for (let vi = 0; vi < V; vi++) {
       const wx = -B + vi / sub, wz = -B + vj / sub; // мир: клетка i занимает [i, i+1)
       const h = this.hs(wx, wz);
@@ -499,6 +502,10 @@ export class GameView {
       const tone = (0.88 + (vnoise(wx * 0.6, wz * 0.6) - 0.5) * 0.18 + Math.max(-0.1, Math.min(0.14, h / STEP * 0.05))) * (1 - Math.min(0.55, d / B * 0.55));
       const f = Math.min(1, slope * 0.9);
       cols.push(tone * (1 + 0.22 * f), tone * (1 - 0.08 * f), tone * (1 - 0.28 * f));
+      // плавные границы местности: сухие пролысины грунта по крупному шуму, на склонах грунт проступает, у воды влажный песок
+      const dry = sstep(0.58, 0.84, vnoise(wx * 0.16 + 9, wz * 0.16 + 4)) * 0.4 + sstep(0.5, 1.4, slope) * 0.3;
+      const shore = sstep(-0.62, -0.4, h) * (1 - sstep(-0.22, -0.05, h)); // узкая полоса вокруг уровня воды (−0,3)
+      sand.push(Math.min(0.92, Math.max(dry, shore * 0.95)));
     }
     for (let vj = 0; vj < V - 1; vj++) for (let vi = 0; vi < V - 1; vi++) {
       const a = vj * V + vi, b = a + 1, c = a + V, d = c + 1;
@@ -508,6 +515,7 @@ export class GameView {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    geo.setAttribute('sand', new THREE.Float32BufferAttribute(sand, 1));
     geo.setIndex(idx);
     geo.computeVertexNormals();
     this.ground.geometry.dispose();
@@ -568,6 +576,19 @@ export class GameView {
     gt.anisotropy = 4;
     ground.map = gt;
     ground.color.set(0xffffff);
+    const sandCol = { ruins: [0.5, 0.45, 0.38], forest: [0.42, 0.32, 0.18], lake: [0.72, 0.64, 0.42] }[biome];
+    ground.customProgramCacheKey = () => 'ground-soft';
+    ground.onBeforeCompile = sh => { // грунт и песок вместо зелени по маске вершин; у воды бегущая пена по уровню воды
+      sh.uniforms.uTime = WIND.uTime; sh.uniforms.uSand = { value: new THREE.Vector3(...sandCol) };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float sand; varying float vSand; varying vec3 vW;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSand = sand; vW = (modelMatrix * vec4(position, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vSand; varying vec3 vW; uniform float uTime; uniform vec3 uSand;')
+        .replace('#include <color_fragment>', `#include <color_fragment>
+diffuseColor.rgb = mix(diffuseColor.rgb, uSand * (0.85 + 0.3 * diffuseColor.g), vSand);
+float lvl = -0.3 + 0.045 * sin(uTime * 1.3 + vW.x * 2.1 + vW.z * 1.6) + 0.02 * sin(uTime * 2.1 + vW.x * 4.3 - vW.z * 3.1);
+float foam = (1.0 - smoothstep(0.0, 0.05, abs(vW.y - lvl))) * smoothstep(-0.6, -0.3, vW.y);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
+    };
     ground.needsUpdate = true;
     this.buildGround();
     // дальний план и небо, туман в цвет горизонта
@@ -590,6 +611,24 @@ export class GameView {
     this.scene.add(sky);
     this.scene.background = new THREE.Color(pal.hor);
     (this.scene.fog as THREE.Fog).color.set(pal.hor);
+    { // дымка в низинах: тонкий слой тумана на небольшой высоте, холмы торчат над ним
+      const mc = document.createElement('canvas'); mc.width = mc.height = 256;
+      const g2 = mc.getContext('2d')!;
+      for (let i = 0; i < 70; i++) {
+        const x = Math.random() * 256, y = Math.random() * 256, r = 18 + Math.random() * 40;
+        for (const ox of [-256, 0, 256]) for (const oy of [-256, 0, 256]) {
+          const gr = g2.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+          gr.addColorStop(0, 'rgba(255,255,255,0.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+          g2.fillStyle = gr; g2.fillRect(0, 0, 256, 256);
+        }
+      }
+      this.mistTex = new THREE.CanvasTexture(mc);
+      this.mistTex.wrapS = this.mistTex.wrapT = THREE.RepeatWrapping;
+      this.mistTex.repeat.set((n + 14) / 22, (n + 14) / 22);
+      const mist = new THREE.Mesh(new THREE.PlaneGeometry(n + 14, n + 14), new THREE.MeshBasicMaterial({ map: this.mistTex, color: new THREE.Color(pal.hor).lerp(new THREE.Color(0xffffff), 0.55), transparent: true, opacity: 0.06, depthWrite: false, fog: false }));
+      mist.rotation.x = -Math.PI / 2; mist.position.set(n / 2, 0.2, n / 2); mist.renderOrder = 1;
+      this.scene.add(mist);
+    }
 
     // трава: небольшие конусы на свободных клетках (в руинах — редкая и сухая)
     const dense = biome !== 'ruins';
