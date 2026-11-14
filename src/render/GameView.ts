@@ -222,7 +222,7 @@ export class GameView {
       const dt = Math.min(0.05, rawDt);
       this.stepRain(dt);
       tickWind(this.clock.elapsedTime);
-      if (this.prints.length) { const now = this.clock.elapsedTime; this.prints = this.prints.filter(p => { const k = (now - p.t0) / 40; if (k >= 1) { this.scene.remove(p.m); (p.m.material as THREE.Material).dispose(); return false; } (p.m.material as THREE.MeshBasicMaterial).opacity = 0.38 * (1 - k); return true; }); }
+      if (this.prints.length) { const now = this.clock.elapsedTime; this.prints = this.prints.filter(p => { const k = (now - p.t0) / 40; if (k >= 1) { this.scene.remove(p.m); (p.m.material as THREE.Material).dispose(); return false; } (p.m.material as THREE.MeshLambertMaterial).opacity = 0.38 * (1 - k); return true; }); }
       if (this.leaves) { const tr = this.treeSpots.filter(t => this.coverMeshes.has(t.k)); this.leaves.ambient(dt, this.controls.target.x, this.controls.target.z, tr); this.leaves.update(dt); }
       for (const [id, m] of this.unitMeshes) {
         const g = this.goals.get(id);
@@ -958,15 +958,27 @@ export class GameView {
     this.footprint(u);
   }
 
+  /** Бред по воде: маленькие круги и брызги из-под ног. */
+  private wade(u: Unit) {
+    const x = u.x + 0.5, z = u.y + 0.5;
+    this.burst(new THREE.Vector3(x, 0.08, z), 0xd8ecff, 7, 1.6, 420);
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 24), new THREE.MeshBasicMaterial({ color: 0xe6f4ff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.06, z);
+    this.scene.add(m);
+    void this.tween(900, k => { m.scale.setScalar(0.15 + k * 0.6); (m.material as THREE.MeshBasicMaterial).opacity = 0.6 * (1 - k); }).then(() => { this.scene.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); });
+    if (this.sndReady) sfx('splash', { vol: 0.35 });
+  }
+
   /** Следы: чередуются левая и правая нога, тёмные пятна, на песке и руинах светлее; медленно исчезают. Ползком — борозда. */
   private footprint(u: Unit) {
-    if (this.state.terrain[u.y]?.[u.x] === 'water' || (u.team === 'alien' && !isVisible(this.state, u))) return;
+    if (u.team === 'alien' && !isVisible(this.state, u)) return;
+    if (this.state.terrain[u.y]?.[u.x] === 'water') { this.wade(u); return; }
     const crawl = u.stance === 'prone', f = u.facing;
     const sx = Math.cos(f), sz = -Math.sin(f); // вбок от направления взгляда
     this.printSide = -this.printSide || 1;
     const off = crawl ? 0 : 0.11 * this.printSide;
     const col = this.state.biome === 'ruins' ? 0x4a4234 : 0x1d2a14;
-    const m = new THREE.Mesh(this.printGeo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.38, depthWrite: false }));
+    const m = new THREE.Mesh(this.printGeo, new THREE.MeshLambertMaterial({ color: col, transparent: true, opacity: 0.38, depthWrite: false })); // с освещением: ночью след не светится
     m.rotation.x = -Math.PI / 2; m.rotation.z = f;
     m.scale.set(crawl ? 2.4 : 0.9, crawl ? 1.2 : 1.6, 1);
     m.position.set(u.x + 0.5 + sx * off - Math.sin(f) * 0.12, this.hy(u.x, u.y) + 0.025, u.y + 0.5 + sz * off - Math.cos(f) * 0.12);
@@ -1748,7 +1760,7 @@ export class GameView {
     u.overwatch = false; u.facing = Math.atan2(x - u.x, y - u.y);
     const dur = Math.max(0.45, path.length * 0.26);
     ROLLING.add(u.id); this.rolls.set(u.id, { t0: this.clock.elapsedTime, dur });
-    sfx('stance');
+    sfx('roll');
     for (const [px, py] of path) { u.x = px; u.y = py; this.stepFx(u); this.syncUnits(); await sleep(260); }
     u.stance = 'prone';
     if (!s.rt) {

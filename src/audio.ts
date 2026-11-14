@@ -1,7 +1,7 @@
 /** Синтезированные звуки (WebAudio) — без файлов. Контекст создаётся лениво, после первого клика. */
 export type Sfx =
   | 'alert' | 'throw' | 'pin' | 'grenade' | 'shot' | 'alienShot' | 'hit' | 'miss' | 'psi' | 'death' | 'panic'
-  | 'reload' | 'click' | 'select' | 'step' | 'dig' | 'heal' | 'bandage' | 'stance' | 'stanceProne' | 'mine' | 'charge'
+  | 'reload' | 'click' | 'select' | 'step' | 'dig' | 'heal' | 'bandage' | 'stance' | 'stanceProne' | 'roll' | 'mine' | 'charge'
   | 'launcher' | 'mortar' | 'overwatch' | 'fire' | 'collapse' | 'splash' | 'crumble' | 'wound' | 'turnPlayer' | 'turnEnemy' | 'win' | 'lose';
 
 export interface SfxOpts { vol?: number; pitch?: number; variant?: string }
@@ -131,6 +131,7 @@ export function sfx(kind: Sfx, o: SfxOpts = {}) {
     case 'heal': [523, 659, 784].forEach((f, i) => tone(c, t + i * 0.1, 0.35, f, f, 0.1)); break;
     case 'bandage': noise(c, t, 0.18, 0.2, 'highpass', 2600); noise(c, t + 0.22, 0.12, 0.14, 'bandpass', 1500); break;
     case 'stance': noise(c, t, 0.14, 0.12, 'bandpass', 1400); break;
+    case 'roll': noise(c, t, 0.12, 0.18, 'bandpass', 1500); noise(c, t + 0.1, 0.22, 0.14, 'bandpass', 900); noise(c, t + 0.3, 0.1, 0.1, 'lowpass', 500); tone(c, t + 0.34, 0.1, 110, 55, 0.22); break; // шорох, кувырок, глухой удар об землю
     case 'stanceProne': noise(c, t, 0.16, 0.14, 'bandpass', 1200); tone(c, t + 0.1, 0.12, 90, 50, 0.2); noise(c, t + 0.1, 0.1, 0.2, 'lowpass', 400); break;
     case 'mine': tone(c, t, 0.06, 1800, 1800, 0.1, 'square'); tone(c, t + 0.14, 0.06, 1800, 1800, 0.1, 'square'); noise(c, t + 0.28, 0.06, 0.2, 'lowpass', 500); break;
     case 'pin': tone(c, t, 0.05, 3000, 2500, 0.14); noise(c, t, 0.05, 0.12, 'highpass', 3500); tone(c, t + 0.1, 0.04, 2000, 1800, 0.08); break;
