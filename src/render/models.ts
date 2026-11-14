@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { findArm, reachArm, type ArmRig } from './ik';
 
 export type ModelName = 'Soldier' | 'Enemy' | 'Hazmat';
 const NAMES: ModelName[] = ['Soldier', 'Enemy', 'Hazmat'];
@@ -69,7 +70,7 @@ export function spawnCover(kind: 'tree' | 'crate' | 'container', variant: number
   return g;
 }
 
-export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction>; arms: THREE.Object3D[]; mod: THREE.Object3D[]; modBase?: THREE.Quaternion[]; neck?: THREE.Object3D; torso?: THREE.Object3D; look: number; body: number; baseScale: number; armed: boolean }
+export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction>; arms: THREE.Object3D[]; mod: THREE.Object3D[]; modBase?: THREE.Quaternion[]; neck?: THREE.Object3D; torso?: THREE.Object3D; look: number; body: number; rigL?: ArmRig; rigR?: ArmRig; grip?: { node: THREE.Object3D; local: THREE.Vector3 }; ags?: { hl: THREE.Object3D; hr: THREE.Object3D }; baseScale: number; armed: boolean }
 
 const LEGS = /^(Hips|Body|UpperLeg|LowerLeg|Foot|Root|PoleTarget)/;
 const DUCK_T = 0.4; // кадр клипа Duck с согнутыми ногами
@@ -158,6 +159,95 @@ function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE
   if (aim) aim.stop();
 }
 
+const AXES = ['x', 'y', 'z'] as const;
+/** Разбор оружия: длинная ось, куда смотрит дуло (от руки к дальнему концу), где верх. Длины в локальных единицах узла. */
+function weaponFrame(node: THREE.Object3D, hand: THREE.Vector3) {
+  const mesh = node as THREE.Mesh;
+  if (!mesh.geometry) return null;
+  mesh.geometry.computeBoundingBox();
+  const bb = mesh.geometry.boundingBox!, size = bb.getSize(new THREE.Vector3()), ctr = bb.getCenter(new THREE.Vector3());
+  const order = [0, 1, 2].sort((i, j) => size[AXES[j]] - size[AXES[i]]);
+  const la = AXES[order[0]], ha = AXES[order[1]];
+  const hl = node.worldToLocal(hand.clone());
+  const mz = (hl[la] - ctr[la]) > 0 ? -1 : 1; // дуло — на дальнем от руки конце
+  // верх — там, где центр масс вершин выше центра габарита (магазин свисает вниз)
+  const pos = mesh.geometry.attributes.position; let sum = 0;
+  for (let i = 0; i < pos.count; i += 3) sum += pos.getComponent(i, order[1]);
+  const up = (sum / Math.ceil(pos.count / 3) - ctr[ha]) >= 0 ? 1 : -1;
+  return { bb, size, ctr, la, ha, mz, up, len: size[la], hl };
+}
+
+/** Детали оружия, которых нет в модели: прицелы, глушитель, цевьё. */
+function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<ReturnType<typeof weaponFrame>>) {
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.5, metalness: 0.4, flatShading: true });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x4aa8ff, roughness: 0.1, metalness: 0.6, emissive: 0x0b3a6b });
+  const at = (t: number, up: number) => { // t: 0 — приклад, 1 — дуло; up — над верхней гранью
+    const v = f.ctr.clone();
+    v[f.la] = f.ctr[f.la] + f.mz * (t - 0.5) * f.len;
+    v[f.ha] = f.ctr[f.ha] + f.up * (f.size[f.ha] * 0.5 + up);
+    return v;
+  };
+  const place = (geo: THREE.BufferGeometry, mat: THREE.Material, p: THREE.Vector3, alongLong = true) => {
+    const m = new THREE.Mesh(geo, mat); m.position.copy(p); m.castShadow = true;
+    if (alongLong) { if (f.la === 'x') m.rotation.z = Math.PI / 2; else if (f.la === 'z') m.rotation.x = Math.PI / 2; }
+    node.add(m); return m;
+  };
+  const L = f.len, up = f.size[f.ha];
+  if (kind === 'sniper') {
+    place(new THREE.CylinderGeometry(L * 0.035, L * 0.035, L * 0.3, 10), dark, at(0.46, L * 0.04));
+    place(new THREE.CylinderGeometry(L * 0.04, L * 0.04, L * 0.012, 10), glass, at(0.62, L * 0.04));
+    place(new THREE.BoxGeometry(...(f.la === 'x' ? [L * 0.03, L * 0.04, L * 0.025] : f.la === 'z' ? [L * 0.025, L * 0.04, L * 0.03] : [L * 0.025, L * 0.03, L * 0.025]) as [number, number, number]), dark, at(0.4, L * 0.0), false);
+  } else if (kind === 'AK') {
+    place(new THREE.BoxGeometry(...(f.la === 'x' ? [L * 0.08, L * 0.045, L * 0.035] : f.la === 'z' ? [L * 0.035, L * 0.045, L * 0.08] : [L * 0.035, L * 0.08, L * 0.035]) as [number, number, number]), dark, at(0.42, L * 0.03), false);
+    place(new THREE.CylinderGeometry(L * 0.018, L * 0.018, L * 0.1, 8), glass, at(0.45, L * 0.065));
+  } else if (kind === 'SMG') {
+    place(new THREE.CylinderGeometry(L * 0.04, L * 0.04, L * 0.24, 10), dark, at(1.1, -up * 0.45)); // глушитель на дуле
+  } else if (kind === 'Shotgun') {
+    place(new THREE.CylinderGeometry(L * 0.04, L * 0.04, L * 0.22, 10), new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 0.9 }), at(0.6, -up * 0.6)); // цевьё
+  }
+}
+
+/** Станковый АГС: сошки-треножник, короб с барабаном-лентой, ствол с пламегасителем, рукоятки. Размеры для роста 1,8. */
+function makeAgs(): { g: THREE.Group; hl: THREE.Object3D; hr: THREE.Object3D } {
+  const g = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.55, metalness: 0.5, flatShading: true });
+  const olive = new THREE.MeshStandardMaterial({ color: 0x4a5a33, roughness: 0.8, flatShading: true });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xb08a3a, roughness: 0.4, metalness: 0.7 });
+  const add = (m: THREE.Mesh, x: number, y: number, z: number) => { m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  const leg = (tx: number, tz: number) => { // ножка треножника от шарнира к земле
+    const a = new THREE.Vector3(0, 0.62, 0.55), b = new THREE.Vector3(tx, 0, tz), d = b.clone().sub(a), len = d.length();
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.026, len, 6), steel);
+    m.position.copy(a.clone().add(b).multiplyScalar(0.5)); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); m.castShadow = true; g.add(m);
+  };
+  leg(-0.42, 0.95); leg(0.42, 0.95); leg(0, 0.1);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), steel), 0, 0.62, 0.55); // шарнир
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.17, 0.62), steel), 0, 0.78, 0.48); // короб
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.3), steel), 0, 0.89, 0.46); // верхняя крышка
+  const bar = add(new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.036, 0.62, 10), steel), 0, 0.8, 1.12); bar.rotation.x = Math.PI / 2; // ствол
+  const fh = add(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 10), steel), 0, 0.8, 1.5); fh.rotation.x = Math.PI / 2; // пламегаситель
+  for (let i = 0; i < 4; i++) { const r = add(new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.2), steel), Math.cos(i * 1.57) * 0.045, 0.8 + Math.sin(i * 1.57) * 0.045, 1.2); r.rotation.z = 0; } // рёбра охлаждения
+  const drum = add(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.14, 20), olive), 0.2, 0.74, 0.38); drum.rotation.z = Math.PI / 2; // барабан на 29 гранат
+  for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; const r = add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 6), brass), 0.2, 0.74 + Math.cos(a) * 0.125, 0.38 + Math.sin(a) * 0.125); r.rotation.z = Math.PI / 2; } // выглядывающие гильзы
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.05), steel), -0.1, 0.78, 0.2); // левая рукоять
+  const hl = new THREE.Object3D(); hl.position.set(-0.1, 0.86, 0.19); g.add(hl);
+  const hr = new THREE.Object3D(); hr.position.set(0.1, 0.86, 0.19); g.add(hr);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.05), steel), 0.1, 0.78, 0.2); // правая рукоять
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.04, 0.05), steel), 0, 0.88, 0.17); // спусковая планка между ручками
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, 0.12), steel), -0.06, 0.93, 0.5); // прицел
+  return { g, hl, hr };
+}
+
+/** Две руки на оружии: левая берётся за цевьё, у АГС обе за рукоятки. Вызывать после анимации кадра. */
+export function applyTwoHands(sp: Spawned) {
+  if (sp.ags && sp.rigL && sp.rigR) {
+    sp.obj.updateMatrixWorld(true);
+    reachArm(sp.inner, sp.rigL, sp.ags.hl.getWorldPosition(new THREE.Vector3()));
+    reachArm(sp.inner, sp.rigR, sp.ags.hr.getWorldPosition(new THREE.Vector3()));
+  } else if (sp.grip && sp.rigL && sp.grip.node.visible) {
+    reachArm(sp.inner, sp.rigL, sp.grip.node.localToWorld(sp.grip.local.clone()));
+  }
+}
+
 export function spawnModel(name: ModelName, height: number, tint?: number, weapon = 'AK', armor = 'none'): Spawned | null {
   const m = cache.get(name);
   if (!m) return null;
@@ -183,8 +273,29 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   }
   if (name === 'Soldier') inner.traverse(o => { if ((o as THREE.Bone).isBone && o.name === 'Head') o.scale.setScalar(0.8); }); // пропорции ближе к реальным: голова меньше
   if (name === 'Soldier') addGear(inner, mixer, actions.get('Idle'), armor);
+  // оружие в руках: детали, хват второй рукой; АГС — отдельная станковая модель
+  const rigL = findArm(inner, 'L') ?? undefined, rigR = findArm(inner, 'R') ?? undefined;
+  let grip: Spawned['grip'], agsRig: Spawned['ags'];
+  if (name === 'Soldier' && weapon === 'AGS') {
+    const a = makeAgs(); a.g.scale.setScalar(height / 1.8); a.g.position.z = 0.35 * height / 1.8; obj.add(a.g);
+    agsRig = { hl: a.hl, hr: a.hr };
+  } else if (name === 'Soldier' && weapon && rigR) {
+    const node = inner.getObjectByName(weapon);
+    if (node) {
+      const act = actions.get('Idle'); if (act) { act.play(); mixer.update(0); }
+      inner.updateMatrixWorld(true);
+      const f = weaponFrame(node, rigR.wrist.getWorldPosition(new THREE.Vector3()));
+      if (f) {
+        addWeaponParts(node, weapon, f);
+        const local = f.hl.clone(); local[f.la] = Math.max(f.bb.min[f.la], Math.min(f.bb.max[f.la], f.hl[f.la] + f.mz * f.len * 0.38)); // хват впереди, на цевье
+        local[f.ha] = f.ctr[f.ha] - f.up * f.size[f.ha] * 0.1;
+        grip = { node, local };
+      }
+      if (act) act.stop();
+    }
+  }
   const arms: THREE.Object3D[] = [];
   inner.traverse(o => { if (/^UpperArm[._]?[LR]$/.test(o.name)) arms.push(o); });
   const neck = inner.getObjectByName('Neck') ?? undefined, torso = inner.getObjectByName('Torso') ?? undefined;
-  return { obj, inner, mixer, actions, arms, mod: [...arms, ...(neck ? [neck] : []), ...(torso ? [torso] : [])], neck, torso, look: 0, body: 0, baseScale: inner.scale.x, armed: !!weapon };
+  return { obj, inner, mixer, actions, arms, mod: [...arms, ...(rigL ? [rigL.lower] : []), ...(rigR && agsRig ? [rigR.lower] : []), ...(neck ? [neck] : []), ...(torso ? [torso] : [])], neck, torso, look: 0, body: 0, rigL, rigR, grip, ags: agsRig, baseScale: inner.scale.x, armed: !!weapon };
 }

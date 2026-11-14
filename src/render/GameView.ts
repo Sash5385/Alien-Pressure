@@ -8,7 +8,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
 import { alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
-import { spawnCover, spawnModel, type Spawned } from './models';
+import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
 import { sway, tickWind, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
 import { reachable, findPath } from '../game/pathfinding';
@@ -266,7 +266,7 @@ export class GameView {
         }
         if (sp?.modBase) { sp.mod.forEach((b, i) => b.quaternion.copy(sp.modBase![i])); sp.modBase = undefined; } // микшер пишет кости только при смене позы
         this.rigs.get(id)?.mixer.update(dt * TS);
-        if (sp && u && !this.dying.has(id)) { sp.modBase = sp.mod.map(b => b.quaternion.clone()); const pk = Math.max(0, sp.inner.rotation.x - 0.1) / 1.35; this.proneArms(sp, pk); this.lookAtTarget(sp, m, u, id, dt, pk); }
+        if (sp && u && !this.dying.has(id)) { sp.modBase = sp.mod.map(b => b.quaternion.clone()); const pk = Math.max(0, sp.inner.rotation.x - 0.1) / 1.35; this.proneArms(sp, pk); this.lookAtTarget(sp, m, u, id, dt, pk); applyTwoHands(sp); }
       }
       const tt = this.clock.elapsedTime;
       for (const g of this.fireMeshes.values()) g.children.forEach((c, i) => { c.scale.y = 0.7 + 0.55 * Math.abs(Math.sin(tt * 9 + (g.userData.phase as number) + i)); });
@@ -768,7 +768,7 @@ export class GameView {
     const height = { soldier: 1.05, trooper: 1.05, sniper: 1.15, psi: 1.05, heavy: 1.45, commander: 1.6 }[u.kind];
     const tint = { soldier: undefined, trooper: 0x7fd24a, sniper: 0x3f8f6a, psi: 0xb36bff, heavy: 0x6f8a2c, commander: 0xc0392b }[u.kind];
     const gun = u.team === 'human'
-      ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'ShortCannon', mortar: 'ShortCannon', ags: 'ShortCannon' }[u.weapon]
+      ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'ShortCannon', mortar: 'ShortCannon', ags: 'AGS' }[u.weapon]
       : { soldier: '', trooper: 'AK', sniper: 'Sniper_2', psi: '', heavy: 'ShortCannon', commander: 'Revolver' }[u.kind];
     const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor);
     if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
