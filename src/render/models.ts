@@ -181,6 +181,7 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   if (weapon) { // с оружием: стоя и на колене ствол направлен вперёд
     for (const c of aimClips(m.clips)) { const a = mixer.clipAction(c); a.timeScale = c.name === 'KneelShoot' ? 1 : 0; actions.set(c.name === 'IdleAim' ? 'Idle' : c.name, a); }
   }
+  if (name === 'Soldier') inner.traverse(o => { if ((o as THREE.Bone).isBone && o.name === 'Head') o.scale.setScalar(0.8); }); // пропорции ближе к реальным: голова меньше
   if (name === 'Soldier') addGear(inner, mixer, actions.get('Idle'), armor);
   const arms: THREE.Object3D[] = [];
   inner.traverse(o => { if (/^UpperArm[._]?[LR]$/.test(o.name)) arms.push(o); });

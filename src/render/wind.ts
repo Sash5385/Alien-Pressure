@@ -48,3 +48,9 @@ export function sway(mat: THREE.Material, o: { amp: number; h: number; ground?: 
   };
   mat.needsUpdate = true;
 }
+
+/** Ветер на стороне CPU (для дыма, огня, частиц): общее направление и порывы, в том же ритме, что в шейдере. */
+export function windVec(t: number): { x: number; z: number } {
+  const w = Math.sin(t * 1.3) * 0.5 + Math.sin(t * 2.3) * 0.25 + 0.35 * Math.sin(t * 0.45);
+  return { x: 0.45 + w * 0.5, z: 0.15 + (w * 0.6 + 0.25 * Math.sin(t * 1.7)) * 0.5 };
+}

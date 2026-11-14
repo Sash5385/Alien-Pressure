@@ -386,8 +386,14 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
-      <style>{'.hud>*{pointer-events:auto}'}</style>
+      <style>{'.hud>*{pointer-events:auto}@keyframes apPulse{0%,100%{opacity:.55}50%{opacity:1}}'}</style>
       <div className="hud" style={{ position: 'absolute', left: 0, top: 0, width: `${100 / z}%`, height: `${100 / z}%`, transform: `scale(${z})`, transformOrigin: '0 0', pointerEvents: 'none' }}>
+      {s.rt?.paused && s.status === 'playing' && (
+        <div style={{ position: 'absolute', left: '50%', top: narrow ? '34%' : '30%', transform: 'translate(-50%,-50%)', pointerEvents: 'none', textAlign: 'center', animation: 'apPulse 1.6s ease-in-out infinite' }}>
+          <div style={{ ...nbBase, borderRadius: 999, padding: narrow ? '8px 18px' : '12px 30px', fontSize: narrow ? 20 : 30, fontWeight: 800, letterSpacing: '.18em' }}>II ПАУЗА</div>
+          <div style={{ marginTop: 6, fontSize: 12, textShadow: '0 1px 2px #000' }}>Пробел или ▶ — продолжить. Приказы можно отдавать на паузе.</div>
+        </div>
+      )}
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
       <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? vw(94) : 560, pointerEvents: 'none', textAlign: 'center' }}>
         <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
@@ -421,7 +427,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         {sel && (
           <div style={{ display: 'flex', gap: 6, pointerEvents: 'auto', alignItems: 'center' }}>
             {([['stand', 'Стоя'], ['kneel', 'Колено'], ['prone', 'Лёжа']] as const).map(([st, label]) => (
-              <button key={st} disabled={!canStance(st)} title="Опуститься — 1 AP, встать — бесплатно. Лёжа: +10% меткости, −20% шанс попасть по тебе, гранаты нельзя"
+              <button key={st} disabled={!canStance(st)} title="Опуститься — 1 AP, встать — бесплатно. Лёжа: +10% меткости, −20% шанс попасть по тебе, гранаты нельзя; ползком не больше 2 клеток (в реальном времени медленно)"
                 style={{ ...nb(stanceNow === st, !canStance(st) && stanceNow !== st), minWidth: 0, minHeight: touch ? 40 : 32, padding: '4px 12px', borderRadius: 999, fontSize: 12 }} onClick={() => doStance(st)}>{label}</button>
             ))}
           </div>

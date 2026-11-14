@@ -52,6 +52,7 @@ export const TECH_INFO: Record<keyof Tech, string> = {
 };
 
 const KEY = 'alien-pressure:v1';
+const KEY_SB = 'alien-pressure:sandbox'; // песочница сохраняется отдельно от кампании
 
 function mkSoldier(c: Campaign, name: string, bio: string, cls?: ClassId): Soldier {
   const count = (k: ClassId) => c.roster.filter(r => r.cls === k).length;
@@ -176,11 +177,11 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
 }
 
 export function save(c: Campaign) {
-  try { localStorage.setItem(KEY, JSON.stringify(c)); } catch { /* нет доступа к хранилищу */ }
+  try { localStorage.setItem(c.sandbox ? KEY_SB : KEY, JSON.stringify(c)); } catch { /* нет доступа к хранилищу */ }
 }
-export function load(): Campaign | null {
+export function load(sandbox = false): Campaign | null {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(sandbox ? KEY_SB : KEY);
     const c = raw ? (JSON.parse(raw) as Campaign) : null;
     if (!c || c.v !== 1) return null;
     c.objective ??= 'clear';
@@ -195,8 +196,8 @@ export function load(): Campaign | null {
     return c;
   } catch { return null; }
 }
-export function clearSave() {
-  try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+export function clearSave(sandbox = false) {
+  try { localStorage.removeItem(sandbox ? KEY_SB : KEY); } catch { /* ignore */ }
 }
 
 export function choosePerk(c: Campaign, id: number, perk: PerkId): string | null {

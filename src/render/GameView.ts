@@ -9,7 +9,7 @@ import { STEP, type GameState, type Unit } from '../game/types';
 import { alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
 import { spawnCover, spawnModel, type Spawned } from './models';
-import { sway, tickWind, windBlast } from './wind';
+import { sway, tickWind, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
 import { reachable, findPath } from '../game/pathfinding';
 import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
@@ -23,7 +23,8 @@ const SPEED = 3.6; // клеток в секунду (было 6,5 — медл�
 const BULLET_SPEED = 18; // клеток/с: пулю видно в полёте (было 60)
 const BURST_GAP = 190; // мс между патронами очереди (было 75)
 const ALIEN_SPEED = 2.2; // пришельцы идут медленнее, чтобы их ход было видно
-const speedOf = (u?: Unit) => (u?.team === 'alien' ? ALIEN_SPEED : SPEED);
+const CRAWL = 1.1; // ползком лёжа
+const speedOf = (u?: Unit) => (u?.team === 'alien' ? ALIEN_SPEED : u?.stance === 'prone' ? CRAWL : SPEED);
 
 interface Float { sprite: THREE.Sprite; t: number }
 export type Weather = 'clear' | 'rain' | 'fog' | 'dusk' | 'dawn' | 'night';
@@ -48,6 +49,7 @@ export class GameView {
   /** Колесо зажато / отпущено: в реальном времени пока зажато — время стоит. */
   onMiddle?: (down: boolean) => void;
   private recoil = new Map<number, number>();
+  private pathMat = new THREE.LineBasicMaterial({ color: 0x4fd7ff, transparent: true, opacity: 0.7 });
   /** Цели, по которым уже посчитан урон, но снаряд ещё в полёте: гибель и падение показываем только при попадании. */
   private held = new Map<number, number>();
   private hold(ids: number[]) { for (const i of ids) this.held.set(i, (this.held.get(i) ?? 0) + 1); }
@@ -268,6 +270,15 @@ export class GameView {
       }
       const tt = this.clock.elapsedTime;
       for (const g of this.fireMeshes.values()) g.children.forEach((c, i) => { c.scale.y = 0.7 + 0.55 * Math.abs(Math.sin(tt * 9 + (g.userData.phase as number) + i)); });
+      { // ветер: пламя наклоняется по ветру, дым сносит и «дышит»
+        const w = windVec(tt);
+        for (const g of this.fireMeshes.values()) g.children.forEach(c => { c.rotation.z = -w.x * 0.45; c.rotation.x = w.z * 0.45; });
+        for (const [k, o] of this.smokeMeshes) {
+          const ph = k.length * 1.7, b = o.userData as { bx: number; bz: number };
+          o.position.x = b.bx + w.x * 0.22 + Math.sin(tt * 0.7 + ph) * 0.1; o.position.z = b.bz + w.z * 0.22 + Math.cos(tt * 0.6 + ph) * 0.1;
+          o.scale.set(1 + Math.sin(tt * 0.9 + ph) * 0.06, 1.1 + Math.sin(tt * 1.1 + ph) * 0.05, 1 + Math.cos(tt * 0.8 + ph) * 0.06);
+        }
+      }
       for (const tw of this.tweens) { tw.t += rawDt * TS; const k = Math.min(1, tw.t / tw.dur); tw.fn(k); if (k >= 1) tw.done(); }
       this.tweens = this.tweens.filter(tw => tw.t < tw.dur);
       for (const f of this.floats) {
@@ -1040,7 +1051,7 @@ export class GameView {
       if (!this.smokeMeshes.has(k)) {
         const o = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 8), new THREE.MeshBasicMaterial({ color: 0xbfc4c8, transparent: true, opacity: 0.62, depthWrite: false }));
         o.position.set(m.x + 0.5, this.hy(m.x, m.y) + 0.8, m.y + 0.5);
-        o.scale.set(1, 1.1, 1);
+        o.scale.set(1, 1.1, 1); o.userData = { bx: o.position.x, bz: o.position.z };
         this.scene.add(o); this.smokeMeshes.set(k, o);
       }
       (this.smokeMeshes.get(k)!.material as THREE.MeshBasicMaterial).opacity = m.ttl >= 2 ? 0.62 : 0.4;
@@ -1223,7 +1234,17 @@ export class GameView {
     const s = this.state;
     for (const o of s.units) if (o.hp > 0 && o.overwatch && (o.team === 'human' || isVisible(s, o))) this.ring(o.x, o.y, o.team === 'human' ? 0x35e0e0 : 0xff6a3a, 0.46, 0.52);
     for (const o of s.units) if (o.hp > 0 && o.down) this.ring(o.x, o.y, 0xffffff, 0.3, 0.36);
-    for (const o of s.units) if (o.hp > 0 && o.team === 'human' && o.dest) this.ring(o.dest.x, o.dest.y, 0x4fd7ff, 0.18, 0.28);
+    for (const o of s.units) if (o.hp > 0 && o.team === 'human' && o.dest) {
+      this.ring(o.dest.x, o.dest.y, 0x4fd7ff, 0.18, 0.28);
+      if (s.rt) { // линия пути до цели приказа
+        const path = findPath(s, o.x, o.y, o.dest.x, o.dest.y, 80);
+        if (path.length) {
+          const pts = [new THREE.Vector3(o.x + 0.5, this.hy(o.x, o.y) + 0.1, o.y + 0.5), ...path.map(([x, y]) => new THREE.Vector3(x + 0.5, this.hy(x, y) + 0.1, y + 0.5))];
+          const geo = new THREE.BufferGeometry().setFromPoints(pts);
+          this.highlight.add(new THREE.Line(geo, this.pathMat));
+        }
+      }
+    }
     for (const o of s.units) if (o.hp > 0 && o.team === 'human' && o.atk !== undefined) { const t = s.units.find(v => v.id === o.atk && v.hp > 0); if (t && isVisible(s, t)) this.ring(t.x, t.y, 0xff4a2a, 0.56, 0.62); }
     for (const o of s.units) if (o.hp > 0 && o.team === 'alien' && isVisible(s, o) && !o.overwatch && o.alert) this.ring(o.x, o.y, 0xb03030, 0.5, 0.53);
     // конусы огня пришельцев на overwatch
@@ -1299,17 +1320,30 @@ export class GameView {
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     this.scene.add(pts);
+    const wv = windVec(this.clock.elapsedTime);
     let last = 0;
     void this.tween(ms, k => {
       const d = ((k - last) * ms) / 1000;
       last = k;
       for (let i = 0; i < count; i++) {
         v[i].y -= 7 * d;
-        p[i * 3] += v[i].x * d; p[i * 3 + 1] = Math.max(0.02, p[i * 3 + 1] + v[i].y * d); p[i * 3 + 2] += v[i].z * d;
+        p[i * 3] += (v[i].x + wv.x) * d; p[i * 3 + 1] = Math.max(0.02, p[i * 3 + 1] + v[i].y * d); p[i * 3 + 2] += (v[i].z + wv.z) * d;
       }
       geo.attributes.position.needsUpdate = true;
       mat.opacity = 1 - k;
     }).then(() => { this.scene.remove(pts); geo.dispose(); mat.dispose(); });
+  }
+
+  /** Круги на воде и столб брызг. */
+  private ripples(x: number, z: number, r: number) {
+    this.burst(new THREE.Vector3(x, 0.15, z), 0xcfe8ff, 46, 4.2, 900);
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 40), new THREE.MeshBasicMaterial({ color: 0xe6f4ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2; m.position.set(x, 0.06, z);
+      this.scene.add(m);
+      void sleep(i * 220).then(() => this.tween(1300, k => { m.scale.setScalar(0.3 + k * r * 1.4); (m.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k); })).then(() => { this.scene.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); });
+    }
+    sfx('splash');
   }
 
   private muzzleFlash(pos: THREE.Vector3) {
@@ -1458,6 +1492,7 @@ export class GameView {
     const to = new THREE.Vector3(res.x + 0.5, 0.1 + this.hy(res.x, res.y), res.y + 0.5);
     sfx('grenade');
     { const pw = Math.min(2, 0.7 + (res.r ?? 1.5) * 0.4); windBlast(to.x, to.z, pw); this.leaves?.burst(to.x, to.z, this.treeSpots.filter(t => this.coverMeshes.has(t.k)), pw); }
+    if (s.terrain[res.y]?.[res.x] === 'water') this.ripples(to.x, to.z, (res.r ?? BLAST) + 1); // взрыв в воде: брызги и круги
     const light = new THREE.PointLight(0xffa040, 40, 14);
     light.position.set(to.x, to.y + 0.7, to.z);
     const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.85 }));
@@ -1689,7 +1724,7 @@ export class GameView {
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
       const before = { id: sel.id, x: sel.x, y: sel.y, ap: sel.ap, stance: sel.stance, overwatch: sel.overwatch, facing: sel.facing };
       const visBefore = s.units.filter(v => v.team === 'alien' && v.hp > 0 && isVisible(s, v)).length;
-      s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false; sel.stance = 'stand';
+      s.busy = true; s.targetId = null; sel.ap -= 1; sel.overwatch = false; if (sel.stance !== 'prone') sel.stance = 'stand'; // лёжа боец ползёт и не встаёт
       let shotAt = false;
       for (const [px, py] of findPath(s, sel.x, sel.y, x, y, moveRange(sel))) {
         sel.x = px; sel.y = py; this.stepFx(sel); await this.moved();

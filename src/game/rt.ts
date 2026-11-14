@@ -9,6 +9,7 @@ import { WEAPONS } from './weapons';
 export const CD_PER_AP = 2.4;
 /** Скорость бега в клетках в секунду (совпадает с GameView). */
 export const RUN_SPEED = 3.6;
+export const CRAWL_SPEED = 1.1; // ползком, клеток в секунду
 export const TURN_SECS = 9;
 
 export interface RtHooks extends AiHooks {
@@ -83,9 +84,9 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
     const path = findPath(s, u.x, u.y, u.dest.x, u.dest.y, 80);
     if (!path.length) { u.dest = undefined; return; }
     const step = Math.hypot(path[0][0] - u.x, path[0][1] - u.y);
-    [u.x, u.y] = path[0]; u.stance = 'stand'; u.overwatch = false;
+    [u.x, u.y] = path[0]; if (u.stance !== 'prone') u.stance = 'stand'; u.overwatch = false; // лёжа ползёт, не вставая
     // следующий шаг назначается раньше, чем боец дойдёт до клетки, поэтому бег непрерывный (без остановок на каждой клетке)
-    u.cd = step * 0.8 / RUN_SPEED; u.ap = 0;
+    u.cd = step * 0.8 / (u.stance === 'prone' ? CRAWL_SPEED : RUN_SPEED); u.ap = 0;
     void hooks.step(u).catch(() => {});
     if (path.length === 1) u.dest = undefined;
     return;

@@ -99,7 +99,7 @@ function shift(u: Unit, d: number) {
   u.morale = Math.min(100, Math.max(0, Math.round(u.morale + (d < 0 ? d * moraleFactor(u) : d))));
 }
 
-export const moveRange = (u: Unit) => Math.max(1, u.move - (u.fracture ? 2 : 0));
+export const moveRange = (u: Unit) => Math.min(u.stance === 'prone' ? 2 : 99, Math.max(1, u.move - (u.fracture ? 2 : 0))); // лёжа — ползком не больше 2 клеток
 
 export function faceToward(u: Unit, x: number, y: number) {
   if (x !== u.x || y !== u.y) u.facing = Math.atan2(x - u.x, y - u.y);

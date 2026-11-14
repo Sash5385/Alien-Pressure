@@ -12,13 +12,14 @@ type Screen_ = 'menu' | 'camp' | 'mission';
 
 export function App() {
   const [saved, setSaved] = useState<Campaign | null>(() => load());
+  const [savedSb, setSavedSb] = useState<Campaign | null>(() => load(true));
   const [c, setC] = useState<Campaign | null>(saved);
   const [screen, setScreen] = useState<Screen_>('menu');
   const [mission, setMission] = useState<{ state: GameState; deployed: number[]; before: Campaign; run: number } | null>(null);
   const [midSave] = useState(() => loadMission());
 
-  const update = (n: Campaign) => { setC(n); setSaved(n); save(n); };
-  const start = (d: Difficulty, sandbox = false) => { clearSave(); clearMission(); const n = newCampaign(d, undefined, sandbox); update(n); setScreen('camp'); };
+  const update = (n: Campaign) => { setC(n); if (n.sandbox) setSavedSb(n); else setSaved(n); save(n); };
+  const start = (d: Difficulty, sandbox = false) => { clearSave(sandbox); clearMission(); const n = newCampaign(d, undefined, sandbox); update(n); setScreen('camp'); };
 
   const launch = (c0: Campaign, deployed: number[]) => {
     clearMission();
@@ -67,6 +68,11 @@ export function App() {
           Продолжить: миссия {saved.missionNo}, бойцов {saved.roster.length}
         </button>
       )}
+      {savedSb && (
+        <button style={cta()} onClick={() => { setC(savedSb); setScreen('camp'); }}>
+          Продолжить песочницу: миссия {savedSb.missionNo}
+        </button>
+      )}
       <b>Новая игра — сложность</b>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {(Object.keys(DIFF) as Difficulty[]).map(d => (
@@ -75,7 +81,7 @@ export function App() {
       </div>
       <b>Песочница</b>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button style={btn(true)} title="Всё оружие, броня и технологии открыты и бесплатны, любая миссия на выбор, отряд не кончается" onClick={() => start('normal', true)}>Режим песочницы</button>
+        <button style={btn(true)} title="Всё оружие, броня и технологии открыты и бесплатны, любая миссия на выбор, отряд не кончается" onClick={() => start('normal', true)}>{savedSb ? 'Новая песочница' : 'Режим песочницы'}</button>
         <span style={{ fontSize: 12, opacity: 0.7 }}>всё доступно: оружие, броня, любая миссия</span>
       </div>
       <p style={{ fontSize: 12, opacity: 0.5 }}>Версия {VERSION} · сборка {BUILD}</p>

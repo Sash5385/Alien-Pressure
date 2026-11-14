@@ -20,6 +20,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
 }) {
   const [deploy, setDeploy] = useState<number[]>(() =>
     [...c.roster].sort((a, b) => a.hpLoss - b.hpLoss).slice(0, DEPLOY).map(s => s.id));
+  const cap = c.sandbox ? MAX_ROSTER : DEPLOY; // в песочнице можно выставить до 6 бойцов
   const [msg, setMsg] = useState('');
   const [selId, setSelId] = useState<number>(() => c.roster[0]?.id ?? 0);
   const [open, setOpen] = useState<'weapon' | 'armor' | 'cls' | null>(null);
@@ -33,7 +34,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
     if (!err) onChange(c2);
   };
   const toggle = (id: number) =>
-    setDeploy(ids.includes(id) ? ids.filter(x => x !== id) : ids.length < DEPLOY ? [...ids, id] : ids);
+    setDeploy(ids.includes(id) ? ids.filter(x => x !== id) : ids.length < cap ? [...ids, id] : ids);
 
   if (c.over) {
     return (
@@ -222,7 +223,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button style={cta(ids.length === 0)} disabled={ids.length === 0} onClick={() => onStart(ids)}>
-          В миссию ({ids.length}/{DEPLOY})
+          В миссию ({ids.length}/{cap})
         </button>
         <button style={btn()} onClick={onMenu}>В меню</button>
       </div>
