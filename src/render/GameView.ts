@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
-import { alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
 import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
@@ -301,6 +301,8 @@ export class GameView {
         (f.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - f.t / 1.1);
       }
       this.floats = this.floats.filter(f => (f.t < 1.1 ? true : (this.scene.remove(f.sprite), false)));
+      if (this.waveMarks) this.waveMarks.children.forEach((c, i) => { const t = this.clock.elapsedTime * 3 + i; if (i % 2) c.position.y += Math.sin(t) * 0.004; else c.scale.setScalar(1 + 0.18 * Math.sin(t)); });
+      for (const g of this.lootMeshes.values()) g.rotation.y += 0.01;
       if (this.mistTex) { this.mistTex.offset.x += rawDt * 0.004; this.mistTex.offset.y += rawDt * 0.0015; }
       if (this.waterTex) { this.waterTex.offset.x += rawDt * 0.03; this.waterTex.offset.y += rawDt * 0.015; }
       this.stepCamera(dt);
@@ -451,6 +453,58 @@ export class GameView {
       g.add(trunk, crown);
     }
     return g;
+  }
+
+  private lootMeshes = new Map<string, THREE.Object3D>();
+  private waveMarks: THREE.Group | null = null;
+  private waveSig = '';
+
+  /** Мешки с песком, трофеи и метки следующей волны. */
+  private syncTactics() {
+    const s = this.state;
+    // мешки, выложенные бойцами
+    for (let y = 0; y < s.size; y++) for (let x = 0; x < s.size; x++) {
+      if (s.look[y][x] !== 'bags' || s.cover[y][x] === 'none' || this.coverMeshes.has(`${x},${y}`)) continue;
+      const g = new THREE.Group();
+      g.position.set(x + 0.5, this.hy(x, y), y + 0.5);
+      g.rotation.y = ((x * 7 + y * 13) % 5) * 0.12 - 0.2;
+      const bagG = new THREE.BoxGeometry(0.34, 0.15, 0.2);
+      const mats = [0x9a8a62, 0x8c7d57, 0xa5956b].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }));
+      for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(bagG, mats[(x + i) % 3]); b.position.set(-0.34 + i * 0.34, 0.09, -0.12); b.castShadow = true; g.add(b); const c = new THREE.Mesh(bagG, mats[(y + i) % 3]); c.position.set(-0.34 + i * 0.34, 0.09, 0.12); c.castShadow = true; g.add(c); }
+      for (let i = 0; i < 2; i++) { const b = new THREE.Mesh(bagG, mats[(x + y + i) % 3]); b.position.set(-0.17 + i * 0.34, 0.25, 0); b.castShadow = true; g.add(b); }
+      this.scene.add(g); this.coverMeshes.set(`${x},${y}`, g); sfx('dig');
+    }
+    // трофеи: ящичек с цветной крышкой, покачивается
+    const live = new Set((s.loot ?? []).map(l => `${l.x},${l.y}`));
+    for (const l of s.loot ?? []) {
+      const k = `${l.x},${l.y}`;
+      if (this.lootMeshes.has(k)) continue;
+      const g = new THREE.Group();
+      g.position.set(l.x + 0.5, this.hy(l.x, l.y) + 0.12, l.y + 0.5);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.26), new THREE.MeshStandardMaterial({ color: 0x4a4f3a, roughness: 0.8 }));
+      const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.22), new THREE.MeshBasicMaterial({ color: { mag: 0xffd34d, gren: 0x6fe39a, mat: 0xc98a4a }[l.kind] }));
+      top.position.y = 0.12; box.castShadow = true; g.add(box, top);
+      this.scene.add(g); this.lootMeshes.set(k, g);
+    }
+    for (const [k, g] of this.lootMeshes) if (!live.has(k)) { this.scene.remove(g); this.lootMeshes.delete(k); }
+    // метки следующей волны: красные кольца с шевронами на клетках появления
+    const plan = (s.objective === 'defend' || s.objective === 'hold') ? s.wavePlan ?? [] : [];
+    const sig = plan.map(p => `${p.x},${p.y},${p.kind}`).join(';');
+    if (sig !== this.waveSig) {
+      this.waveSig = sig;
+      if (this.waveMarks) { this.scene.remove(this.waveMarks); this.waveMarks = null; }
+      if (plan.length) {
+        const g = new THREE.Group();
+        for (const p of plan) {
+          const ring = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.46, 24), new THREE.MeshBasicMaterial({ color: 0xff4a3a, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+          ring.rotation.x = -Math.PI / 2; ring.position.set(p.x + 0.5, this.hy(p.x, p.y) + 0.08, p.y + 0.5);
+          const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.45, 4), new THREE.MeshBasicMaterial({ color: 0xff4a3a, transparent: true, opacity: 0.8 }));
+          arrow.rotation.x = Math.PI; arrow.position.set(p.x + 0.5, this.hy(p.x, p.y) + 1.5, p.y + 0.5);
+          g.add(ring, arrow);
+        }
+        this.scene.add(g); this.waveMarks = g;
+      }
+    }
   }
 
   /** Мягкий рельеф как в природе: высоты клеток (и русла рек) дважды размываются, между центрами клеток плавная интерполяция,
@@ -970,6 +1024,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
         if (this.sndReady && performance.now() - this.crumbleAt > 400) { this.crumbleAt = performance.now(); sfx('crumble'); }
       }
     }
+    this.syncTactics();
     for (const b of this.state.beacons) {
       const m = this.beaconMeshes.get(`${b.x},${b.y}`);
       if (b.done && m) {
@@ -1419,6 +1474,13 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
         if (Math.hypot(x - u.x, y - u.y) > R || s.cover[y][x] !== 'none' || !los(s, u, { x, y })) continue;
         this.highlight.add(new THREE.Mesh(this.tileGeo(x, y, 1, 0.025), vm));
       }
+    }
+    if (s.aiming === 'bags' && !s.busy) {
+      const bm = new THREE.MeshBasicMaterial({ color: 0x7ee0ff, transparent: true, opacity: 0.3 });
+      for (let by = Math.max(1, u.y - 2); by <= Math.min(s.size - 2, u.y + 2); by++) for (let bx = Math.max(1, u.x - 2); bx <= Math.min(s.size - 2, u.x + 2); bx++) {
+        if (canBuildBags(s, u, bx, by)) this.highlight.add(new THREE.Mesh(this.tileGeo(bx, by), bm));
+      }
+      return;
     }
     if (s.aiming === 'roll' && !s.busy) {
       const rm = new THREE.MeshBasicMaterial({ color: 0x7ee0ff, transparent: true, opacity: 0.28 });
@@ -1877,6 +1939,12 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       if (tu) faceToward(tu, x, y);
       s.turning = false;
       this.onChange();
+      return;
+    }
+    if (s.aiming === 'bags') {
+      const bu = s.units.find(v => v.id === s.selectedId && v.hp > 0);
+      if (bu && canBuildBags(s, bu, x, y)) { buildBags(s, bu, x, y); sfx('dig'); this.syncUnits(); }
+      s.aiming = null; this.onChange();
       return;
     }
     if (s.aiming === 'roll') {

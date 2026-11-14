@@ -384,7 +384,7 @@ export function createMission(o: MissionOpts): GameState {
     sabotage: 'Цель: взорвать два маяка (подойди вплотную: заряд тратит 1 AP и 1 гранату).',
     defend: `Цель: выжить ${dv?.turns ?? DEFEND_TURNS} ходов. ${dv ? dv.name : 'Оборона'}: ${dv?.desc ?? ''}. Пришельцы идут волнами со всех сторон${dv?.sides ? ' (здесь — с севера и юга)' : ''}.`,
   }[o.objective];
-  return {
+  const st: GameState = {
     size: n, cover, terrain, height, look, houses, trenches: preTrenches, biome: o.biome, units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels, fires: [], scorched: grid(n, false), bridges, targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
@@ -392,15 +392,19 @@ export function createMission(o: MissionOpts): GameState {
     log: [`Миссия ${o.missionNo} · ${BIOME_NAME[o.biome]}. ${brief}`, 'Разведка: пехота, снайпер, тяжёлый (ломает укрытия).'],
     rng: rng.rng, boss: !!o.boss,
   };
+  st.mats = defend ? 8 : 4; st.loot = [];
+  if (defend || hold) planWave(st); // волну видно заранее
+  return st;
 }
 
 /** Подкрепление: в «Удержании» — с юга; в «Обороне» — волна по краям карты (размер растёт с ходом). */
-export function reinforce(s: GameState) {
-  if (s.objective === 'defend' && s.turnNo < 2) return; // первый ход — на обустройство
+/** Клетки, где может появиться подкрепление. */
+function spawnTiles(s: GameState): [number, number][] {
   const c = s.size >> 1;
   const free: [number, number][] = [];
   if (s.objective === 'defend') {
-    const reach = reachSet(s, s.size, Math.round(s.units.find(u => u.team === 'human' && u.hp > 0)?.x ?? c), Math.round(s.units.find(u => u.team === 'human' && u.hp > 0)?.y ?? c));
+    const hu = s.units.find(u => u.team === 'human' && u.hp > 0);
+    const reach = reachSet(s, s.size, Math.round(hu?.x ?? c), Math.round(hu?.y ?? c));
     for (let y = 1; y < s.size - 1; y++) for (let x = 1; x < s.size - 1; x++) {
       if (Math.min(x, y, s.size - 1 - x, s.size - 1 - y) > 3 || (s.sides === 'ns' && Math.min(y, s.size - 1 - y) > 6) || !reach.has(`${x},${y}`) || s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) continue;
       free.push([x, y]);
@@ -410,17 +414,41 @@ export function reinforce(s: GameState) {
       if (s.cover[y][x] === 'none' && s.terrain[y][x] === 'ground' && !s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) free.push([x, y]);
     }
   }
-  if (!free.length) return;
-  const wave = s.objective === 'defend' ? Math.min(3 + (s.waveBoost ?? 0), 1 + Math.floor(s.turnNo / 5) + (s.size >= 64 ? 1 : 0) + (s.waveBoost ?? 0)) : 1;
+  return free;
+}
+
+/** Планирует следующую волну заранее: игрок видит, откуда и кто придёт, и успевает подготовить оборону. */
+export function planWave(s: GameState) {
+  const free = spawnTiles(s);
+  const turn = s.turnNo + 1;
+  const wave = s.objective === 'defend' ? Math.min(3 + (s.waveBoost ?? 0), 1 + Math.floor(turn / 5) + (s.size >= 64 ? 1 : 0) + (s.waveBoost ?? 0)) : 1;
   const kinds: AlienKind[] = ['trooper', 'trooper', 'trooper', 'trooper', 'heavy', 'sniper', 'psi'];
+  const plan: NonNullable<GameState['wavePlan']> = [];
   for (let k = 0; k < wave && free.length; k++) {
     const j = Math.floor(rand(s) * free.length), [x, y] = free.splice(j, 1)[0];
-    const kind = s.objective === 'defend' ? kinds[Math.floor(rand(s) * Math.min(kinds.length, 4 + Math.floor(s.turnNo / 4)))] : 'trooper';
+    const kind = s.objective === 'defend' ? kinds[Math.floor(rand(s) * Math.min(kinds.length, 4 + Math.floor(turn / 4)))] : 'trooper';
+    plan.push({ x, y, kind });
+  }
+  s.wavePlan = plan;
+}
+
+/** Подкрепление по плану: в «Удержании» — с юга; в «Обороне» — волна по краям карты (размер растёт с ходом). */
+export function reinforce(s: GameState) {
+  if (s.objective === 'defend' && s.turnNo < 2) return; // первые ходы — подготовка: стройка и разведка
+  if (!s.wavePlan) planWave(s);
+  const plan = s.wavePlan ?? [];
+  let spawned = 0;
+  plan.forEach((p, k) => {
+    if (s.units.some(u => u.hp > 0 && u.x === p.x && u.y === p.y)) return;
     const id = Math.max(...s.units.map(u => u.id)) + 1;
-    const rn = alien(id, kind, s.units.filter(u => u.kind === 'trooper').length + 1, x, y, s.difficulty);
+    const rn = alien(id, p.kind as AlienKind, s.units.filter(u => u.kind === 'trooper').length + 1, p.x, p.y, s.difficulty);
     rn.alert = true;
     rn.grp = 100 + s.turnNo * 10 + Math.floor(k / 2); // волна делится на пары
     s.units.push(rn);
-  }
-  log(s, s.objective === 'defend' ? `Волна пришельцев: ${wave}!` : 'Подкрепление пришельцев!');
+    spawned++;
+  });
+  if (!spawned) { planWave(s); return; }
+  s.mats = (s.mats ?? 0) + 2; // снабжение после каждой волны
+  log(s, s.objective === 'defend' ? `Волна пришельцев: ${spawned}! Снабжение: +2 материала.` : 'Подкрепление пришельцев!');
+  planWave(s);
 }

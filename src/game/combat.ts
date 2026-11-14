@@ -161,7 +161,46 @@ export function reactions(s: GameState, mover: Unit): ShotResult[] {
   return out;
 }
 
+/** Можно ли поставить мешки с песком на клетку (до 2 клеток от бойца, 1 AP и 1 материал). */
+export function canBuildBags(s: GameState, u: Unit, x: number, y: number): boolean {
+  if ((s.mats ?? 0) < 1 || u.ap < 1 || u.down) return false;
+  if (Math.hypot(u.x - x, u.y - y) > 2.3 || x < 1 || y < 1 || x >= s.size - 1 || y >= s.size - 1) return false;
+  if (s.cover[y][x] !== 'none' || s.terrain[y][x] !== 'ground' || s.trenches.some(t => t.x === x && t.y === y)) return false;
+  if (s.units.some(v => v.hp > 0 && v.x === x && v.y === y) || s.barrels.some(b => b.x === x && b.y === y) || s.beacons.some(b => b.x === x && b.y === y)) return false;
+  return true;
+}
+export function buildBags(s: GameState, u: Unit, x: number, y: number): boolean {
+  if (!canBuildBags(s, u, x, y)) return false;
+  u.ap -= 1; s.mats = (s.mats ?? 0) - 1; u.overwatch = false;
+  s.cover[y][x] = 'half'; s.look[y][x] = 'bags';
+  log(s, `${u.name} выкладывает мешки с песком.`);
+  return true;
+}
+
+/** Трофеи: с убитого пришельца с шансом падает боезапас, граната или материалы; боец, вставший на клетку, их подбирает. */
+function lootTick(s: GameState) {
+  s.loot ??= [];
+  for (const a of s.units) {
+    if (a.team !== 'alien' || a.hp > 0 || a.looted) continue;
+    a.looted = true;
+    if (rand(s) < 0.55) {
+      const r = rand(s);
+      s.loot.push({ x: a.x, y: a.y, kind: r < 0.5 ? 'mag' : r < 0.75 ? 'gren' : 'mat', n: 1 });
+    }
+  }
+  for (const u of s.units) {
+    if (u.team !== 'human' || u.hp <= 0) continue;
+    const i = s.loot.findIndex(l => l.x === u.x && l.y === u.y);
+    if (i < 0) continue;
+    const l = s.loot.splice(i, 1)[0];
+    if (l.kind === 'mag') { u.mags += l.n; log(s, `${u.name} находит магазин.`); }
+    else if (l.kind === 'gren') { u.grenades += l.n; log(s, `${u.name} находит гранату.`); }
+    else { s.mats = (s.mats ?? 0) + 2; log(s, `${u.name} находит материалы (+2).`); }
+  }
+}
+
 export function checkEnd(s: GameState) {
+  lootTick(s);
   const humans = living(s, 'human');
   if (humans.length === 0) { s.status = 'lost'; return; }
   const z = s.zone;
@@ -685,8 +724,8 @@ export const trenchAt = (s: GameState, x: number, y: number) => s.trenches.some(
 
 /** Окопаться: 1 AP; на клетке появляется окоп (укрытие со всех сторон, −1 урон от взрывов). */
 export function digIn(s: GameState, u: Unit): boolean {
-  if (u.ap <= 0 || s.terrain[u.y][u.x] === 'water' || trenchAt(s, u.x, u.y)) return false;
-  u.ap -= 1;
+  if (u.ap <= 0 || s.terrain[u.y][u.x] === 'water' || trenchAt(s, u.x, u.y) || (s.mats ?? 0) < 1) return false;
+  u.ap -= 1; s.mats = (s.mats ?? 0) - 1;
   u.overwatch = false;
   s.trenches.push({ x: u.x, y: u.y });
   log(s, `${u.name} окапывается.`);

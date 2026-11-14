@@ -6,7 +6,7 @@ export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'launcher' | 'mo
 export type LaunchKind = 'ugl' | 'launcher' | 'mortar' | 'ags';
 export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
-export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container';
+export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container' | 'bags';
 export interface House { x: number; y: number; w: number; h: number; id: number; hp: number }
 export type Stance = 'stand' | 'kneel' | 'prone';
 export type Biome = 'ruins' | 'forest' | 'lake';
@@ -86,7 +86,8 @@ export interface Unit {
   cd?: number; // реальное время: секунд до следующего действия
   dest?: { x: number; y: number }; // приказ «идти» (реальное время)
   atk?: number; // приказ «атаковать» (id цели)
-  busyRt?: boolean; // выполняет действие (анимация)
+  busyRt?: boolean;
+  looted?: boolean; // трофей с этого пришельца уже разыгран // выполняет действие (анимация)
   down?: boolean; // тяжело ранен: лежит, можно поднять
   bleedOut?: number; // ходов до смерти
   revived?: boolean; // уже падал в этой миссии
@@ -118,7 +119,7 @@ export interface GameState {
   beacons: { x: number; y: number; done: boolean }[];
   holdTurns: number;
   zone: { x: number; y: number; w: number; h: number } | null;
-  aiming: 'grenade' | 'roll' | null; // режим прицеливания гранаты или выбора клетки для переката
+  aiming: 'grenade' | 'roll' | 'bags' | null; // режим прицеливания гранаты или выбора клетки для переката
   mines: { x: number; y: number; owner: number }[];
   barrels: { x: number; y: number }[]; // взрывоопасные бочки (половинное укрытие)
   fires: { x: number; y: number; ttl: number }[]; // горящие клетки: непроходимы, жгут стоящих
@@ -132,6 +133,9 @@ export interface GameState {
   boss?: boolean; // миссия с боссом (ликвидация)
   rt?: { speed: 0.5 | 1; paused: boolean; clock: number; pulseAt: number; planAt: number; auto: boolean }; // режим реального времени
   smokes?: { x: number; y: number; ttl: number }[]; // дым: закрывает обзор
+  mats?: number; // стройматериалы: окоп и мешки с песком стоят по 1; пополняются за волны и трофеи
+  loot?: { x: number; y: number; kind: 'mag' | 'gren' | 'mat'; n: number }[]; // трофеи с убитых пришельцев
+  wavePlan?: { x: number; y: number; kind: UnitKind }[]; // следующая волна: откуда и кто придёт (видно заранее)
   smokeMode?: boolean; // прицел дымовой гранаты
   lookMode?: boolean; // режим «Осмотр»: подсветка зоны обзора выбранного бойца
   launch?: LaunchKind; // прицел гранатомёта/миномёта/подствольника (вместе с aiming 'grenade')

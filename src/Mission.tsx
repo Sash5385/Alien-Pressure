@@ -129,6 +129,13 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     living(s, 'human').some(h => h.bleeding && Math.abs(h.x - sel.x) + Math.abs(h.y - sel.y) <= 1);
   const canGrenade = canAct && !!sel && sel.ap > 0 && sel.grenades > 0 && sel.stance !== 'prone';
   const canRoll = canAct && !!sel && !sel.down && (s.rt ? (sel.cd ?? 0) <= 0 && !sel.busyRt : sel.ap > 0);
+  const canBags = canAct && !!sel && !sel.down && sel.ap > 0 && (s.mats ?? 0) > 0;
+  const toggleBags = () => {
+    if (!canBags) return;
+    s.smokeMode = false; s.launch = undefined; s.targetId = null;
+    s.aiming = s.aiming === 'bags' ? null : 'bags';
+    view.current!.syncUnits(); rerender();
+  };
   const toggleRoll = () => {
     if (!canRoll) return;
     s.smokeMode = false; s.launch = undefined; s.targetId = null;
@@ -202,7 +209,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     rerender();
   };
   const abilityLabel = sel ? { assault: 'Подавить', sniper: 'Прицельный (2 AP)', medic: `Лечение (${2 - sel.abilityUsed})`, engineer: `Мина (${2 - sel.abilityUsed})` }[sel.cls] : '';
-  const canDig = canAct && !!sel && sel.ap > 0 && !trenchAt(s, sel.x, sel.y) && s.terrain[sel.y][sel.x] !== 'water';
+  const canDig = canAct && !!sel && sel.ap > 0 && (s.mats ?? 0) > 0 && !trenchAt(s, sel.x, sel.y) && s.terrain[sel.y][sel.x] !== 'water';
   const doDig = () => {
     if (!canDig || !sel) return;
     digIn(s, sel);
@@ -332,6 +339,10 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     sabotage: `маяки ${s.beacons.filter(b => b.done).length}/${s.beacons.length}`,
   }[s.objective];
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
+  const kindName: Record<string, string> = { trooper: 'пехота', heavy: 'тяжёлый', sniper: 'снайпер', psi: 'пси', commander: 'командир' };
+  const waveText = (s.objective === 'defend' || s.objective === 'hold') && s.wavePlan?.length
+    ? ` · волна: ${[...new Set(s.wavePlan.map(w => kindName[w.kind] ?? w.kind))].join(', ')} ×${s.wavePlan.length} через ${s.rt ? `${Math.max(0, Math.ceil(9 - (s.rt.clock - s.rt.pulseAt)))} с` : `${s.objective === 'defend' && s.turnNo < 2 ? 3 - s.turnNo : 1} ход.`}${s.objective === 'defend' && s.turnNo < 2 ? ' (подготовка)' : ''}`
+    : '';
 
   const humans = s.units.filter(u => u.team === 'human');
   const half = Math.ceil(humans.length / 2);
@@ -351,6 +362,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     it('↻', 'Заряд', sel ? `${sel.mags}` : '', false, !canReload, doReload, 'Перезарядка'),
     it('⛏', 'Окоп', '', false, !canDig || !sel, doDig, 'Окоп: укрытие со всех сторон, −1 урон от взрывов'),
     it('⟲', 'Перекат', '', s.aiming === 'roll', !canRoll, toggleRoll, 'Перекат: 1 AP, до 2 клеток, быстрый кувырок, боец остаётся лёжа'),
+    it('▤', 'Мешки', `${s.mats ?? 0}`, s.aiming === 'bags', !canBags, toggleBags, 'Мешки с песком: 1 AP и 1 материал, полуукрытие на клетке до 2 шагов от бойца. Окоп тоже стоит 1 материал'),
     it('✚', 'Бинт', `${s.medkits}`, false, !canBandage, heal, 'Перевязка'),
     sel ? it('★', { assault: 'Подавл.', sniper: 'Снайп.', medic: 'Лечить', engineer: 'Мина' }[sel.cls], abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, `${abilityLabel}: ${CLASSES[sel.cls].desc}`) : it('★', 'Умение', '', false, true, () => {}),
     ...(downedAlly ? [it('⇪', 'Поднять', '', true, !canAct, doRevive, `Поднять: ${downedAlly.name}`)] : []),
@@ -405,7 +417,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
       <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? vw(94) : 560, pointerEvents: 'none', textAlign: 'center' }}>
         <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
-          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
+          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{waveText}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
         </div>
       </div>
       {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (
@@ -427,7 +439,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         <div style={{ fontWeight: 700 }}>{info}</div>
         {sel && !narrow && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', fontSize: 12 }}>
-            {[`🎖 ${CLASSES[sel.cls].name}`, `🔫 ${sel.team === 'human' ? WEAPONS[sel.weapon].name : ''} ${sel.ammo}/${sel.maxAmmo}`, ...(sel.armor !== 'none' ? [`🛡 ${ARMORS[sel.armor].name}`] : []), `📦 ${sel.mags}`, `💣 ${sel.grenades}`, ...(s.medkits > 0 ? [`➕ ${s.medkits}`] : [])].map(t => (
+            {[`🎖 ${CLASSES[sel.cls].name}`, `🔫 ${sel.team === 'human' ? WEAPONS[sel.weapon].name : ''} ${sel.ammo}/${sel.maxAmmo}`, ...(sel.armor !== 'none' ? [`🛡 ${ARMORS[sel.armor].name}`] : []), `📦 ${sel.mags}`, `💣 ${sel.grenades}`, `🧱 ${s.mats ?? 0}`, ...(s.medkits > 0 ? [`➕ ${s.medkits}`] : [])].map(t => (
               <span key={t} style={{ borderRadius: 999, padding: '2px 8px', background: 'rgba(10,20,35,.55)' }}>{t}</span>
             ))}
           </div>
@@ -441,6 +453,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           </div>
         )}
         {s.turning && <div style={{ color: '#9be86a' }}>Поворот: нажми клетку, куда смотреть бойцу (долгое нажатие на карте делает то же).</div>}
+        {s.aiming === 'bags' && <div style={{ color: '#7ee0ff' }}>Мешки с песком: кликни клетку в голубой зоне (до 2 шагов). Красные метки на карте — откуда придёт следующая волна. ПКМ — отмена.</div>}
         {s.aiming === 'grenade' && s.launch && <div style={{ color: '#ffb36b' }}>{LAUNCH[s.launch].name}: кликни клетку в оранжевой зоне (дальность {LAUNCH[s.launch].min}–{LAUNCH[s.launch].range}, радиус {LAUNCH[s.launch].r}; есть разброс, бьёт и по своим). ПКМ — отмена.</div>}
         {s.aiming === 'grenade' && !s.launch && <div style={{ color: '#ffb36b' }}>Бросок гранаты: кликни клетку в оранжевой зоне (красный круг — радиус взрыва, бьёт и по своим). ПКМ — отмена.</div>}
         {tb && !tgt && <div style={{ color: '#ff8a8a' }}>Цель: взрывоопасная бочка · {barrelOk ? 'попадание 100%, взрыв радиусом 2' : 'нет линии огня'}</div>}
