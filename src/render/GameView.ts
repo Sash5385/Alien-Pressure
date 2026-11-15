@@ -1379,6 +1379,13 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
   private pathLine: THREE.Line | null = null;
   hover: { sx: number; sy: number; text: string } | null = null;
   getWeather(): Weather { return (this.state.weather as Weather | undefined) ?? weatherOf(this.state.missionNo, this.state.biome); }
+  private viewSq = (() => { try { return localStorage.getItem('alien-pressure:viewsq') === 'on'; } catch { return false; } })();
+  isViewSq() { return this.viewSq; }
+  setViewSq(on: boolean) {
+    this.viewSq = on;
+    try { localStorage.setItem('alien-pressure:viewsq', on ? 'on' : 'off'); } catch { /* ignore */ }
+    this.drawHighlight();
+  }
   isWeatherOn() { return this.weatherOn; }
   setWeatherOn(on: boolean) {
     this.weatherOn = on;
@@ -1672,7 +1679,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     if (!u) return;
     if (!u.dest) this.ring(u.x, u.y, 0xffd34d); // в движении кружок скрыт
-    if (!s.busy && s.aiming !== 'grenade') { // обзор выбранного бойца
+    if (!s.busy && s.aiming !== 'grenade' && (this.viewSq || s.lookMode)) { // обзор выбранного бойца
       const vm = new THREE.MeshBasicMaterial({ color: s.lookMode ? 0x7ee0ff : 0xffffff, transparent: true, opacity: s.lookMode ? 0.2 : 0.045, depthWrite: false }), R = s.lookMode ? Math.min(u.range, 14) : 9;
       for (let y = Math.max(0, u.y - R); y <= Math.min(s.size - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(s.size - 1, u.x + R); x++) {
         if (Math.hypot(x - u.x, y - u.y) > R || s.cover[y][x] !== 'none' || !los(s, u, { x, y })) continue;

@@ -513,6 +513,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, boxSizing: 'border-box', display: 'grid', gap: 8, fontSize: 12, maxHeight: `calc(100vh / ${z} - 90px)`, overflowY: 'auto' }}>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графіка: {view.current?.getQuality() === 'low' ? 'звичайна' : 'висока'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручна' : 'авто'}</button>
+            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setViewSq(!v.isViewSq()); rerender(); }}>Квадрати огляду: {view.current?.isViewSq() ? 'ввімк' : 'вимк'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setWeatherOn(!v.isWeatherOn()); rerender(); }}>Погода: {view.current?.isWeatherOn() === false ? 'вимк' : 'ввімк'}</button>
             <button style={nb(false, false)} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: вимк' : 'Звук: ввімк'}</button>
             <div style={{ display: 'grid', gap: 4 }}>
