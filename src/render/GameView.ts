@@ -1678,7 +1678,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     if (t) this.ring(t.x, t.y, 0xff3b3b);
     const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     if (!u) return;
-    if (!u.dest) this.ring(u.x, u.y, 0xffd34d); // в движении кружок скрыт
+    if (!u.dest) this.ring(u.x, u.y, 0xffd34d, 0.24, 0.285); // в движении кружок скрыт
     if (!s.busy && s.aiming !== 'grenade' && (this.viewSq || s.lookMode)) { // обзор выбранного бойца
       const vm = new THREE.MeshBasicMaterial({ color: s.lookMode ? 0x7ee0ff : 0xffffff, transparent: true, opacity: s.lookMode ? 0.2 : 0.045, depthWrite: false }), R = s.lookMode ? Math.min(u.range, 14) : 9;
       for (let y = Math.max(0, u.y - R); y <= Math.min(s.size - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(s.size - 1, u.x + R); x++) {
