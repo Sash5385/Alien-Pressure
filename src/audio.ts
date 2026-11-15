@@ -26,7 +26,7 @@ export function setAmbient(kind: 'rain' | 'wind' | 'water' | 'drone' | null) {
   for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   const src = c.createBufferSource(); src.buffer = buf; src.loop = true;
   const f = c.createBiquadFilter();
-  const cfg = { rain: ['highpass', 1800, 0.05], wind: ['bandpass', 520, 0.06], water: ['lowpass', 700, 0.035], drone: ['lowpass', 200, 0.03] }[kind] as [BiquadFilterType, number, number];
+  const cfg = { rain: ['highpass', 1800, 0.018], wind: ['bandpass', 520, 0.06], water: ['lowpass', 700, 0.035], drone: ['lowpass', 200, 0.03] }[kind] as [BiquadFilterType, number, number];
   f.type = cfg[0]; f.frequency.value = cfg[1];
   const g = c.createGain(); g.gain.value = muted ? 0 : cfg[2];
   if (kind === 'wind') { const o = c.createOscillator(), og = c.createGain(); o.frequency.value = 0.12; og.gain.value = 0.03; o.connect(og).connect(g.gain); o.start(); }
