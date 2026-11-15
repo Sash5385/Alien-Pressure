@@ -53,5 +53,5 @@ export function SoldierView({ weapon, armor, width, height }: { weapon: WeaponId
       el.removeChild(renderer.domElement);
     };
   }, [weapon, armor, width, height]);
-  return <div ref={host} style={{ width, height, touchAction: 'pan-y', cursor: 'grab' }} title="Потяни, чтобы повернуть" />;
+  return <div ref={host} style={{ width, height, touchAction: 'pan-y', cursor: 'grab' }} title="Потягни, щоб повернути" />;
 }

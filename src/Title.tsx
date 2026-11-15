@@ -65,6 +65,24 @@ function Alien({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
   );
 }
 
+/** Лёгкий фон для остальных страниц: небо, облака, холмы и ёлки без героев. */
+export function Backdrop() {
+  return (
+    <svg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMax slice" style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', zIndex: 0 }} aria-hidden="true">
+      <defs>
+        <linearGradient id="bsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2f8fff" /><stop offset="0.62" stopColor="#7cc8ff" /><stop offset="1" stopColor="#c9eeff" /></linearGradient>
+        <linearGradient id="bgrass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#56c25a" /><stop offset="1" stopColor="#2f8f3a" /></linearGradient>
+      </defs>
+      <rect width="1000" height="1000" fill="url(#bsky)" />
+      <Cloud x={820} y={120} s={1} /><Cloud x={150} y={260} s={0.8} flip /><Cloud x={880} y={520} s={0.7} /><Cloud x={60} y={600} s={0.6} />
+      <path d="M-20 760Q120 660 260 720T520 700T800 710T1040 680V1020H-20Z" fill="#3a9a52" {...OUT} />
+      {Array.from({ length: 16 }, (_, i) => <path key={i} d={`M${20 + i * 64} 750l22 -64l22 64z`} fill="#2e7a42" stroke={INK} strokeWidth="3" strokeLinejoin="round" />)}
+      <path d="M-20 830Q200 780 420 820T860 810T1040 800V1020H-20Z" fill="url(#bgrass)" {...OUT} />
+      <Pine x={40} y={640} s={1.2} tilt={-3} /><Pine x={970} y={660} s={1.1} tilt={4} />
+    </svg>
+  );
+}
+
 function Scene() {
   const lines: ReactNode[] = [];
   for (let i = 0; i < 34; i++) { // скоростные линии из углов и по краям, как в комиксе
@@ -165,15 +183,15 @@ export function Title({ cont, onCont, sbCont, onSbCont, midCont, onMid, onNew, o
           <Word cls="l1">Alien</Word>
           <Word cls="l2">Pressure</Word>
           <Word cls="l3">Squad Tactics</Word>
-          <div className="sub">Подпольный отряд против пришельцев</div>
+          <div className="sub">Підпільний загін проти прибульців</div>
         </div>
         <div className="menu">
-          {midCont && <button className="btn go" onClick={onMid}>Продолжить миссию<small>{midCont}</small></button>}
-          {cont && <button className="btn go" onClick={onCont}>Продолжить<small>{cont}</small></button>}
-          {sbCont && <button className="btn sb" onClick={onSbCont}>Продолжить песочницу<small>{sbCont}</small></button>}
-          <span className="lab">Новая игра</span>
+          {midCont && <button className="btn go" onClick={onMid}>Продовжити місію<small>{midCont}</small></button>}
+          {cont && <button className="btn go" onClick={onCont}>Продовжити<small>{cont}</small></button>}
+          {sbCont && <button className="btn sb" onClick={onSbCont}>Продовжити пісочницю<small>{sbCont}</small></button>}
+          <span className="lab">Нова гра</span>
           <div className="row">{labels.map((l, i) => <button key={l} className={`btn d${i + 1}`} onClick={() => onNew(i)}>{l}</button>)}</div>
-          <button className="btn sb" onClick={onSandbox} title="Всё оружие, броня и технологии открыты и бесплатны, любая миссия на выбор">{hasSb ? 'Новая песочница' : 'Песочница'}<small>всё доступно: оружие, броня, любая миссия</small></button>
+          <button className="btn sb" onClick={onSandbox} title="Уся зброя, броня й технології відкриті та безкоштовні, будь-яка місія на вибір">{hasSb ? 'Нова пісочниця' : 'Пісочниця'}<small>усе доступно: зброя, броня, будь-яка місія</small></button>
         </div>
         <div className="ver">v{VERSION.replace(/^v/, '')} · {BUILD}</div>
       </div>

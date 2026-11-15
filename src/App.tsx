@@ -57,15 +57,15 @@ export function App() {
   const diffs = Object.keys(DIFF) as Difficulty[];
   return (
     <Title
-      labels={diffs.map(d => DIFF[d].label)}
+      labels={['Легка', 'Звичайна', 'Важка']}
       onNew={i => start(diffs[i])}
       onSandbox={() => start('normal', true)}
       hasSb={!!savedSb}
-      midCont={midSave && saved && !saved.over ? `миссия ${midSave.before.missionNo}, ход ${midSave.state.turnNo}` : null}
+      midCont={midSave && saved && !saved.over ? `місія ${midSave.before.missionNo}, хід ${midSave.state.turnNo}` : null}
       onMid={() => { if (midSave) { setC(midSave.before); if (midSave.state.rt) midSave.state.rt.paused = true; setMission({ state: midSave.state, deployed: midSave.deployed, before: midSave.before, run: Date.now() }); setScreen('mission'); } }}
-      cont={saved && !saved.over ? `миссия ${saved.missionNo}, бойцов ${saved.roster.length}` : null}
+      cont={saved && !saved.over ? `місія ${saved.missionNo}, бійців ${saved.roster.length}` : null}
       onCont={() => setScreen('camp')}
-      sbCont={savedSb ? `миссия ${savedSb.missionNo}` : null}
+      sbCont={savedSb ? `місія ${savedSb.missionNo}` : null}
       onSbCont={() => { if (savedSb) { setC(savedSb); setScreen('camp'); } }}
     />
   );

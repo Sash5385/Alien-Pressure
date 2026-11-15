@@ -35,7 +35,7 @@ const speedOf = (u?: Unit) => (u && ROLLING.has(u.id) ? 7.5 : u?.team === 'alien
 
 interface Float { sprite: THREE.Sprite; t: number }
 export type Weather = 'clear' | 'rain' | 'fog' | 'dusk' | 'dawn' | 'night';
-export const WEATHER_NAME: Record<Weather, string> = { clear: 'ясно', rain: '☔ дождь', fog: '🌫 туман', dusk: '🌆 сумерки', dawn: '🌅 рассвет', night: '🌙 ночь' };
+export const WEATHER_NAME: Record<Weather, string> = { clear: 'ясно', rain: '☔ дощ', fog: '🌫 туман', dusk: '🌆 сутінки', dawn: '🌅 світанок', night: '🌙 ніч' };
 /** Погода миссии: чисто визуальная, зависит от номера миссии и локации. */
 export const weatherOf = (missionNo: number, biome: string): Weather => (['clear', 'clear', 'rain', 'fog', 'dawn', 'dusk', 'night', 'clear'] as const)[(missionNo * 7 + (biome === 'forest' ? 3 : biome === 'lake' ? 6 : 0)) % 8];
 
@@ -1607,7 +1607,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     this.highlight.add(ring);
   }
 
-  /** Полоски на краях клетки со стороны укрытия: зелёная — полное (−40%), жёлтая — половинное (−20%); оранжевая рамка — окоп. */
+  /** Полоски на краях клетки со стороны укрытия: зелёная — полное (−40%), жовта — половинное (−20%); оранжевая рамка — окоп. */
   private coverBars(x: number, y: number) {
     const s = this.state;
     const y0 = this.hy(x, y) + 0.06;
@@ -1639,7 +1639,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     for (const o of s.units) if (o.hp > 0 && o.down) this.ring(o.x, o.y, 0xffffff, 0.3, 0.36);
     for (const o of s.units) if (o.hp > 0 && o.team === 'human' && o.dest) {
       this.ring(o.dest.x, o.dest.y, 0x4fd7ff, 0.18, 0.28);
-      if (s.rt) { // линия пути до цели приказа
+      if (s.rt) { // линия пути до цілі приказа
         const path = s.huge ? (o.route ?? []) : findPath(s, o.x, o.y, o.dest.x, o.dest.y, 80);
         if (path.length) {
           const pts = [new THREE.Vector3(o.x + 0.5, this.hy(o.x, o.y) + 0.1, o.y + 0.5), ...path.map(([x, y]) => new THREE.Vector3(x + 0.5, this.hy(x, y) + 0.1, y + 0.5))];
@@ -1790,7 +1790,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     if (last && !hit) sfx('miss');
   }
 
-  /** Выстрел: очередь (боец и тяжёлый — 3 патрона, пехотинец — 2, снайпер — 1), последний патрон решает исход. */
+  /** Выстрел: очередь (боец и важкий — 3 патрона, пехотинец — 2, снайпер — 1), последний патрон решает исход. */
   async shotFx(r: ShotResult) {
     this.hold([r.targetId]);
     try { await this.shotFx2(r); } finally { this.release([r.targetId]); this.syncUnits(); }
@@ -1817,7 +1817,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       flash.position.copy(muzzle);
       this.scene.add(line, flash);
       sfx('psi');
-      this.floatText(t.x + 0.5, t.y + 0.5, r.hit ? 'давление' : 'устоял', r.hit ? '#ff6b6b' : '#c9ced3');
+      this.floatText(t.x + 0.5, t.y + 0.5, r.hit ? 'тиск' : 'встояв', r.hit ? '#ff6b6b' : '#c9ced3');
       await sleep(800);
       this.scene.remove(line, flash);
       line.geometry.dispose();
@@ -1856,11 +1856,11 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       this.floatText(t.x + 0.5, t.y + 0.5, `−${r.dmg}`, '#ff6b6b');
       if (r.hit) { this.spray(new THREE.Vector3(t.x + 0.5, this.eye(t) + this.hy(t.x, t.y) - 0.2, t.y + 0.5), new THREE.Vector3(a.x + 0.5, 0, a.y + 0.5)); this.knockback(t, a, r.killed ? 0.3 : 0.16); }
       if (!r.killed) this.play(t.id, 'HitReact', true);
-    } else this.floatText(t.x + 0.5, t.y + 0.5, r.suppress ? 'подавлен' : 'мимо', r.suppress ? '#ffd34d' : '#c9ced3');
+    } else this.floatText(t.x + 0.5, t.y + 0.5, r.suppress ? 'придушений' : 'повз', r.suppress ? '#ffd34d' : '#c9ced3');
     if (r.alerted?.length) this.alertFx(r.alerted);
-    if (r.broken) this.floatText(t.x + 0.5, t.y + 0.5, 'укрытие', '#ffd34d', 0.5);
+    if (r.broken) this.floatText(t.x + 0.5, t.y + 0.5, 'укриття', '#ffd34d', 0.5);
     if (r.wound) sfx('wound');
-    if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кровь' : 'перелом', '#ff9f43', 0.5);
+    if (r.wound) this.floatText(t.x + 0.5, t.y + 0.5, r.wound === 'bleed' ? 'кров' : 'перелом', '#ff9f43', 0.5);
     if (r.killed) { setTimeout(() => sfx('death'), 120); this.decal(t.x + 0.5, t.y + 0.5, 0x4a0808, 0.42, 0.65); }
     await sleep(r.reaction ? 300 : 550);
     if (r.peek) { // назад за укрытие
@@ -2006,7 +2006,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       this.floatText(t.x + 0.5, t.y + 0.5, `−${r.dmg}`, '#ff6b6b');
       if (!r.killed) this.play(t.id, 'HitReact', true);
       else { setTimeout(() => sfx('death'), 100); this.decal(t.x + 0.5, t.y + 0.5, 0x4a0808, 0.42, 0.65); }
-    } else { sfx('miss'); this.floatText(t.x + 0.5, t.y + 0.5, 'мимо', '#cfd8dc'); }
+    } else { sfx('miss'); this.floatText(t.x + 0.5, t.y + 0.5, 'повз', '#cfd8dc'); }
     await sleep(300);
     this.syncUnits();
   }
@@ -2065,10 +2065,10 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       const pk = ch === null ? peekTile(s, u, at) : null;
       if (pk) { this.setHover({ sx, sy, text: `${at.name} · стрейф ${pk.chance}%` }); return; }
       const cs = ch !== null ? coverSource(s, u, at) : null;
-      this.setHover({ sx, sy, text: ch === null ? `${at.name} · нет линии огня` : `${at.name} · шанс ${ch}%${cs ? ` · укрытие −${cs.bonus}%` : ch !== null && isFlanked(s, u, at) ? ' · фланг +10%' : ''}` });
+      this.setHover({ sx, sy, text: ch === null ? `${at.name} · немає лінії вогню` : `${at.name} · шанс ${ch}%${cs ? ` · укриття −${cs.bonus}%` : ch !== null && isFlanked(s, u, at) ? ' · фланг +10%' : ''}` });
       return;
     }
-    if (s.huge && s.rt && !at) { this.setHover({ sx, sy, text: s.cover[t.y]?.[t.x] === 'none' ? `до цели ${Math.round(Math.hypot(t.x - u.x, t.y - u.y))} кл.` : 'занято' }); return; }
+    if (s.huge && s.rt && !at) { this.setHover({ sx, sy, text: s.cover[t.y]?.[t.x] === 'none' ? `до цілі ${Math.round(Math.hypot(t.x - u.x, t.y - u.y))} кл.` : 'зайнято' }); return; }
     if (!at && (s.rt || u.ap > 0) && reachable(s, u.x, u.y, s.rt ? 80 : moveRange(u)).has(`${t.x},${t.y}`)) {
       const path = findPath(s, u.x, u.y, t.x, t.y, s.rt ? 80 : moveRange(u));
       if (path.length) {
@@ -2076,7 +2076,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
         this.pathLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xffd34d }));
         this.scene.add(this.pathLine);
         const cov = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => (s.cover[t.y + dy]?.[t.x + dx] ?? 'none') !== 'none');
-        this.setHover({ sx, sy, text: s.rt ? `${path.length} кл. · ~${(path.length * CD_PER_AP / Math.max(1, moveRange(u))).toFixed(1)} с${cov ? ' · есть укрытие' : ''}` : `${path.length} кл. · −1 AP${cov ? ' · есть укрытие' : ''}` });
+        this.setHover({ sx, sy, text: s.rt ? `${path.length} кл. · ~${(path.length * CD_PER_AP / Math.max(1, moveRange(u))).toFixed(1)} с${cov ? ' · є укриття' : ''}` : `${path.length} кл. · −1 AP${cov ? ' · є укриття' : ''}` });
         return;
       }
     }

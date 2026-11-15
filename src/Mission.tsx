@@ -13,7 +13,7 @@ import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
 import { ARMORS, WEAPONS } from './game/weapons';
 
-/** Миникарта: рельеф, укрытия, туман войны, бойцы и видимые пришельцы; клик — перенос камеры. */
+/** Мінікарта: рельеф, укрытия, туман войны, бойцы и видимые пришельцы; клик — перенос камеры. */
 function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick: (x: number, y: number) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const huge = s.size > 200;
@@ -229,7 +229,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     view.current!.syncUnits();
     rerender();
   };
-  const abilityLabel = sel ? { assault: 'Подавить', sniper: 'Прицельный (2 AP)', medic: `Лечение (${2 - sel.abilityUsed})`, engineer: `Мина (${2 - sel.abilityUsed})` }[sel.cls] : '';
+  const abilityLabel = sel ? { assault: 'Придушити', sniper: 'Прицільний (2 AP)', medic: `Лікування (${2 - sel.abilityUsed})`, engineer: `Міна (${2 - sel.abilityUsed})` }[sel.cls] : '';
   const canDig = canAct && !!sel && sel.ap > 0 && (s.mats ?? 0) > 0 && !trenchAt(s, sel.x, sel.y) && s.terrain[sel.y][sel.x] !== 'water';
   const doDig = () => {
     if (!canDig || !sel) return;
@@ -312,7 +312,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const overwatch = () => {
     if (!canOw || !sel) return;
     sel.overwatch = true; sel.ap = 0; s.targetId = null;
-    log(s, `${sel.name} занимает overwatch.`);
+    log(s, `${sel.name} займає засідку (overwatch).`);
     view.current!.syncUnits();
     rerender();
   };
@@ -334,7 +334,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     checkEnd(s);
     if (s.status === 'playing') {
       s.turnNo += 1;
-      log(s, `— Ход ${s.turnNo} —`);
+      log(s, `— Хід ${s.turnNo} —`);
       startHumanTurn(s);
       sfx('turnPlayer');
       if (s.fires.length) setTimeout(() => sfx('fire'), 400);
@@ -348,15 +348,15 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const leave = () => onExit(s);
 
   const info = sel
-    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · ${s.rt ? ((sel.cd ?? 0) > 0 ? `ждёт ${(sel.cd ?? 0).toFixed(1)} с` : 'готов') : `AP ${sel.ap}/${sel.maxAp}`} · мораль ${sel.morale}${sel.overwatch ? ' · overwatch' : ''}${sel.bleeding ? ' · кровотечение' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНИКА' : ''}${sel.down ? ` · ТЯЖЕЛО РАНЕН (${sel.bleedOut ?? 3} хода)` : ''}`
-    : 'Выбери бойца';
+    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · ${s.rt ? ((sel.cd ?? 0) > 0 ? `чекає ${(sel.cd ?? 0).toFixed(1)} с` : 'готовий') : `AP ${sel.ap}/${sel.maxAp}`} · мораль ${sel.morale}${sel.overwatch ? ' · засідка' : ''}${sel.bleeding ? ' · кровотеча' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНІКА' : ''}${sel.down ? ` · ВАЖКО ПОРАНЕНИЙ (${sel.bleedOut ?? 3} ходи)` : ''}`
+    : 'Обери бійця';
   const cmd = s.units.find(u => u.kind === 'commander' && u.hp > 0);
   const goal = {
     clear: 'зачистка',
-    extract: 'эвакуация: все в зелёную зону',
-    hold: `удержание ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`,
+    extract: 'евакуація: усі в зелену зону',
+    hold: `утримання ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`,
     defend: `оборона ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`,
-    assassinate: cmd ? `убить командира (HP ${cmd.hp}/${cmd.maxHp})` : 'командир убит',
+    assassinate: cmd ? `вбити командира (HP ${cmd.hp}/${cmd.maxHp})` : 'командира вбито',
     sabotage: `маяки ${s.beacons.filter(b => b.done).length}/${s.beacons.length}`,
   }[s.objective];
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
@@ -366,17 +366,17 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     if (!hs.length) return '';
     const cx = hs.reduce((a, h) => a + h.x, 0) / hs.length, cy = hs.reduce((a, h) => a + h.y, 0) / hs.length;
     const camps = s.units.filter(u => u.team === 'alien' && u.hp > 0 && (u.grp ?? 0) < 500);
-    if (!camps.length) return ' · лагеря зачищены';
+    if (!camps.length) return ' · табори зачищено';
     let best = camps[0];
     for (const a of camps) if (Math.hypot(a.x - cx, a.y - cy) < Math.hypot(best.x - cx, best.y - cy)) best = a;
     const dx = best.x - cx, dy = best.y - cy, d = Math.round(Math.hypot(dx, dy) / 10) * 10;
     const dirs = ['В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ', 'С', 'СВ'];
     const dir = dirs[Math.round(((Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
-    return ` · лагерей: ${new Set(camps.map(a => a.grp)).size} · ближайший: ${dir} ~${d} кл.`;
+    return ` · таборів: ${new Set(camps.map(a => a.grp)).size} · найближчий: ${dir} ~${d} кл.`;
   })();
-  const kindName: Record<string, string> = { trooper: 'пехота', heavy: 'тяжёлый', sniper: 'снайпер', psi: 'пси', commander: 'командир' };
+  const kindName: Record<string, string> = { trooper: 'піхота', heavy: 'важкий', sniper: 'снайпер', psi: 'псі', commander: 'командир' };
   const waveText = (s.objective === 'defend' || s.objective === 'hold') && s.wavePlan?.length
-    ? ` · волна: ${[...new Set(s.wavePlan.map(w => kindName[w.kind] ?? w.kind))].join(', ')} ×${s.wavePlan.length} через ${s.rt ? `${Math.max(0, Math.ceil(9 - (s.rt.clock - s.rt.pulseAt)))} с` : `${s.objective === 'defend' && s.turnNo < 2 ? 3 - s.turnNo : 1} ход.`}${s.objective === 'defend' && s.turnNo < 2 ? ' (подготовка)' : ''}`
+    ? ` · хвиля: ${[...new Set(s.wavePlan.map(w => kindName[w.kind] ?? w.kind))].join(', ')} ×${s.wavePlan.length} через ${s.rt ? `${Math.max(0, Math.ceil(9 - (s.rt.clock - s.rt.pulseAt)))} с` : `${s.objective === 'defend' && s.turnNo < 2 ? 3 - s.turnNo : 1} хід.`}${s.objective === 'defend' && s.turnNo < 2 ? ' (підготовка)' : ''}`
     : '';
 
   const humans = s.units.filter(u => u.team === 'human');
@@ -392,23 +392,23 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   type Item = { icon: string; label: string; sub: string; on: boolean; off: boolean; click: () => void; title?: string };
   const it = (icon: string, label: string, sub: string, on: boolean, off: boolean, click: () => void, title?: string): Item => ({ icon, label, sub, on, off, click, title });
   const toggleLook = () => { s.lookMode = !s.lookMode; view.current?.syncUnits(); rerender(); };
-  const bigL = it('◉', 'Засада', '', false, !canOw, overwatch, 'Засада (overwatch): боец стоит и стреляет по врагу, вошедшему в обзор');
+  const bigL = it('◉', 'Засідка', '', false, !canOw, overwatch, 'Засідка (overwatch): боєць стоїть і стріляє по ворогу, що потрапив у поле зору');
   const itemsL: Item[] = [
-    it('↻', 'Заряд', sel ? `${sel.mags}` : '', false, !canReload, doReload, 'Перезарядка'),
-    it('⛏', 'Окоп', '', false, !canDig || !sel, doDig, 'Окоп: укрытие со всех сторон, −1 урон от взрывов'),
-    it('⟲', 'Перекат', '', s.aiming === 'roll', !canRoll, toggleRoll, 'Перекат: 1 AP, до 2 клеток, быстрый кувырок, боец остаётся лёжа'),
-    it('▤', 'Мешки', `${s.mats ?? 0}`, s.aiming === 'bags', !canBags, toggleBags, 'Мешки с песком: 1 AP и 1 материал, полуукрытие на клетке до 2 шагов от бойца. Окоп тоже стоит 1 материал'),
-    it('✚', 'Бинт', `${s.medkits}`, false, !canBandage, heal, 'Перевязка'),
-    sel ? it('★', { assault: 'Подавл.', sniper: 'Снайп.', medic: 'Лечить', engineer: 'Мина' }[sel.cls], abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, `${abilityLabel}: ${CLASSES[sel.cls].desc}`) : it('★', 'Умение', '', false, true, () => {}),
-    ...(downedAlly ? [it('⇪', 'Поднять', '', true, !canAct, doRevive, `Поднять: ${downedAlly.name}`)] : []),
-    ...(s.objective === 'sabotage' ? [it('⚡', 'Взорвать', '', true, !canCharge, doCharge, 'Взорвать маяк')] : []),
+    it('↻', 'Заряд', sel ? `${sel.mags}` : '', false, !canReload, doReload, 'Перезаряджання'),
+    it('⛏', 'Окіп', '', false, !canDig || !sel, doDig, 'Окіп: укриття з усіх боків, −1 шкоди від вибухів'),
+    it('⟲', 'Перекат', '', s.aiming === 'roll', !canRoll, toggleRoll, 'Перекат: 1 AP, до 2 клітинок, швидкий кульбіт, боєць лишається лежачи'),
+    it('▤', 'Мішки', `${s.mats ?? 0}`, s.aiming === 'bags', !canBags, toggleBags, 'Мішки з піском: 1 AP і 1 матеріал, півукриття на клітинці до 2 кроків від бійця. Окіп теж коштує 1 матеріал'),
+    it('✚', 'Бинт', `${s.medkits}`, false, !canBandage, heal, 'Перев’язка'),
+    sel ? it('★', { assault: 'Придуш.', sniper: 'Снайп.', medic: 'Лікувати', engineer: 'Міна' }[sel.cls], abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, `${abilityLabel}: ${CLASSES[sel.cls].desc}`) : it('★', 'Вміння', '', false, true, () => {}),
+    ...(downedAlly ? [it('⇪', 'Підняти', '', true, !canAct, doRevive, `Підняти: ${downedAlly.name}`)] : []),
+    ...(s.objective === 'sabotage' ? [it('⚡', 'Підірвати', '', true, !canCharge, doCharge, 'Підірвати маяк')] : []),
   ];
   const itemsR: Item[] = [
     it('✹', 'Граната', sel ? `${sel.grenades}` : '', s.aiming === 'grenade' && !s.launch && !s.smokeMode, !canGrenade, toggleGrenade, 'Граната'),
-    ...(sel && (sel.ugl ?? 0) > 0 && !wl ? [it('◎', 'Подств.', `${sel.ugl}`, s.aiming === 'grenade' && s.launch === 'ugl', !canUgl, toggleUgl, 'Подствольник: дальность 2–10, радиус 1,2, 1 AP')] : []),
-    it('✊', 'Удар', '', false, !canMeleeNow, doMelee, 'Ближний бой: цель в соседней клетке, 1 AP, без патронов, тихо'),
-    ...(sel?.cls === 'engineer' ? [it('☁', 'Дым', '', !!s.smokeMode && s.aiming === 'grenade', !canGrenade, toggleSmoke, 'Дымовая 3×3 на 2 хода, тратит гранату')] : []),
-    it('👁', 'Осмотр', '', !!s.lookMode, !sel, toggleLook, 'Осмотр: подсветить зону обзора и дальность выбранного бойца (без траты AP)'),
+    ...(sel && (sel.ugl ?? 0) > 0 && !wl ? [it('◎', 'Підств.', `${sel.ugl}`, s.aiming === 'grenade' && s.launch === 'ugl', !canUgl, toggleUgl, 'Підствольник: дальність 2–10, радіус 1,2, 1 AP')] : []),
+    it('✊', 'Удар', '', false, !canMeleeNow, doMelee, 'Ближній бій: ціль у сусідній клітинці, 1 AP, без набоїв, тихо'),
+    ...(sel?.cls === 'engineer' ? [it('☁', 'Дим', '', !!s.smokeMode && s.aiming === 'grenade', !canGrenade, toggleSmoke, 'Димова 3×3 на 2 ходи, витрачає гранату')] : []),
+    it('👁', 'Огляд', '', !!s.lookMode, !sel, toggleLook, 'Огляд: підсвітити зону огляду й дальність обраного бійця (без витрат AP)'),
   ];
   const fan = !narrow && vwE >= 900;
   const cornerBottom = fan ? 262 : lift ? (narrow ? 215 : 150) : 8;
@@ -428,16 +428,16 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   };
   const fireBtn = (size: number, extra: React.CSSProperties = {}) => (
     <button disabled={!canFire} onClick={fire} style={{ width: size, height: size, borderRadius: '50%', border: 0, background: 'linear-gradient(145deg,#a8ecff,#4cc3ea)', color: ONAC, fontWeight: 800, fontSize: size < 100 ? 14 : 16, font: 'inherit', cursor: canFire ? 'pointer' : 'default', opacity: canFire ? 1 : 0.45, boxShadow: OUT, display: 'grid', placeItems: 'center', alignContent: 'center', pointerEvents: 'auto', ...extra }}>
-      <span style={{ fontWeight: 800 }}>{peek ? 'ВЫГЛЯНУТЬ' : wl && !tgt ? 'ЦЕЛЬ' : 'ОГОНЬ'}</span>
+      <span style={{ fontWeight: 800 }}>{peek ? 'ВИГЛЯНУТИ' : wl && !tgt ? 'ЦІЛЬ' : 'ВОГОНЬ'}</span>
       <small style={{ fontWeight: 600, opacity: 0.75 }}>{wl ? LAUNCH[wl].name : chance !== null ? `${chance}%` : tb ? 'бочка' : ''}</small>
     </button>
   );
   const rtOrEnd = s.rt ? (
     <div style={{ display: 'flex', gap: 6 }}>
-      <button style={{ ...nb(s.rt.paused), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Пауза (Пробел)" onClick={() => { s.rt!.paused = !s.rt!.paused; sfx('click'); rerender(); }}>{s.rt.paused ? '▶' : 'II'}</button>
-      {([0.5, 1] as const).map(v => <button key={v} style={{ ...nb(s.rt!.speed === v), minWidth: 0, padding: narrow ? '6px 7px' : '6px 10px' }} title={`Скорость ×${v}`} onClick={() => { s.rt!.speed = v; sfx('click'); rerender(); }}>×{v}</button>)}
+      <button style={{ ...nb(s.rt.paused), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Пауза (Пробіл)" onClick={() => { s.rt!.paused = !s.rt!.paused; sfx('click'); rerender(); }}>{s.rt.paused ? '▶' : 'II'}</button>
+      {([0.5, 1] as const).map(v => <button key={v} style={{ ...nb(s.rt!.speed === v), minWidth: 0, padding: narrow ? '6px 7px' : '6px 10px' }} title={`Швидкість ×${v}`} onClick={() => { s.rt!.speed = v; sfx('click'); rerender(); }}>×{v}</button>)}
     </div>
-  ) : <button style={{ ...nb(false, !canAct), color: AC, minWidth: narrow ? 84 : 120 }} disabled={!canAct} onClick={endTurn}>Конец хода</button>;
+  ) : <button style={{ ...nb(false, !canAct), color: AC, minWidth: narrow ? 84 : 120 }} disabled={!canAct} onClick={endTurn}>Кінець ходу</button>;
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
@@ -446,13 +446,13 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {s.rt?.paused && s.status === 'playing' && (
         <div style={{ position: 'absolute', left: '50%', top: narrow ? '34%' : '30%', transform: 'translate(-50%,-50%)', pointerEvents: 'none', textAlign: 'center', animation: 'apPulse 1.6s ease-in-out infinite' }}>
           <div style={{ ...nbBase, borderRadius: 999, padding: narrow ? '8px 18px' : '12px 30px', fontSize: narrow ? 20 : 30, fontWeight: 800, letterSpacing: '.18em' }}>II ПАУЗА</div>
-          <div style={{ marginTop: 6, fontSize: 12, textShadow: '0 1px 2px #000' }}>Пробел или ▶ — продолжить. Приказы можно отдавать на паузе.</div>
+          <div style={{ marginTop: 6, fontSize: 12, textShadow: '0 1px 2px #000' }}>Пробіл або ▶ — продовжити. Накази можна віддавати на паузі.</div>
         </div>
       )}
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
       <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? vw(94) : 560, pointerEvents: 'none', textAlign: 'center' }}>
         <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
-          Миссия {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Ход {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твой ход' : 'ход пришельцев…'} · видно: {aliens}{waveText}{campHint}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
+          Місія {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Хід {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твій хід' : 'хід прибульців…'} · видно: {aliens}{waveText}{campHint}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
         </div>
       </div>
       {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (
@@ -481,21 +481,21 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         )}
         {sel && (
           <div style={{ display: 'flex', gap: 6, pointerEvents: 'auto', alignItems: 'center' }}>
-            {([['stand', 'Стоя'], ['kneel', 'Колено'], ['prone', 'Лёжа']] as const).map(([st, label]) => (
-              <button key={st} disabled={!canStance(st)} title="Опуститься — 1 AP, встать — бесплатно. Лёжа: +10% меткости, −20% шанс попасть по тебе, гранаты нельзя; ползком не больше 2 клеток (в реальном времени медленно)"
+            {([['stand', 'Стоячи'], ['kneel', 'Навколішки'], ['prone', 'Лежачи']] as const).map(([st, label]) => (
+              <button key={st} disabled={!canStance(st)} title="Опуститися — 1 AP, підвестися — безкоштовно. Лежачи: +10% влучності, −20% шанс влучити в тебе, гранати не можна; повзком не більше 2 клітинок (у реальному часі повільно)"
                 style={{ ...nb(stanceNow === st, !canStance(st) && stanceNow !== st), minWidth: 0, minHeight: touch ? 40 : 32, padding: '4px 12px', borderRadius: 999, fontSize: 12 }} onClick={() => doStance(st)}>{label}</button>
             ))}
           </div>
         )}
-        {s.turning && <div style={{ color: '#9be86a' }}>Поворот: нажми клетку, куда смотреть бойцу (долгое нажатие на карте делает то же).</div>}
-        {s.aiming === 'drone' && <div style={{ color: '#7ee0ff' }}>Разведдрон: кликни точку на карте: 25 секунд виден весь радиус 24 клеток, кроме ям с затаившимися. ПКМ — отмена.</div>}
-        {s.aiming === 'bags' && <div style={{ color: '#7ee0ff' }}>Мешки с песком: кликни клетку в голубой зоне (до 2 шагов). Красные метки на карте — откуда придёт следующая волна. ПКМ — отмена.</div>}
-        {s.aiming === 'grenade' && s.launch && <div style={{ color: '#ffb36b' }}>{LAUNCH[s.launch].name}: кликни клетку в оранжевой зоне (дальность {LAUNCH[s.launch].min}–{LAUNCH[s.launch].range}, радиус {LAUNCH[s.launch].r}; есть разброс, бьёт и по своим). ПКМ — отмена.</div>}
-        {s.aiming === 'grenade' && !s.launch && <div style={{ color: '#ffb36b' }}>Бросок гранаты: кликни клетку в оранжевой зоне (красный круг — радиус взрыва, бьёт и по своим). ПКМ — отмена.</div>}
-        {tb && !tgt && <div style={{ color: '#ff8a8a' }}>Цель: взрывоопасная бочка · {barrelOk ? 'попадание 100%, взрыв радиусом 2' : 'нет линии огня'}</div>}
-        {!narrow && sel && !tgt && !s.aiming && !s.turning && s.rt && <div style={{ fontSize: 12, opacity: 0.8 }}>Реальное время: клик по земле — идти, по пришельцу — атаковать (бойцы стреляют сами), Пробел — пауза, ×0.5 / ×1 — скорость.</div>}
-        {!narrow && sel && !tgt && !s.aiming && !s.turning && !s.rt && <div style={{ fontSize: 12, opacity: 0.75 }}>Укрытие защищает со стороны, где оно стоит: <span style={{ color: '#3cff7a' }}>зелёная полоска</span> — полное (−40% к попаданию), <span style={{ color: '#ffd34d' }}>жёлтая</span> — половинное (−20%). Зелёные клетки — где можно укрыться.</div>}
-        {tgt && <div style={{ color: '#ff8a8a' }}>Цель: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'нет линии огня' : `${peek ? 'стрейф из-за укрытия' : 'шанс'} ${chance}%`}{direct !== null && sel && (() => { const cs = coverSource(s, sel, tgt); return cs ? ` · укрытие −${cs.bonus}% (${cs.trench ? 'окоп' : cs.bonus === 40 ? 'полное' : 'половинное'})` : ' · без укрытия'; })()}</div>}
+        {s.turning && <div style={{ color: '#9be86a' }}>Поворот: натисни клітинку, куди дивитися бійцю (довге натискання на карті робить те саме).</div>}
+        {s.aiming === 'drone' && <div style={{ color: '#7ee0ff' }}>Розвідник-дрон: клікни точку на карті: 25 секунд видно весь радіус 24 клітинок, окрім ям із причаєними. ПКМ — скасувати.</div>}
+        {s.aiming === 'bags' && <div style={{ color: '#7ee0ff' }}>Мішки з піском: клікни клітинку в блакитній зоні (до 2 кроків). Червоні мітки на карті — звідки прийде наступна хвиля. ПКМ — скасувати.</div>}
+        {s.aiming === 'grenade' && s.launch && <div style={{ color: '#ffb36b' }}>{LAUNCH[s.launch].name}: клікни клітинку в помаранчевій зоні (дальність {LAUNCH[s.launch].min}–{LAUNCH[s.launch].range}, радіус {LAUNCH[s.launch].r}; є розкид, б’є й по своїх). ПКМ — скасувати.</div>}
+        {s.aiming === 'grenade' && !s.launch && <div style={{ color: '#ffb36b' }}>Кидок гранати: клікни клітинку в помаранчевій зоні (червоне коло — радіус вибуху, б’є й по своїх). ПКМ — скасувати.</div>}
+        {tb && !tgt && <div style={{ color: '#ff8a8a' }}>Ціль: вибухонебезпечна бочка · {barrelOk ? 'влучання 100%, вибух радіусом 2' : 'немає лінії вогню'}</div>}
+        {!narrow && sel && !tgt && !s.aiming && !s.turning && s.rt && <div style={{ fontSize: 12, opacity: 0.8 }}>Реальний час: клік по землі — йти, по прибульцю — атакувати (бійці стріляють самі), Пробіл — пауза, ×0.5 / ×1 — швидкість.</div>}
+        {!narrow && sel && !tgt && !s.aiming && !s.turning && !s.rt && <div style={{ fontSize: 12, opacity: 0.75 }}>Укриття захищає з боку, де воно стоїть: <span style={{ color: '#3cff7a' }}>зелена смужка</span> — повне (−40% до влучання), <span style={{ color: '#ffd34d' }}>жовта</span> — половинне (−20%). Зелені клітинки — де можна сховатися.</div>}
+        {tgt && <div style={{ color: '#ff8a8a' }}>Ціль: {tgt.name} · HP {tgt.hp}/{tgt.maxHp} · {chance === null ? 'немає лінії вогню' : `${peek ? 'стрейф із-за укриття' : 'шанс'} ${chance}%`}{direct !== null && sel && (() => { const cs = coverSource(s, sel, tgt); return cs ? ` · укриття −${cs.bonus}% (${cs.trench ? 'окіп' : cs.bonus === 40 ? 'повне' : 'половинне'})` : ' · без укриття'; })()}</div>}
       </div>
       {/* ——— низ: миникарта и меню по углам, диск действий по центру ——— */}
       {showMap && (
@@ -511,28 +511,28 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         )}
         {more && (
           <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, boxSizing: 'border-box', display: 'grid', gap: 8, fontSize: 12, maxHeight: `calc(100vh / ${z} - 90px)`, overflowY: 'auto' }}>
-            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графика: {view.current?.getQuality() === 'low' ? 'обычная' : 'высокая'}</button>
-            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручная' : 'авто'}</button>
-            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setWeatherOn(!v.isWeatherOn()); rerender(); }}>Погода: {view.current?.isWeatherOn() === false ? 'выкл' : 'вкл'}</button>
-            <button style={nb(false, false)} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: выкл' : 'Звук: вкл'}</button>
+            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графіка: {view.current?.getQuality() === 'low' ? 'звичайна' : 'висока'}</button>
+            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручна' : 'авто'}</button>
+            <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setWeatherOn(!v.isWeatherOn()); rerender(); }}>Погода: {view.current?.isWeatherOn() === false ? 'вимк' : 'ввімк'}</button>
+            <button style={nb(false, false)} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: вимк' : 'Звук: ввімк'}</button>
             <div style={{ display: 'grid', gap: 4 }}>
-              <span style={{ opacity: 0.7, fontSize: 11 }}>Размер интерфейса</span>
+              <span style={{ opacity: 0.7, fontSize: 11 }}>Розмір інтерфейсу</span>
               <div style={{ display: 'flex', gap: 4 }}>
                 {UI_NAMES.map((n, i) => <button key={n} style={{ ...nb(i === uiIdx, false), minWidth: 0, minHeight: 34, padding: '4px 8px', width: 'auto', fontSize: 12, borderRadius: 10 }} onClick={() => { setUiIdx(i); saveUi(i); }}>{n}</button>)}
               </div>
             </div>
-            <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палец — двигать карту, 2 — вращать, щипок — масштаб, долгое нажатие — повернуть бойца.' : 'ЛКМ с зажимом — двигать карту, ПКМ с зажимом — вращать, колесо — масштаб, зажатое колесо — пауза (в реальном времени). Клик ПКМ — повернуть бойца.'}</div>
+            <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палець — рухати карту, 2 — обертати, щипок — масштаб, довге натискання — повернути бійця.' : 'ЛКМ із затисканням — рухати карту, ПКМ із затисканням — обертати, колесо — масштаб, затиснуте колесо — пауза (в реальному часі). Клік ПКМ — повернути бійця.'}</div>
             <div style={{ opacity: 0.45, textAlign: 'center' }}>{VERSION}</div>
           </div>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={round(showMap)} title="Миникарта" onClick={() => setShowMap(!showMap)}>🗺</button>
-          {(() => { const k = s.undo, uu = k && s.units.find(v => v.id === k.id && v.hp > 0); const ok = !!k && !!uu && canAct && `${uu.x},${uu.y},${uu.ap},${uu.ammo},${uu.stance},${uu.overwatch},${s.log.length}` === k.fp; return ok ? <button style={round(false)} title="Отменить последний ход" onClick={() => { if (view.current?.undoMove()) { sfx('click'); } rerender(); }}>↶</button> : null; })()}
-          <button style={round(s.turning)} title="Повернуть бойца" onClick={() => { s.turning = !s.turning; s.aiming = null; rerender(); }}>↻</button>
-          {s.huge && <button style={{ ...round(s.aiming === 'drone'), opacity: droneReady(s) > 0 ? 0.5 : 1 }} title={droneReady(s) > 0 ? `Разведдрон: готов через ${Math.ceil(droneReady(s))} с` : 'Разведдрон: выбери точку на карте, 25 секунд видно всё в радиусе 24 клеток'} onClick={() => { if (droneReady(s) > 0) return; s.aiming = s.aiming === 'drone' ? null : 'drone'; rerender(); }}>🛸</button>}
-          {s.huge && <button style={{ ...round(false), opacity: radioReady(s) > 0 ? 0.5 : 1 }} title={radioReady(s) > 0 ? `Рация: сброс снабжения через ${Math.ceil(radioReady(s))} с` : 'Рация: вызвать сброс снабжения (ящики рядом с отрядом)'} onClick={() => { if (callSupply(s)) { sfx('select'); view.current?.syncUnits(); } rerender(); }}>📡</button>}
-          <button style={round(showLog)} title="Журнал боя" onClick={() => setShowLog(!showLog)}>📜</button>
-          <button style={round(more)} title="Настройки" onClick={() => setMore(!more)}>⚙</button>
+          <button style={round(showMap)} title="Мінікарта" onClick={() => setShowMap(!showMap)}>🗺</button>
+          {(() => { const k = s.undo, uu = k && s.units.find(v => v.id === k.id && v.hp > 0); const ok = !!k && !!uu && canAct && `${uu.x},${uu.y},${uu.ap},${uu.ammo},${uu.stance},${uu.overwatch},${s.log.length}` === k.fp; return ok ? <button style={round(false)} title="Скасувати останній хід" onClick={() => { if (view.current?.undoMove()) { sfx('click'); } rerender(); }}>↶</button> : null; })()}
+          <button style={round(s.turning)} title="Повернути бійця" onClick={() => { s.turning = !s.turning; s.aiming = null; rerender(); }}>↻</button>
+          {s.huge && <button style={{ ...round(s.aiming === 'drone'), opacity: droneReady(s) > 0 ? 0.5 : 1 }} title={droneReady(s) > 0 ? `Розвідник-дрон: готовий через ${Math.ceil(droneReady(s))} с` : 'Розвідник-дрон: обери точку на карті, 25 секунд видно все в радіусі 24 клітинок'} onClick={() => { if (droneReady(s) > 0) return; s.aiming = s.aiming === 'drone' ? null : 'drone'; rerender(); }}>🛸</button>}
+          {s.huge && <button style={{ ...round(false), opacity: radioReady(s) > 0 ? 0.5 : 1 }} title={radioReady(s) > 0 ? `Рація: скид постачання через ${Math.ceil(radioReady(s))} с` : 'Рація: викликати скид постачання (скрині поруч із загоном)'} onClick={() => { if (callSupply(s)) { sfx('select'); view.current?.syncUnits(); } rerender(); }}>📡</button>}
+          <button style={round(showLog)} title="Журнал бою" onClick={() => setShowLog(!showLog)}>📜</button>
+          <button style={round(more)} title="Налаштування" onClick={() => setMore(!more)}>⚙</button>
         </div>
       </div>
       <div style={{ position: 'absolute', left: '50%', bottom: 8, transform: 'translateX(-50%)', display: 'grid', gap: 8, justifyItems: 'center', width: narrow ? `calc(${vw(100)} - 16px)` : undefined, pointerEvents: 'none' }}>
@@ -572,10 +572,10 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {s.status !== 'playing' && (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#0b0f18cc' }}>
           <div style={{ textAlign: 'center', ...glass, zoom: z, borderRadius: 22, padding: '24px 32px', maxWidth: 'calc(100vw - 32px)' }}>
-            <h1 style={{ margin: 0 }}>{s.status === 'won' ? 'Зачистка завершена' : 'Отряд уничтожен'}</h1>
-            <p>Ходов: {s.turnNo} · выжило: {living(s, 'human').length}/{s.units.filter(u => u.team === 'human').length}</p>
-            {s.status === 'lost' && <button style={{ ...cta(), marginRight: 8 }} onClick={() => onExit(s, true)}>Повторить миссию</button>}
-            <button style={s.status === 'won' ? cta() : btn()} onClick={leave}>{s.status === 'won' ? 'В лагерь' : 'Дальше (отряд потерян)'}</button>
+            <h1 style={{ margin: 0 }}>{s.status === 'won' ? 'Зачистку завершено' : 'Загін знищено'}</h1>
+            <p>Ходів: {s.turnNo} · вижило: {living(s, 'human').length}/{s.units.filter(u => u.team === 'human').length}</p>
+            {s.status === 'lost' && <button style={{ ...cta(), marginRight: 8 }} onClick={() => onExit(s, true)}>Повторити місію</button>}
+            <button style={s.status === 'won' ? cta() : btn()} onClick={leave}>{s.status === 'won' ? 'До табору' : 'Далі (загін втрачено)'}</button>
           </div>
         </div>
       )}

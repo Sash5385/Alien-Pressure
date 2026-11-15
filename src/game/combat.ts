@@ -143,9 +143,9 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
     const cs = coverSource(s, a, t);
     if (cs && !cs.trench && s.look[cs.y][cs.x] !== 'rock' && s.look[cs.y][cs.x] !== 'house') { s.cover[cs.y][cs.x] = 'none'; broken = { x: cs.x, y: cs.y }; }
   }
-  const wtxt = wound === 'bleed' ? ', кровотечение' : wound === 'fracture' ? ', перелом' : '';
-  const btxt = broken ? ' Укрытие разрушено.' : '';
-  log(s, `${reaction ? '[Overwatch] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}${downed ? ', тяжело ранен — упал' : ''}${wtxt}` : 'мимо'} (${chance}%)${flank ? ' · фланг' : ''}${btxt}`);
+  const wtxt = wound === 'bleed' ? ', кровотеча' : wound === 'fracture' ? ', перелом' : '';
+  const btxt = broken ? ' Укриття зруйновано.' : '';
+  log(s, `${reaction ? '[Засідка] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', вбито' : ''}${downed ? ', важко поранений — упав' : ''}${wtxt}` : 'повз'} (${chance}%)${flank ? ' · фланг' : ''}${btxt}`);
   checkEnd(s);
   return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound, broken, alerted, flank, downed };
 }
@@ -174,11 +174,11 @@ export function buildBags(s: GameState, u: Unit, x: number, y: number): boolean 
   if (!canBuildBags(s, u, x, y)) return false;
   u.ap -= 1; s.mats = (s.mats ?? 0) - 1; u.overwatch = false;
   s.cover[y][x] = 'half'; s.look[y][x] = 'bags';
-  log(s, `${u.name} выкладывает мешки с песком.`);
+  log(s, `${u.name} викладає мішки з піском.`);
   return true;
 }
 
-/** Трофеи: с убитого пришельца с шансом падает боезапас, граната или материалы; боец, вставший на клетку, их подбирает. */
+/** Трофеї: с убитого пришельца с шансом падает боезапас, граната или материалы; боец, вставший на клетку, их подбирает. */
 function lootTick(s: GameState) {
   s.loot ??= [];
   for (const a of s.units) {
@@ -194,9 +194,9 @@ function lootTick(s: GameState) {
     const i = s.loot.findIndex(l => l.x === u.x && l.y === u.y);
     if (i < 0) continue;
     const l = s.loot.splice(i, 1)[0];
-    if (l.kind === 'mag') { u.mags += l.n; log(s, `${u.name} находит магазин.`); }
-    else if (l.kind === 'gren') { u.grenades += l.n; log(s, `${u.name} находит гранату.`); }
-    else { s.mats = (s.mats ?? 0) + 2; log(s, `${u.name} находит материалы (+2).`); }
+    if (l.kind === 'mag') { u.mags += l.n; log(s, `${u.name} знаходить магазин.`); }
+    else if (l.kind === 'gren') { u.grenades += l.n; log(s, `${u.name} знаходить гранату.`); }
+    else { s.mats = (s.mats ?? 0) + 2; log(s, `${u.name} знаходить матеріали (+2).`); }
   }
 }
 
@@ -253,7 +253,7 @@ export function melee(s: GameState, a: Unit, t: Unit): ShotResult {
   t.hp = Math.max(0, t.hp - dmg);
   const killed = hit && t.hp <= 0;
   if (a.team === 'human') { raiseAlert(s, a.x, a.y, 3); if (killed) { a.kills += 1; living(s, 'human').forEach(h => shift(h, 4)); } }
-  log(s, `${a.name} бьёт в ближнем бою ${t.name}: ${hit ? `−${dmg} HP${killed ? ', убит' : ''}` : 'мимо'} (${chance}%)`);
+  log(s, `${a.name} б’є в ближньому бою ${t.name}: ${hit ? `−${dmg} HP${killed ? ', вбито' : ''}` : 'повз'} (${chance}%)`);
   checkEnd(s);
   return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction: false, melee: true };
 }
@@ -264,7 +264,7 @@ export function revive(s: GameState, a: Unit, t: Unit): boolean {
   if (!canRevive(a, t)) return false;
   a.ap -= 1; a.overwatch = false;
   t.down = false; t.bleedOut = 0; t.hp = Math.min(t.maxHp, 2); t.stance = 'kneel'; t.morale = Math.min(100, t.morale + 10);
-  log(s, `${a.name} поднимает ${t.name}.`);
+  log(s, `${a.name} піднімає ${t.name}.`);
   return true;
 }
 
@@ -279,7 +279,7 @@ export function throwSmoke(s: GameState, u: Unit, x: number, y: number) {
     if (cx < 0 || cy < 0 || cx >= s.size || cy >= s.size || s.terrain[cy][cx] === 'water') continue;
     s.smokes.push({ x: cx, y: cy, ttl: 2 });
   }
-  log(s, `${u.name} ставит дымовую завесу.`);
+  log(s, `${u.name} ставить димову завісу.`);
 }
 
 /** Overwatch пришельцев: выстрел по бойцу, пробегающему через их сектор. */
@@ -295,7 +295,7 @@ export function alienReactions(s: GameState, mover: Unit): ShotResult[] {
   return out;
 }
 
-/** Реальное время: периодические эффекты (раз в «ход»): кровотечение, упавшие, паника, огонь, дым. */
+/** Реальний час: периодические эффекты (раз в «ход»): кровотечение, упавшие, паника, огонь, дым. */
 export function humanPulse(s: GameState) {
   for (const a of living(s)) a.suppressed = false;
   tickFire(s);
@@ -303,21 +303,21 @@ export function humanPulse(s: GameState) {
   for (const u of living(s, 'human')) {
     if (u.down) {
       u.bleedOut = (u.bleedOut ?? 3) - 1;
-      if (u.bleedOut <= 0) { u.hp = 0; u.down = false; log(s, `${u.name} не дождался помощи.`); living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); }); }
-      else log(s, `${u.name} лежит без сил (осталось ${u.bleedOut} хода).`);
+      if (u.bleedOut <= 0) { u.hp = 0; u.down = false; log(s, `${u.name} не дочекався допомоги.`); living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); }); }
+      else log(s, `${u.name} лежить безсилий (лишилося ${u.bleedOut} ходи).`);
       continue;
     }
     if (u.bleeding) {
       u.hp -= 1;
-      log(s, `${u.name} истекает кровью (−1 HP).`);
-      if (u.hp <= 0) { log(s, `${u.name} умер от кровопотери.`); living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); }); }
+      log(s, `${u.name} стікає кров’ю (−1 HP).`);
+      if (u.hp <= 0) { log(s, `${u.name} помер від крововтрати.`); living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); }); }
     }
   }
   checkEnd(s);
   for (const u of living(s, 'human')) {
     const was = u.panic;
     u.panic = u.morale < panicAt(u);
-    if (u.panic && !was) { u.cd = (u.cd ?? 0) + 6; u.morale = 40; u.dest = undefined; u.atk = undefined; log(s, `${u.name} в панике и теряет время.`); }
+    if (u.panic && !was) { u.cd = (u.cd ?? 0) + 6; u.morale = 40; u.dest = undefined; u.atk = undefined; log(s, `${u.name} у паніці й втрачає час.`); }
   }
 }
 
@@ -334,16 +334,16 @@ export function startHumanTurn(s: GameState) {
       u.bleedOut = (u.bleedOut ?? 3) - 1;
       if (u.bleedOut <= 0) {
         u.hp = 0; u.down = false;
-        log(s, `${u.name} не дождался помощи.`);
+        log(s, `${u.name} не дочекався допомоги.`);
         living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); });
-      } else log(s, `${u.name} лежит без сил (осталось ${u.bleedOut} хода).`);
+      } else log(s, `${u.name} лежить безсилий (лишилося ${u.bleedOut} ходи).`);
       continue;
     }
     if (u.bleeding) {
       u.hp -= 1;
-      log(s, `${u.name} истекает кровью (−1 HP).`);
+      log(s, `${u.name} стікає кров’ю (−1 HP).`);
       if (u.hp <= 0) {
-        log(s, `${u.name} умер от кровопотери.`);
+        log(s, `${u.name} помер від крововтрати.`);
         living(s, 'human').forEach(h => { h.morale = Math.max(0, h.morale - 15); });
       }
     }
@@ -351,11 +351,11 @@ export function startHumanTurn(s: GameState) {
   checkEnd(s);
   for (const u of living(s, 'human')) {
     u.panic = u.morale < panicAt(u);
-    if (u.panic) { u.ap = 0; u.morale = 40; log(s, `${u.name} в панике и теряет ход.`); }
+    if (u.panic) { u.ap = 0; u.morale = 40; log(s, `${u.name} у паніці й втрачає хід.`); }
   }
 }
 
-/** Перевязка: тратит 1 AP и бинт; стопорит кровотечение и даёт +2 HP. */
+/** Перев’язка: тратит 1 AP и бинт; стопорит кровотечение и даёт +2 HP. */
 export function bandage(s: GameState, medic: Unit): Unit | null {
   if (medic.ap <= 0 || (s.medkits <= 0 && !has(medic, 'medic'))) return null;
   const t = living(s, 'human')
@@ -367,7 +367,7 @@ export function bandage(s: GameState, medic: Unit): Unit | null {
   medic.ap -= 1;
   t.bleeding = false;
   t.hp = Math.min(t.maxHp, t.hp + (pro ? 4 : 2));
-  log(s, `${medic.name} перевязывает ${t.name}.`);
+  log(s, `${medic.name} перев’язує ${t.name}.`);
   return t;
 }
 
@@ -375,7 +375,7 @@ export function canPsi(a: Unit, t: Unit): boolean {
   return a.kind === 'psi' && a.hp > 0 && t.hp > 0 && t.team === 'human' && Math.hypot(a.x - t.x, a.y - t.y) <= a.range;
 }
 
-/** Псионика не нужна линия огня: шанс зависит от черт цели. */
+/** Псионіка не нужна линия огня: шанс зависит от черт цели. */
 export function psiAttack(s: GameState, a: Unit, t: Unit): ShotResult {
   faceToward(a, t.x, t.y);
   const chance = Math.min(95, Math.max(15, 65 - (has(t, 'stoic') ? 25 : 0) - (has(t, 'veteran') ? 10 : 0) + (has(t, 'coward') ? 15 : 0)));
@@ -383,7 +383,7 @@ export function psiAttack(s: GameState, a: Unit, t: Unit): ShotResult {
   const hit = rand(s) * 100 < chance;
   if (!s.revealed.includes(a.id)) s.revealed.push(a.id);
   if (hit) shift(t, -20);
-  log(s, `${a.name} давит на ${t.name}: ${hit ? 'мораль −20' : 'устоял'} (${chance}%)`);
+  log(s, `${a.name} тисне на ${t.name}: ${hit ? 'мораль −20' : 'встояв'} (${chance}%)`);
   return { attackerId: a.id, targetId: t.id, hit, dmg: 0, chance, killed: false, reaction: false, psi: true };
 }
 
@@ -447,19 +447,19 @@ export function wakeTick(s: GameState) {
   let count = 0;
   for (const a of dorm) if (woke.has(a.grp ?? a.id)) { a.dormant = false; a.hidden = false; a.alert = true; count++; }
   s.revealed = [...new Set([...s.revealed, ...dorm.filter(a => woke.has(a.grp ?? a.id)).map(a => a.id)])];
-  log(s, `Засада! Пришельцы поднялись: ${count}.`);
+  log(s, `Засідка! Прибульці піднялися: ${count}.`);
 }
 
 export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || u.id === s.markId || ((s.vis[u.y][u.x] || s.revealed.includes(u.id)) && !(u.hidden && !living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= 3.2)));
 
-/** Перезарядка: 1 AP; у людей тратит запасной магазин. */
+/** Перезаряджання: 1 AP; у людей тратит запасной магазин. */
 export function reload(s: GameState, u: Unit): boolean {
   if (u.ap <= 0 || u.maxAmmo <= 0 || u.ammo >= u.maxAmmo || (u.team === 'human' && u.mags <= 0)) return false;
   u.ap -= 1;
   u.ammo = u.maxAmmo;
   if (u.team === 'human') u.mags -= 1;
   u.overwatch = false;
-  log(s, `${u.name} перезаряжается.`);
+  log(s, `${u.name} перезаряджається.`);
   return true;
 }
 
@@ -492,7 +492,7 @@ export function throwGrenade(s: GameState, u: Unit, x: number, y: number): Grena
   u.ap -= 1;
   u.overwatch = false;
   s.aiming = null;
-  return blast(s, u, x, y, `${u.name} бросает гранату`);
+  return blast(s, u, x, y, `${u.name} кидає гранату`);
 }
 
 /** Взрыв (граната/мина): центр 5, край 3 (−броня); бьёт и по своим, срывает половинные укрытия. Убийства засчитываются owner. */
@@ -529,17 +529,17 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
     if (hs.hp <= 0) {
       for (let yy = hs.y; yy < hs.y + hs.h; yy++) for (let xx = hs.x; xx < hs.x + hs.w; xx++) { s.cover[yy][xx] = 'half'; s.look[yy][xx] = 'rock'; }
       s.houses = s.houses.filter(v => v.id !== hs.id);
-      log(s, 'Дом обрушился!');
+      log(s, 'Будинок обвалився!');
     }
   }
   const fallen = s.bridges.filter(b => Math.hypot(b.x - x, b.y - y) <= Math.min(1.3, R));
   if (fallen.length) {
     s.bridges = s.bridges.filter(b => !fallen.includes(b));
     for (const b of fallen) s.terrain[b.y][b.x] = 'water';
-    log(s, 'Мост разрушен!');
+    log(s, 'Міст зруйновано!');
   }
-  const names = hits.map(h => `${s.units.find(v => v.id === h.id)!.name} −${h.dmg}${h.killed ? ' (убит)' : ''}`).join(', ');
-  log(s, `${label}: ${names || 'никого'}.`);
+  const names = hits.map(h => `${s.units.find(v => v.id === h.id)!.name} −${h.dmg}${h.killed ? ' (вбито)' : ''}`).join(', ');
+  log(s, `${label}: ${names || 'нікого'}.`);
   checkEnd(s);
   // цепная реакция: бочки рядом тоже взрываются
   const chain: GrenadeResult[] = [];
@@ -555,17 +555,17 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
       }
     }
   }
-  if (ignited.length) log(s, 'Пожар!');
+  if (ignited.length) log(s, 'Пожежа!');
   const alerted = raiseAlert(s, x, y, 16);
   return { thrower: owner?.id ?? 0, x, y, hits, broken, alerted, ignited, chain, r: R };
 }
 
-/** Гранатомёты: подствольник, гранатомёт, миномёт, АГС. */
+/** Гранатометы: подствольник, гранатомёт, миномёт, АГС. */
 export const LAUNCH: Record<LaunchKind, { name: string; min: number; range: number; r: number; center: number; edge: number; ap: number; rounds: number; scatter: number; los: boolean; verb: string }> = {
-  ugl: { name: 'Подствольник', min: 2, range: 10, r: 1.2, center: 4, edge: 2, ap: 1, rounds: 1, scatter: 0.7, los: true, verb: 'стреляет из подствольника' },
-  launcher: { name: 'Гранатомёт', min: 3, range: 13, r: 1.5, center: 6, edge: 3, ap: 1, rounds: 1, scatter: 0.5, los: true, verb: 'стреляет из гранатомёта' },
-  mortar: { name: 'Миномёт', min: 7, range: 24, r: 2, center: 5, edge: 3, ap: 2, rounds: 1, scatter: 1.2, los: false, verb: 'ведёт миномётный огонь' },
-  ags: { name: 'АГС', min: 3, range: 14, r: 1, center: 4, edge: 2, ap: 2, rounds: 3, scatter: 1.1, los: true, verb: 'бьёт из АГС' },
+  ugl: { name: 'Підствольник', min: 2, range: 10, r: 1.2, center: 4, edge: 2, ap: 1, rounds: 1, scatter: 0.7, los: true, verb: 'стріляє з підствольника' },
+  launcher: { name: 'Гранатомет', min: 3, range: 13, r: 1.5, center: 6, edge: 3, ap: 1, rounds: 1, scatter: 0.5, los: true, verb: 'стріляє з гранатомета' },
+  mortar: { name: 'Міномет', min: 7, range: 24, r: 2, center: 5, edge: 3, ap: 2, rounds: 1, scatter: 1.2, los: false, verb: 'веде мінометний вогонь' },
+  ags: { name: 'АГС', min: 3, range: 14, r: 1, center: 4, edge: 2, ap: 2, rounds: 3, scatter: 1.1, los: true, verb: 'б’є з АГС' },
 };
 
 export const launchKindOf = (u: Unit): LaunchKind | undefined => WEAPONS[u.weapon].launch;
@@ -611,7 +611,7 @@ export function placeCharge(s: GameState, u: Unit): { x: number; y: number } | n
   b.done = true;
   s.cover[b.y][b.x] = 'none';
   faceToward(u, b.x, b.y);
-  log(s, `${u.name} взрывает маяк (${s.beacons.filter(x => x.done).length}/${s.beacons.length}).`);
+  log(s, `${u.name} підриває маяк (${s.beacons.filter(x => x.done).length}/${s.beacons.length}).`);
   raiseAlert(s, b.x, b.y, 12);
   checkEnd(s);
   return { x: b.x, y: b.y };
@@ -629,13 +629,13 @@ export function raiseAlert(s: GameState, x: number, y: number, radius: number): 
   for (const a of living(s, 'alien')) {
     if (!a.alert && Math.hypot(a.x - x, a.y - y) <= radius) { a.alert = true; ids.push(a.id); }
   }
-  if (ids.length) log(s, 'Пришельцы подняли тревогу!');
+  if (ids.length) log(s, 'Прибульці підняли тривогу!');
   return ids;
 }
 
 // --- умения классов ---
 
-/** Штурмовик: подавление — цель теряет меткость и AP в свой ход. */
+/** Штурмовик: подавление — цель теряет меткость и AP в свой хід. */
 export function suppress(s: GameState, a: Unit, t: Unit): ShotResult | null {
   const chance = hitChance(s, a, t);
   if (a.ap <= 0 || a.ammo < 2 || chance === null) return null;
@@ -643,7 +643,7 @@ export function suppress(s: GameState, a: Unit, t: Unit): ShotResult | null {
   a.ap -= 1; a.ammo -= 2; a.overwatch = false;
   t.suppressed = true;
   const alerted = raiseAlert(s, a.x, a.y, 14);
-  log(s, `${a.name} подавляет огнём ${t.name}.`);
+  log(s, `${a.name} придушує вогнем ${t.name}.`);
   return { attackerId: a.id, targetId: t.id, hit: false, dmg: 0, chance, killed: false, reaction: false, suppress: true, alerted };
 }
 
@@ -662,11 +662,11 @@ export function medicHeal(s: GameState, u: Unit): boolean {
   if (!allies.some(h => h.hp < h.maxHp || h.bleeding)) return false;
   u.ap -= 1; u.abilityUsed += 1;
   for (const h of allies) { h.hp = Math.min(h.maxHp, h.hp + 3); h.bleeding = false; }
-  log(s, `${u.name} лечит отряд.`);
+  log(s, `${u.name} лікує загін.`);
   return true;
 }
 
-/** Сапёр: куда можно поставить мину (впереди бойца, иначе рядом). */
+/** Сапер: куда можно поставить мину (впереди бойца, иначе рядом). */
 export function mineTile(s: GameState, u: Unit): { x: number; y: number } | null {
   const front = { x: u.x + Math.round(Math.sin(u.facing)), y: u.y + Math.round(Math.cos(u.facing)) };
   const cands = [front, ...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: u.x + dx, y: u.y + dy }))];
@@ -680,7 +680,7 @@ export function placeMine(s: GameState, u: Unit): boolean {
   u.ap -= 1; u.abilityUsed += 1; u.overwatch = false;
   s.mines.push({ x: t.x, y: t.y, owner: u.id });
   faceToward(u, t.x, t.y);
-  log(s, `${u.name} ставит мину.`);
+  log(s, `${u.name} ставить міну.`);
   return true;
 }
 
@@ -690,7 +690,7 @@ export function triggerMine(s: GameState, u: Unit): GrenadeResult | null {
   const i = s.mines.findIndex(m => m.x === u.x && m.y === u.y);
   if (i < 0) return null;
   const m = s.mines.splice(i, 1)[0];
-  return blast(s, s.units.find(v => v.id === m.owner) ?? null, m.x, m.y, 'Мина взрывается');
+  return blast(s, s.units.find(v => v.id === m.owner) ?? null, m.x, m.y, 'Міна вибухає');
 }
 
 // --- бочки и огонь ---
@@ -704,11 +704,11 @@ export function igniteTile(s: GameState, x: number, y: number, ttl: number): boo
   return true;
 }
 
-/** Взрыв бочки: бочка исчезает, укрытие снято, огонь на разлитом топливе. */
+/** Вибух бочки: бочка исчезает, укрытие снято, огонь на разлитом топливе. */
 export function detonateBarrel(s: GameState, owner: Unit | null, x: number, y: number): GrenadeResult {
   s.barrels = s.barrels.filter(b => !(b.x === x && b.y === y));
   s.cover[y][x] = 'none';
-  return blast(s, owner, x, y, 'Взрыв бочки', true);
+  return blast(s, owner, x, y, 'Вибух бочки', true);
 }
 
 export const barrelAt = (s: GameState, x: number, y: number) => s.barrels.find(b => b.x === x && b.y === y);
@@ -736,7 +736,7 @@ export function tickFire(s: GameState) {
       if (u.x !== f.x || u.y !== f.y) continue;
       u.hp = Math.max(0, u.hp - Math.max(1, 2 - u.cut));
       if (u.team === 'human') u.morale = Math.max(0, u.morale - 5);
-      log(s, `${u.name} горит (−2 HP${u.hp <= 0 ? ', убит' : ''}).`);
+      log(s, `${u.name} горить (−2 HP${u.hp <= 0 ? ', вбито' : ''}).`);
     }
   }
   // жар: стоящие вплотную к огню (но не в нём) получают 1 урон
@@ -747,7 +747,7 @@ export function tickFire(s: GameState) {
   for (const id of hot) {
     const u = s.units.find(v => v.id === id)!;
     u.hp = Math.max(0, u.hp - 1);
-    log(s, `${u.name} обжигает жар (−1 HP${u.hp <= 0 ? ', убит' : ''}).`);
+    log(s, `${u.name} обпікає жар (−1 HP${u.hp <= 0 ? ', вбито' : ''}).`);
   }
   for (const f of burning) {
     f.ttl -= 1;
@@ -756,7 +756,7 @@ export function tickFire(s: GameState) {
     }
     if (f.ttl <= 0) {
       s.scorched[f.y][f.x] = true;
-      if (s.look[f.y][f.x] === 'tree' || s.look[f.y][f.x] === 'bush') { s.cover[f.y][f.x] = 'none'; s.look[f.y][f.x] = ''; log(s, 'Дерево сгорело.'); }
+      if (s.look[f.y][f.x] === 'tree' || s.look[f.y][f.x] === 'bush') { s.cover[f.y][f.x] = 'none'; s.look[f.y][f.x] = ''; log(s, 'Дерево згоріло.'); }
     }
   }
   s.fires = s.fires.filter(f => f.ttl > 0);
@@ -777,7 +777,7 @@ export function digIn(s: GameState, u: Unit): boolean {
   u.ap -= 1; s.mats = (s.mats ?? 0) - 1;
   u.overwatch = false;
   s.trenches.push({ x: u.x, y: u.y });
-  log(s, `${u.name} окапывается.`);
+  log(s, `${u.name} окопується.`);
   return true;
 }
 
@@ -786,7 +786,7 @@ const stanceDefense = (a: Unit, t: Unit) =>
   t.stance === 'kneel' ? 10 : t.stance === 'prone' ? (Math.hypot(a.x - t.x, a.y - t.y) < 3 ? 5 : 20) : 0;
 
 const STANCE_RANK = { stand: 0, kneel: 1, prone: 2 } as const;
-const STANCE_NAME = { stand: 'встаёт', kneel: 'опускается на колено', prone: 'ложится' } as const;
+const STANCE_NAME = { stand: 'підводиться', kneel: 'опускається навколішки', prone: 'лягає' } as const;
 
 /** Смена стойки: опуститься — 1 AP; встать/приподняться — бесплатно. Лёжа: +10% меткости, −20% шанса попасть по тебе, гранаты бросать нельзя. */
 export function setStance(s: GameState, u: Unit, st: Stance): boolean {
@@ -818,7 +818,7 @@ export function callSupply(s: GameState): boolean {
     s.loot.push({ x, y, kind: kinds[k], n: 1 }); k++;
   }
   s.radioAt = (s.rt?.clock ?? 0) + 90;
-  log(s, 'Рация: сброс снабжения совершён, ящики рядом с отрядом.');
+  log(s, 'Рація: скид постачання здійснено, скрині поруч із загоном.');
   return true;
 }
 
@@ -828,6 +828,6 @@ export function launchDrone(s: GameState, x: number, y: number): boolean {
   if (droneReady(s) > 0 || x < 0 || y < 0 || x >= s.size || y >= s.size) return false;
   const clock = s.rt?.clock ?? 0;
   s.drone = { x, y, until: clock + 25 }; s.droneAt = clock + 120;
-  log(s, 'Разведдрон запущен: 25 секунд видим всё вокруг точки.');
+  log(s, 'Розвідник-дрон запущено: 25 секунд бачимо все навколо точки.');
   return true;
 }

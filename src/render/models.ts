@@ -211,7 +211,7 @@ function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<Retur
   }
 }
 
-/** Станковый АГС: сошки-треножник, короб с барабаном-лентой, ствол с пламегасителем, рукоятки. Размеры для роста 1,8. */
+/** Станковый АГС: сошки-треножник, короб с барабаном-лентой, ствол с пламегасителем, рукоятки. Розміры для роста 1,8. */
 function makeAgs(): { g: THREE.Group; hl: THREE.Object3D; hr: THREE.Object3D } {
   const g = new THREE.Group();
   const steel = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.55, metalness: 0.5, flatShading: true });

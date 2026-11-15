@@ -5,7 +5,7 @@ import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 import { WEAPONS } from './weapons';
 
-/** Реальное время. 1 AP пошагового режима = CD_PER_AP секунд ожидания; «ход» (волны, кровь, огонь) = TURN_SECS секунд. */
+/** Реальний час. 1 AP пошагового режима = CD_PER_AP секунд ожидания; «ход» (волны, кровь, огонь) = TURN_SECS секунд. */
 export const CD_PER_AP = 2.4;
 /** Скорость бега в клетках в секунду (совпадает с GameView). */
 export const RUN_SPEED = 3.6;
@@ -70,7 +70,7 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
   if (t && !launcher(u)) {
     if (hitChance(s, u, t) !== null) { fire(s, u, t, hooks); return; }
     if (peekTile(s, u, t)) { fire(s, u, t, hooks, true); return; }
-    // нет линии огня: подойти к ближайшей клетке, откуда цель видна
+    // немає лінії вогню: подойти к ближайшей клетке, откуда цель видна
     let best: [number, number] | null = null, bd = 1e9;
     for (const k of reachable(s, u.x, u.y, 14).keys()) {
       const [x, y] = k.split(',').map(Number);
@@ -131,7 +131,7 @@ export function rtTick(s: GameState, dt: number, hooks: RtHooks) {
     if (rt.clock - rt.pulseAt >= TURN_SECS) {
       rt.pulseAt = rt.clock;
       s.turnNo += 1;
-      log(s, `— Ход ${s.turnNo} —`);
+      log(s, `— Хід ${s.turnNo} —`);
       humanPulse(s);
       if ((s.objective === 'hold' && s.turnNo % 2 === 0) || s.objective === 'defend') reinforce(s);
       checkEnd(s);

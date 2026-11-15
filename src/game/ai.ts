@@ -10,7 +10,7 @@ export interface AiHooks {
   blast?(r: GrenadeResult): Promise<void>; // взрыв мины
 }
 
-/** Непредупреждённый пришелец бродит у своей точки; заметив бойца, поднимает тревогу в радиусе 8. */
+/** Непредупреждённый пришелец бродит у своей точки; заметив бойца, піднімає тревогу в радиусе 8. */
 async function patrol(s: GameState, u: Unit, h: AiHooks) {
   const cands: [number, number][] = [];
   for (const k of reachable(s, u.x, u.y, u.move).keys()) {
@@ -69,7 +69,7 @@ export function planGroups(s: GameState): Map<number, Grp> {
     else if (engaged && !boss && mem.length > 1 && ((ratio < 0.5 && near >= alive.length) || ratio < 0.34)) {
       mode = 'retreat';
       alive.forEach(u => { u.retreatUntil = s.turnNo + 3; });
-      log(s, 'Группа пришельцев отступает с боем.');
+      log(s, 'Група прибульців відступає з боєм.');
     }
     // фокус огня: боец, по которому группа попадает лучше всего (слабых добиваем)
     let focus: number | undefined, fs = -1;

@@ -37,7 +37,7 @@ const ALIEN: Record<'trooper' | 'sniper' | 'psi' | 'heavy' | 'commander', Partia
   heavy: { hp: 10, aim: 50, ammo: 4, dmg: [3, 5], range: 10, move: 4 },
 };
 type AlienKind = keyof typeof ALIEN;
-const NAMES = { trooper: 'Пехотинец', sniper: 'Снайпер', psi: 'Псионик', heavy: 'Тяжёлый', commander: 'Командир' };
+const NAMES = { trooper: 'Піхотинець', sniper: 'Снайпер', psi: 'Псионік', heavy: 'Важкий', commander: 'Командир' };
 
 const alien = (id: number, kind: AlienKind, n: number, x: number, y: number, d: Difficulty): Unit => {
   const b = ALIEN[kind];
@@ -199,15 +199,15 @@ function genMap(rng: { rng: number }, biome: Biome, n: number, missionNo: number
 
 /** Варианты обороны в центре карты: геометрия и правила. */
 export const DEFEND_KINDS: { name: string; geo: 'hill' | 'fort' | 'house' | 'bunker' | 'crossroads' | 'bridge'; turns: number; weather?: string; boost?: number; sides?: 'ns'; desc: string }[] = [
-  { name: 'Высота', geo: 'hill', turns: 10, desc: 'держим холм: высота даёт меткость' },
-  { name: 'Укрепрайон', geo: 'fort', turns: 10, desc: 'стена из контейнеров с четырьмя воротами' },
-  { name: 'Дом на холме', geo: 'house', turns: 10, desc: 'дом на вершине (его можно разрушить)' },
-  { name: 'Бункер', geo: 'bunker', turns: 10, desc: 'окопы и мешки вокруг центра' },
-  { name: 'Перекрёсток', geo: 'crossroads', turns: 10, desc: 'четыре дома по углам перекрёстка' },
-  { name: 'Мост и остров', geo: 'bridge', turns: 10, desc: 'остров в кольце воды, четыре моста (их можно взорвать)' },
-  { name: 'Ночная оборона', geo: 'hill', turns: 8, weather: 'night', desc: 'ночь и фонари, но волны идут сразу' },
-  { name: 'Осада', geo: 'fort', turns: 12, desc: '12 ходов вместо 10' },
-  { name: 'Клещи', geo: 'house', turns: 10, sides: 'ns', desc: 'пришельцы идут с севера и юга' },
+  { name: 'Висота', geo: 'hill', turns: 10, desc: 'тримаємо пагорб: висота додає влучності' },
+  { name: 'Укріпрайон', geo: 'fort', turns: 10, desc: 'стіна з контейнерів із чотирма воротами' },
+  { name: 'Будинок на пагорбі', geo: 'house', turns: 10, desc: 'будинок на вершині (його можна зруйнувати)' },
+  { name: 'Бункер', geo: 'bunker', turns: 10, desc: 'окопи й мішки навколо центру' },
+  { name: 'Перехрестя', geo: 'crossroads', turns: 10, desc: 'чотири будинки по кутах перехрестя' },
+  { name: 'Міст і острів', geo: 'bridge', turns: 10, desc: 'острів у кільці води, чотири мости (їх можна підірвати)' },
+  { name: 'Нічна оборона', geo: 'hill', turns: 8, weather: 'night', desc: 'ніч і ліхтарі, але хвилі йдуть одразу' },
+  { name: 'Облога', geo: 'fort', turns: 12, desc: '12 ходів замість 10' },
+  { name: 'Кліщі', geo: 'house', turns: 10, sides: 'ns', desc: 'прибульці йдуть з півночі й півдня' },
 ];
 
 /** Оборона: расчищаем центр и строим либо холм с мешками, либо укрепление с воротами. Возвращает вид. */
@@ -378,19 +378,19 @@ export function createMission(o: MissionOpts): GameState {
   for (const b of beacons) seen[b.y][b.x] = true;
 
   const brief = {
-    clear: 'Цель: уничтожить всех пришельцев.',
-    extract: 'Цель: эвакуация — все выжившие бойцы должны дойти до зелёной зоны.',
-    hold: `Цель: продержаться ${HOLD_TURNS} ходов. Пришельцы получают подкрепление.`,
-    assassinate: o.boss ? 'БОСС: убей Тирана (много HP, броня −1 урон, свита с тяжёлым). Он помечен красным кольцом.' : 'Цель: убить командира пришельцев (он помечен красным кольцом и виден всегда).',
-    sabotage: 'Цель: взорвать два маяка (подойди вплотную: заряд тратит 1 AP и 1 гранату).',
-    defend: `Цель: выжить ${dv?.turns ?? DEFEND_TURNS} ходов. ${dv ? dv.name : 'Оборона'}: ${dv?.desc ?? ''}. Пришельцы идут волнами со всех сторон${dv?.sides ? ' (здесь — с севера и юга)' : ''}.`,
+    clear: 'Ціль: знищити всіх прибульців.',
+    extract: 'Ціль: евакуація — усі вцілілі бійці мають дійти до зеленої зони.',
+    hold: `Ціль: протриматися ${HOLD_TURNS} ходів. Прибульці отримують підкріплення.`,
+    assassinate: o.boss ? 'БОС: убий Тирана (багато HP, броня −1 шкоди, свита з важким). Його позначено червоним кільцем.' : 'Ціль: вбити командира прибульців (його позначено червоним кільцем, і він видимий завжди).',
+    sabotage: 'Ціль: підірвати два маяки (підійди впритул: заряд витрачає 1 AP і 1 гранату).',
+    defend: `Ціль: вижити ${dv?.turns ?? DEFEND_TURNS} ходів. ${dv ? dv.name : 'Оборона'}: ${dv?.desc ?? ''}. Прибульці йдуть хвилями з усіх боків${dv?.sides ? ' (тут — з півночі й півдня)' : ''}.`,
   }[o.objective];
   const st: GameState = {
     size: n, cover, terrain, height, look, houses, trenches: preTrenches, biome: o.biome, units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels, fires: [], scorched: grid(n, false), bridges, targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: o.objective, markId: aliens.find(a => a.kind === 'commander')?.id ?? null, beacons, holdTurns: defend ? (dv?.turns ?? DEFEND_TURNS) : HOLD_TURNS, zone, weather: dv?.weather, sides: dv?.sides ?? 'all', waveBoost: dv?.boost ?? 0, defendName: dv?.name,
-    log: [`Миссия ${o.missionNo} · ${BIOME_NAME[o.biome]}. ${brief}`, 'Разведка: пехота, снайпер, тяжёлый (ломает укрытия).'],
+    log: [`Місія ${o.missionNo} · ${BIOME_NAME[o.biome]}. ${brief}`, 'Розвідка: піхота, снайпер, важкий (ламає укриття).'],
     rng: rng.rng, boss: !!o.boss,
   };
   st.mats = defend ? 8 : 4; st.loot = [];
@@ -450,7 +450,7 @@ export function reinforce(s: GameState) {
   });
   if (!spawned) { planWave(s); return; }
   s.mats = (s.mats ?? 0) + 2; // снабжение после каждой волны
-  log(s, s.objective === 'defend' ? `Волна пришельцев: ${spawned}! Снабжение: +2 материала.` : 'Подкрепление пришельцев!');
+  log(s, s.objective === 'defend' ? `Хвиля прибульців: ${spawned}! Постачання: +2 матеріали.` : 'Підкріплення прибульців!');
   planWave(s);
 }
 
@@ -531,7 +531,7 @@ function createHugeForest(o: MissionOpts): GameState {
       const hq = ci === 0 && k === 0; // лагерь 0 — штаб с командиром
       const kind: AlienKind = hq ? 'commander' : campKinds[(ci + k) % campKinds.length];
       const a = alien(id++, kind, kind === 'trooper' ? ++tn : 0, x, y, o.difficulty);
-      if (hq) a.name = 'Командир штаба';
+      if (hq) a.name = 'Командир штабу';
       a.grp = ci; a.dormant = true; a.alert = false;
       aliens.push(a);
     }
@@ -559,7 +559,7 @@ function createHugeForest(o: MissionOpts): GameState {
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels: [], fires: [], scorched: grid(n, false), bridges: [], targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: 'clear', markId: null, beacons: [], holdTurns: HOLD_TURNS, zone: null, weather: o.missionNo % 2 === 0 ? 'night' : undefined, sides: 'all', waveBoost: 0,
-    log: [`Миссия ${o.missionNo} · Огромный лес ${n}×${n}. Цель: прочесать лес. Пришельцы ждут в лагерях-развалинах и сидят в ямах (${pits.length}), пока не подойдёшь близко. Рекомендуется реальное время.`, `Лагерей: ${camps.length} (в первом штаб с командиром, в каждом третьем склад). Пришельцев: ${aliens.length}. Рация (📡) вызывает сброс снабжения раз в 90 секунд.`],
+    log: [`Місія ${o.missionNo} · Величезний ліс ${n}×${n}. Ціль: прочесати ліс. Прибульці чекають у таборах-руїнах і сидять у ямах (${pits.length}), доки не підійдеш близько. Рекомендується реальний час.`, `Таборів: ${camps.length} (у першому штаб із командиром, у кожному третьому склад). Прибульців: ${aliens.length}. Рація (📡) викликає скид постачання раз на 90 секунд.`],
     rng: rng.rng, boss: false, pits, huge: true, mats: 8, loot,
   };
   return st;

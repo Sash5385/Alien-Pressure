@@ -34,21 +34,21 @@ export interface Campaign {
 
 export const OBJECTIVE_NAME: Record<Objective, string> = {
   clear: 'Зачистка',
-  extract: 'Эвакуация',
-  hold: 'Удержание',
+  extract: 'Евакуація',
+  hold: 'Утримання',
   defend: 'Оборона',
-  assassinate: 'Ликвидация',
-  sabotage: 'Диверсия',
+  assassinate: 'Ліквідація',
+  sabotage: 'Диверсія',
 };
 
 export const MAX_ROSTER = 6;
 export const DEPLOY = 4;
 export const COST = { heal: 1, recruit: 3, armor: 6, optics: 6, kits: 4, grenades: 4 } as const;
 export const TECH_INFO: Record<keyof Tech, string> = {
-  armor: 'Бронепластины: +2 HP всем',
-  optics: 'Оптика: +5 к меткости всем',
-  kits: 'Запас бинтов: +1 аптечка на миссию',
-  grenades: 'Гранаты: +1 каждому бойцу',
+  armor: 'Бронепластини: +2 HP всім',
+  optics: 'Оптика: +5 до влучності всім',
+  kits: 'Запас бинтів: +1 аптечка на місію',
+  grenades: 'Гранати: +1 кожному бійцю',
 };
 
 const KEY = 'alien-pressure:v1';
@@ -97,19 +97,19 @@ export const maxHpOf = (s: Soldier, t: Tech) =>
 
 /** Все действия лагеря возвращают текст ошибки или null. */
 export function recruit(c: Campaign): string | null {
-  if (c.roster.length >= MAX_ROSTER) return 'Лагерь полон.';
-  if (c.scrap < COST.recruit) return 'Не хватает трофеев.';
+  if (c.roster.length >= MAX_ROSTER) return 'Табір повний.';
+  if (c.scrap < COST.recruit) return 'Не вистачає трофеїв.';
   const used = new Set([...c.roster.map(s => s.name), ...c.fallen.map(f => f.name)]);
   const r = ROSTER.find(x => !used.has(x.name));
   c.scrap -= COST.recruit;
-  c.roster.push(r ? mkSoldier(c, r.name, r.bio) : mkSoldier(c, `Рекрут ${c.nextId}`, 'Доброволец без опыта.'));
+  c.roster.push(r ? mkSoldier(c, r.name, r.bio) : mkSoldier(c, `Рекрут ${c.nextId}`, 'Доброволець без досвіду.'));
   return null;
 }
 
 export function heal(c: Campaign, id: number): string | null {
   const s = c.roster.find(x => x.id === id);
-  if (!s || (s.hpLoss === 0 && !s.fracture)) return 'Лечение не нужно.';
-  if (c.scrap < COST.heal) return 'Не хватает трофеев.';
+  if (!s || (s.hpLoss === 0 && !s.fracture)) return 'Лікування не потрібне.';
+  if (c.scrap < COST.heal) return 'Не вистачає трофеїв.';
   c.scrap -= COST.heal;
   s.hpLoss = 0;
   s.fracture = false;
@@ -117,8 +117,8 @@ export function heal(c: Campaign, id: number): string | null {
 }
 
 export function buy(c: Campaign, key: keyof Tech): string | null {
-  if (c.tech[key]) return 'Уже изучено.';
-  if (c.scrap < COST[key]) return 'Не хватает трофеев.';
+  if (c.tech[key]) return 'Уже вивчено.';
+  if (c.scrap < COST[key]) return 'Не вистачає трофеїв.';
   c.scrap -= COST[key];
   c.tech[key] = true;
   return null;
@@ -142,7 +142,7 @@ export function pickOptions(c: Campaign): MissionOption[] {
 }
 export function chooseOption(c: Campaign, i: number): string | null {
   const o = c.options[i];
-  if (!o) return 'Нет такого задания';
+  if (!o) return 'Немає такого завдання';
   c.objective = o.objective; c.biome = o.biome; c.boss = o.boss; c.risky = o.risky; c.variant = o.variant ?? 0;
   return null;
 }
@@ -202,7 +202,7 @@ export function clearSave(sandbox = false) {
 
 export function choosePerk(c: Campaign, id: number, perk: PerkId): string | null {
   const s = c.roster.find(x => x.id === id);
-  if (!s || s.perkPoints <= 0) return 'Нет очков повышения.';
+  if (!s || s.perkPoints <= 0) return 'Немає очок підвищення.';
   s.perks.push(perk);
   s.perkPoints -= 1;
   return null;
@@ -212,8 +212,8 @@ export function choosePerk(c: Campaign, id: number, perk: PerkId): string | null
 export function unlock(c: Campaign, kind: 'weapon' | 'armor', id: WeaponId | ArmorId): string | null {
   const list = kind === 'weapon' ? c.weapons : c.armors;
   const cost = kind === 'weapon' ? WEAPONS[id as WeaponId].cost : ARMORS[id as ArmorId].cost;
-  if ((list as string[]).includes(id)) return 'Уже открыто.';
-  if (c.scrap < cost) return 'Не хватает трофеев.';
+  if ((list as string[]).includes(id)) return 'Уже відкрито.';
+  if (c.scrap < cost) return 'Не вистачає трофеїв.';
   c.scrap -= cost;
   (list as string[]).push(id);
   return null;
