@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Camp, Screen } from './Camp';
+import { Camp } from './Camp';
 import { clearMission, clearSave, finishMission, load, loadMission, newCampaign, save, saveMission, type Campaign } from './game/campaign';
 import { DIFF } from './game/difficulty';
 import { createMission } from './game/mission';
 import { rtInit } from './game/rt';
 import type { Difficulty, GameState } from './game/types';
 import { Mission } from './Mission';
-import { btn, BUILD, cta, VERSION } from './ui';
+import { Title } from './Title';
 
 type Screen_ = 'menu' | 'camp' | 'mission';
 
@@ -54,38 +54,19 @@ export function App() {
     return <Camp key={c.missionNo + ':' + c.roster.length} c={c} onChange={update} onStart={d => launch(c, d)} onMenu={() => setScreen('menu')} />;
   }
 
+  const diffs = Object.keys(DIFF) as Difficulty[];
   return (
-    <Screen>
-      <h1 style={{ margin: '24px 0 0', fontSize: 32 }}>Alien Pressure <span style={{ fontSize: 14, opacity: 0.6, fontWeight: 400 }}>{VERSION}</span></h1>
-      <p style={{ margin: 0, opacity: 0.8 }}>Подпольный отряд землян против пришельцев. Кровь, паника, патроны на счёт.</p>
-      {midSave && saved && !saved.over && (
-        <button style={cta()} onClick={() => { setC(midSave.before); if (midSave.state.rt) midSave.state.rt.paused = true; setMission({ state: midSave.state, deployed: midSave.deployed, before: midSave.before, run: Date.now() }); setScreen('mission'); }}>
-          Продолжить миссию {midSave.before.missionNo} (ход {midSave.state.turnNo})
-        </button>
-      )}
-      {saved && !saved.over && (
-        <button style={cta()} onClick={() => setScreen('camp')}>
-          Продолжить: миссия {saved.missionNo}, бойцов {saved.roster.length}
-        </button>
-      )}
-      {savedSb && (
-        <button style={cta()} onClick={() => { setC(savedSb); setScreen('camp'); }}>
-          Продолжить песочницу: миссия {savedSb.missionNo}
-        </button>
-      )}
-      <b>Новая игра — сложность</b>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {(Object.keys(DIFF) as Difficulty[]).map(d => (
-          <button key={d} style={btn()} onClick={() => start(d)}>{DIFF[d].label}</button>
-        ))}
-      </div>
-      <b>Песочница</b>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button style={btn(true)} title="Всё оружие, броня и технологии открыты и бесплатны, любая миссия на выбор, отряд не кончается" onClick={() => start('normal', true)}>{savedSb ? 'Новая песочница' : 'Режим песочницы'}</button>
-        <span style={{ fontSize: 12, opacity: 0.7 }}>всё доступно: оружие, броня, любая миссия</span>
-      </div>
-      <p style={{ fontSize: 12, opacity: 0.5 }}>Версия {VERSION} · сборка {BUILD}</p>
-      <p style={{ fontSize: 12, opacity: 0.6 }}>Прогресс хранится в браузере (localStorage). Новая игра перезапишет сохранение.</p>
-    </Screen>
+    <Title
+      labels={diffs.map(d => DIFF[d].label)}
+      onNew={i => start(diffs[i])}
+      onSandbox={() => start('normal', true)}
+      hasSb={!!savedSb}
+      midCont={midSave && saved && !saved.over ? `миссия ${midSave.before.missionNo}, ход ${midSave.state.turnNo}` : null}
+      onMid={() => { if (midSave) { setC(midSave.before); if (midSave.state.rt) midSave.state.rt.paused = true; setMission({ state: midSave.state, deployed: midSave.deployed, before: midSave.before, run: Date.now() }); setScreen('mission'); } }}
+      cont={saved && !saved.over ? `миссия ${saved.missionNo}, бойцов ${saved.roster.length}` : null}
+      onCont={() => setScreen('camp')}
+      sbCont={savedSb ? `миссия ${savedSb.missionNo}` : null}
+      onSbCont={() => { if (savedSb) { setC(savedSb); setScreen('camp'); } }}
+    />
   );
 }
