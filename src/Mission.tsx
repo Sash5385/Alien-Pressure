@@ -304,7 +304,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     s.selectedId = id; s.targetId = null; s.targetBarrel = null; s.aiming = null;
     sfx('select');
     const u = s.units.find(v => v.id === id);
-    if (u) view.current!.focusOn(u.x, u.y);
+    if (u) view.current!.panTo(u.x, u.y); // кнопка бойца сверху: камера сразу к нему, в любом режиме
     view.current!.syncUnits();
     rerender();
   };
