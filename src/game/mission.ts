@@ -55,7 +55,7 @@ const alien = (id: number, kind: AlienKind, n: number, x: number, y: number, d: 
     id, team: 'alien', kind, name: kind === 'trooper' ? `${NAMES[kind]} ${n}` : NAMES[kind], x, y,
     hp, maxHp: hp, ap: ALIEN_AP, maxAp: ALIEN_AP, move: b.move!, aim: kind === 'psi' ? 0 : b.aim! + DIFF[d].aim,
     ammo: b.ammo!, maxAmmo: b.ammo!, weapon: 'rifle', armor: 'none', burst: kind === 'sniper' ? 1 : kind === 'trooper' ? 2 : 3,
-    falloffFrom: 6, falloff: kind === 'sniper' ? 1 : 3, cut: 0, stance: 'stand', cls: 'assault', abilityUsed: 0, suppressed: false, alert: false, homeX: x, homeY: y, mags: 99, grenades: 0, facing: 0, dmg: b.dmg!, range: b.range!, overwatch: false,
+    falloffFrom: 6, falloff: kind === 'sniper' ? 1 : 3, cut: 0, stance: 'stand', cls: 'assault', abilityUsed: 0, suppressed: false, alert: false, homeX: x, homeY: y, mags: 99, grenades: kind === 'heavy' || kind === 'commander' ? 2 : kind === 'trooper' && n % 2 === 0 ? 1 : 0, facing: 0, dmg: b.dmg!, range: b.range!, overwatch: false,
     bleeding: false, fracture: false, morale: 100, panic: false, traits: [], perks: [], bio: '', kills: 0,
   };
 };

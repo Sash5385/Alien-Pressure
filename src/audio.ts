@@ -2,13 +2,16 @@
 export type Sfx =
   | 'alert' | 'throw' | 'pin' | 'grenade' | 'shot' | 'alienShot' | 'hit' | 'miss' | 'psi' | 'death' | 'panic'
   | 'reload' | 'click' | 'select' | 'step' | 'dig' | 'heal' | 'bandage' | 'stance' | 'stanceProne' | 'roll' | 'emerge' | 'mine' | 'charge'
-  | 'launcher' | 'mortar' | 'overwatch' | 'fire' | 'collapse' | 'splash' | 'crumble' | 'wound' | 'turnPlayer' | 'turnEnemy' | 'win' | 'lose';
+  | 'radio' | 'launcher' | 'mortar' | 'overwatch' | 'fire' | 'collapse' | 'splash' | 'crumble' | 'wound' | 'turnPlayer' | 'turnEnemy' | 'win' | 'lose';
 
 export interface SfxOpts { vol?: number; pitch?: number; variant?: string }
 
 const KEY = 'alien-pressure:mute';
 let ctx: AudioContext | null = null;
 let bus: AudioNode | null = null;
+let wet: GainNode | null = null;
+/** Насколько гулкое место: 0 — открытое поле, 1 — каменный город. */
+export function setReverb(amount: number) { if (wet) wet.gain.setTargetAtTime(0.05 + 0.4 * Math.max(0, Math.min(1, amount)), ctx!.currentTime, 0.6); }
 let V = 1; // громкость текущего звука
 let P = 1; // высота (множитель частот)
 let muted = (() => { try { return localStorage.getItem(KEY) === '1'; } catch { return false; } })();
@@ -35,8 +38,10 @@ export function setAmbient(kind: 'rain' | 'wind' | 'water' | 'drone' | null) {
   amb = { src, gain: g, base: cfg[2] };
 }
 
+let musicWanted = false;
 export function setMuted(m: boolean) {
   muted = m;
+  if (m) { mus?.stop(); mus = null; } else if (musicWanted) startMusic();
   if (amb) amb.gain.gain.value = m ? 0 : amb.base;
   try { localStorage.setItem(KEY, m ? '1' : '0'); } catch { /* ignore */ }
 }
@@ -50,7 +55,12 @@ function ac(): AudioContext | null {
       const master = ctx.createGain();
       master.gain.value = 0.9;
       comp.connect(master).connect(ctx.destination);
-      bus = comp;
+      // вход: сухой сигнал + реверберация (эхо в городе, в лесу короче)
+      const inp = ctx.createGain(); inp.connect(comp);
+      const conv = ctx.createConvolver(), len = Math.floor(ctx.sampleRate * 2.2), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+      conv.buffer = ir; wet = ctx.createGain(); wet.gain.value = 0.12; inp.connect(conv); conv.connect(wet).connect(comp);
+      bus = inp;
     } catch { return null; }
   }
   if (ctx.state === 'suspended') void ctx.resume();
@@ -121,7 +131,13 @@ export function sfx(kind: Sfx, o: SfxOpts = {}) {
     // перезарядка: магазин вынут — затвор — магазин вставлен
     case 'reload': noise(c, t, 0.04, 0.3, 'highpass', 2000); tone(c, t, 0.05, 1800, 1400, 0.1, 'square'); noise(c, t + 0.2, 0.14, 0.2, 'bandpass', 1500); tone(c, t + 0.2, 0.1, 400, 300, 0.1, 'sawtooth'); noise(c, t + 0.42, 0.05, 0.35, 'highpass', 1500); tone(c, t + 0.42, 0.06, 1500, 1100, 0.12, 'square'); break;
     // шаги: мягкий глухой удар
-    case 'step': noise(c, t, 0.07, 0.22, 'lowpass', 450 + Math.random() * 300); tone(c, t, 0.07, 120, 62, 0.16); break;
+    case 'step':
+      if (o.variant === 'road') { noise(c, t, 0.05, 0.28, 'bandpass', 1500 + Math.random() * 600); tone(c, t, 0.04, 220, 120, 0.1); }
+      else if (o.variant === 'floor') { noise(c, t, 0.06, 0.2, 'bandpass', 900 + Math.random() * 300); tone(c, t, 0.09, 150, 85, 0.2, 'triangle'); noise(c, t + 0.02, 0.18, 0.06, 'lowpass', 500); }
+      else if (o.variant === 'grass') { noise(c, t, 0.09, 0.14, 'bandpass', 2400 + Math.random() * 800); noise(c, t, 0.05, 0.12, 'lowpass', 350); }
+      else { noise(c, t, 0.07, 0.22, 'lowpass', 450 + Math.random() * 300); tone(c, t, 0.07, 120, 62, 0.16); }
+      break;
+    case 'radio': noise(c, t, 0.05, 0.16, 'highpass', 3000); tone(c, t + 0.05, 0.07, 1300, 1300, 0.06, 'square'); noise(c, t + 0.16, 0.3, 0.05, 'bandpass', 1800); tone(c, t + 0.5, 0.05, 900, 700, 0.05, 'square'); break; // треск рации
     // окапывание: три взмаха лопаты по земле и глухой удар
     case 'dig':
       for (let i = 0; i < 3; i++) { noise(c, t + i * 0.2, 0.14, 0.2, 'bandpass', 950 - i * 150); tone(c, t + i * 0.2 + 0.12, 0.07, 160, 80, 0.12); }
@@ -154,3 +170,49 @@ export function sfx(kind: Sfx, o: SfxOpts = {}) {
   }
   V = 1; P = 1;
 }
+
+
+// ——— живой фон: птицы днём, сверчки ночью ———
+let lifeT: ReturnType<typeof setInterval> | null = null, lifeNight = 0;
+export function setLife(night: number, on = true) {
+  lifeNight = night;
+  if (!on) { if (lifeT) { clearInterval(lifeT); lifeT = null; } return; }
+  if (lifeT) return;
+  lifeT = setInterval(() => {
+    if (muted) return;
+    const c = ac(); if (!c || !bus) return;
+    const t = c.currentTime;
+    V = 0.5; P = 1;
+    if (lifeNight < 0.4) { if (Math.random() < 0.45) { const f = 2400 + Math.random() * 1600, n = 2 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) tone(c, t + i * 0.09, 0.06, f, f * (1.1 + Math.random() * 0.3), 0.035); } } // птичья трель
+    else if (Math.random() < 0.7) { for (let i = 0; i < 5; i++) tone(c, t + i * 0.05, 0.03, 4300, 4300, 0.02, 'square'); } // сверчок
+    V = 1;
+  }, 1400);
+}
+
+// ——— адаптивная музыка: тихий пад и пульс напряжения ———
+let mus: { pad: GainNode[]; pulse: GainNode; hiss: GainNode; stop: () => void } | null = null, tension = 0, tensionNow = 0;
+export function startMusic() {
+  musicWanted = true;
+  if (mus || muted) return;
+  const c = ac(); if (!c || !bus) return;
+  const out = c.createGain(); out.gain.value = 0.0; out.gain.linearRampToValueAtTime(0.5, c.currentTime + 4); out.connect(bus);
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.connect(out);
+  const oscs: OscillatorNode[] = [], pad: GainNode[] = [];
+  [[110, 0], [164.8, 4], [220, -3], [261.6, 6]].forEach(([f, det], i) => { // Am(add9): ля, ми, ля, до
+    const o = c.createOscillator(); o.type = i % 2 ? 'sine' : 'triangle'; o.frequency.value = f; o.detune.value = det;
+    const g = c.createGain(); g.gain.value = 0.05; const lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = 0.05 + i * 0.03; lg.gain.value = 0.025; lfo.connect(lg).connect(g.gain);
+    o.connect(g).connect(lp); o.start(); lfo.start(); oscs.push(o, lfo); pad.push(g);
+  });
+  const pulse = c.createGain(); pulse.gain.value = 0; const po = c.createOscillator(); po.type = 'sine'; po.frequency.value = 55; const lfo2 = c.createOscillator(), l2g = c.createGain(); lfo2.frequency.value = 1.6; l2g.gain.value = 0.5; const am = c.createGain(); am.gain.value = 0.5; lfo2.connect(l2g).connect(am.gain); po.connect(am).connect(pulse).connect(out); po.start(); lfo2.start(); oscs.push(po, lfo2);
+  const hiss = c.createGain(); hiss.gain.value = 0; const len = c.sampleRate * 2, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const ns = c.createBufferSource(); ns.buffer = buf; ns.loop = true; const hf = c.createBiquadFilter(); hf.type = 'highpass'; hf.frequency.value = 5000; ns.connect(hf).connect(hiss).connect(out); ns.start();
+  const tick = setInterval(() => { // сглаживаем напряжение и двигаем слои
+    tensionNow += (tension - tensionNow) * 0.12; const ct = c.currentTime;
+    pulse.gain.setTargetAtTime(0.5 * tensionNow, ct, 0.3); hiss.gain.setTargetAtTime(0.018 * tensionNow, ct, 0.3); lp.frequency.setTargetAtTime(600 + 1800 * tensionNow, ct, 0.5);
+    po.frequency.setTargetAtTime(48 + 10 * tensionNow, ct, 0.5); lfo2.frequency.setTargetAtTime(1.2 + 1.8 * tensionNow, ct, 0.5);
+  }, 250);
+  mus = { pad, pulse, hiss, stop: () => { clearInterval(tick); out.gain.cancelScheduledValues(c.currentTime); out.gain.setTargetAtTime(0, c.currentTime, 0.5); setTimeout(() => { oscs.forEach(o => { try { o.stop(); } catch { /* */ } }); try { ns.stop(); } catch { /* */ } out.disconnect(); }, 1800); } };
+}
+export function stopMusic() { musicWanted = false; mus?.stop(); mus = null; tensionNow = 0; }
+/** Напряжение боя 0..1 (враги видны и в тревоге, идёт стрельба). */
+export function setTension(t: number) { tension = Math.max(0, Math.min(1, t)); }

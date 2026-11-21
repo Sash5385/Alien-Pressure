@@ -7,7 +7,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
 import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
-import { sfx, setAmbient, type Sfx } from '../audio';
+import { sfx, setAmbient, setLife, setReverb, type Sfx } from '../audio';
 import { applyTwoHands, GUN_OF_WEAPON, gunModel, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
@@ -258,7 +258,7 @@ export class GameView {
       this.perfGovernor(rawDt);
       this.stepRain(dt);
       if (this.skyU) this.skyU.uTime.value = this.clock.elapsedTime;
-      this.todT += rawDt; if (this.todT > 0.4) { this.todT = 0; if (this.state.todOn) this.applyTod(this.state.tod ?? 0.5); if (this.lampLights.length) this.updateLampLights(); }
+      this.todT += rawDt; if (this.todT > 0.4) { this.todT = 0; if (this.state.todOn) this.applyTod(this.state.tod ?? 0.5); if (this.lampLights.length) this.updateLampLights(); this.updateSoundScape(); }
       tickWind(this.clock.elapsedTime);
       if (this.state.huge) { if (this.skyMesh) this.skyMesh.position.set(this.controls.target.x, 0, this.controls.target.z); this.hugeT += rawDt; if (this.hugeT > 0.15) { this.hugeT = 0; this.updateHuge(); } }
       if (this.prints.length) { const now = this.clock.elapsedTime; this.prints = this.prints.filter(p => { const k = (now - p.t0) / 40; if (k >= 1) { this.scene.remove(p.m); (p.m.material as THREE.Material).dispose(); return false; } (p.m.material as THREE.MeshLambertMaterial).opacity = 0.38 * (1 - k); return true; }); }
@@ -1467,7 +1467,7 @@ void main(){
       const u = this.state.units.find(v => v.id === id);
       if (u && isVisible(this.state, u)) { this.floatText(u.x + 0.5, u.y + 0.5, '!', '#ffd34d', 0.4); any = true; }
     }
-    if (any) sfx('alert');
+    if (any) { sfx('alert'); setTimeout(() => sfx('radio'), 380); }
   }
 
   /** Шаги: два за клетку, тише вдали от камеры; пришельцы тяжелее (ниже тоном). */
@@ -1477,8 +1477,9 @@ void main(){
     const vol = Math.max(0.2, 1 - d / 28);
     const heavy = u.kind === 'heavy' || u.kind === 'commander';
     const pitch = u.team === 'alien' ? (heavy ? 0.7 : 0.85) : 1;
-    sfx('step', { vol, pitch });
-    setTimeout(() => sfx('step', { vol: vol * 0.8, pitch: pitch * 0.92 }), 1000 / speedOf(u) / 2);
+    const sv = this.state.bidx && this.state.bidx[u.y * this.state.size + u.x] > 0 ? 'floor' : this.state.roadm?.[u.y * this.state.size + u.x] ? 'road' : 'grass';
+    sfx('step', { vol, pitch, variant: sv });
+    setTimeout(() => sfx('step', { vol: vol * 0.8, pitch: pitch * 0.92, variant: sv }), 1000 / speedOf(u) / 2);
     this.footprint(u);
   }
 
@@ -1597,6 +1598,12 @@ void main(){
     this.sun.shadow.intensity = 1 - 0.3 * this.nightAmt;
     setWeatherVisuals(this.nightAmt, false);
     if (this.torch) this.torch.intensity = 75 * Math.min(1, this.nightAmt * 1.3);
+  }
+  /** Звуковая сцена: гулкость от плотности застройки вокруг камеры и фон дня/ночи. */
+  private updateSoundScape() {
+    const s = this.state, t = this.controls.target;
+    if (s.bidx) { let b = 0, n = 0; for (let y = Math.max(0, Math.floor(t.z) - 14); y < Math.min(s.size, Math.floor(t.z) + 14); y += 2) for (let x = Math.max(0, Math.floor(t.x) - 14); x < Math.min(s.size, Math.floor(t.x) + 14); x += 2) { n++; if (s.bidx[y * s.size + x] > 0) b++; } setReverb(n ? Math.min(1, (b / n) * 3.5) : 0); } else setReverb(0.1);
+    setLife(this.nightAmt, this.weatherOn && this.getWeather() !== 'rain');
   }
   /** Реальный свет фонарей: несколько ближайших к камере зажигаются по ночам, у ближайшего — тень. */
   private updateLampLights() {

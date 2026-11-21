@@ -13,6 +13,7 @@ import { clearBuilding, focusFire, holdAll, regroup } from './game/orders';
 import { maxLevel } from './render/buildings';
 import { todLabel } from './game/tod';
 import { weaponIcon } from './render/models';
+import { setTension, startMusic, stopMusic } from './audio';
 import { BAG, bagUsed, canSwap, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
@@ -108,6 +109,16 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const [showMap, setShowMap] = useState(true);
   const [uiIdx, setUiIdx] = useState(loadUi);
   const [ordersOpen, setOrdersOpen] = useState(false);
+  useEffect(() => { // адаптивная музыка: фон и напряжение от врагов в тревоге поблизости
+    startMusic();
+    const iv = setInterval(() => {
+      const st = state.current; if (!st) return;
+      const hs = st.units.filter(u => u.team === 'human' && u.hp > 0);
+      const n = st.units.filter(a => a.team === 'alien' && a.hp > 0 && a.alert && hs.some(h => Math.hypot(h.x - a.x, h.y - a.y) < 24)).length;
+      setTension(Math.min(1, n * 0.16));
+    }, 600);
+    return () => { clearInterval(iv); stopMusic(); setTension(0); };
+  }, []);
   const [invOpen, setInvOpen] = useState(false);
   const z = UI_SCALES[uiIdx];
   const vwE = (typeof window !== 'undefined' ? window.innerWidth : 1280) / z; // ширина интерфейса с учётом размера
@@ -359,7 +370,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const leave = () => onExit(s);
 
   const info = sel
-    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · ${s.rt ? ((sel.cd ?? 0) > 0 ? `чекає ${(sel.cd ?? 0).toFixed(1)} с` : 'готовий') : `AP ${sel.ap}/${sel.maxAp}`} · мораль ${sel.morale}${sel.overwatch ? ' · засідка' : ''}${sel.bleeding ? ' · кровотеча' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНІКА' : ''}${sel.down ? ` · ВАЖКО ПОРАНЕНИЙ (${sel.bleedOut ?? 3} ходи)` : ''}`
+    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · ${s.rt ? ((sel.cd ?? 0) > 0 ? `чекає ${(sel.cd ?? 0).toFixed(1)} с` : 'готовий') : `AP ${sel.ap}/${sel.maxAp}`} · мораль ${sel.morale} · сили ${Math.round(sel.sta ?? 100)}%${sel.overwatch ? ' · засідка' : ''}${sel.bleeding ? ' · кровотеча' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНІКА' : ''}${sel.down ? ` · ВАЖКО ПОРАНЕНИЙ (${sel.bleedOut ?? 3} ходи)` : ''}`
     : 'Обери бійця';
   const cmd = s.units.find(u => u.kind === 'commander' && u.hp > 0);
   const goal = s.scn === 'storm' ? `штурм: ворогів ${living(s, 'alien').filter(a => (a.grp ?? 0) < 500).length}` : {

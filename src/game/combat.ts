@@ -96,7 +96,7 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonu
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
-    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
+    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
   return Math.round(Math.min(95, Math.max(5, c + (a.team === 'human' && isFlanked(s, a, t) ? 10 : 0))));
 }
 

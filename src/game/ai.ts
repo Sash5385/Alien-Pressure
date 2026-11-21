@@ -1,4 +1,5 @@
-import { alienSees, canPsi, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
+import { bldgAt, flOf } from './floors';
+import { alienSees, blast, canPsi, faceToward, GRENADE_RANGE, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 import type { GrenadeResult } from './combat';
@@ -92,6 +93,11 @@ export interface AiSt { shots: number; retreated: boolean }
 export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | undefined, st: AiSt): Promise<'next' | 'stop'> {
   const idx = g ? g.members.indexOf(u) : 0;
   if (!u.alert && alienSees(s, u)) h.alerted?.(raiseAlert(s, u.x, u.y, 8));
+  if (u.kind === 'commander' && u.alert && !u.horn && u.hp > 0) { // командир трубит: просыпаются и встают на тревогу все в радиусе 22
+    u.horn = true;
+    for (const a of living(s, 'alien')) if (a !== u && Math.hypot(a.x - u.x, a.y - u.y) <= 22) { a.dormant = false; a.alert = true; }
+    log(s, `${u.name} поднимает тревогу — гарнизон просыпается!`); h.alerted?.(living(s, 'alien').filter(a => Math.hypot(a.x - u.x, a.y - u.y) <= 22).map(a => a.id));
+  }
   if (!u.alert && u.march) { // колонна идёт по улице к выходу
     const m = u.march;
     for (let d = 4; d >= 1; d--) for (const dy of [0, 1, -1]) {
@@ -140,12 +146,32 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
     return 'stop';
   }
 
+  // гранаты: по скоплению бойцов или по тем, кто сидит за укрытием/в здании
+  if (u.grenades > 0 && u.ap >= 1 && humans.length && near <= GRENADE_RANGE + 1 && mode !== 'hold') {
+    let pick: Unit | null = null, bestV = 0;
+    for (const t of humans) {
+      const d = Math.hypot(t.x - u.x, t.y - u.y); if (d > GRENADE_RANGE || d < 3) continue;
+      const cl = humans.filter(o => Math.hypot(o.x - t.x, o.y - t.y) <= 1.6).length, hc = hitChance(s, u, t), sheltered = hc === null || hc < 40;
+      const v = cl * 2 + (sheltered ? 1.5 : 0) + (t.id === g?.focus ? 1 : 0);
+      if ((cl >= 2 || sheltered) && v > bestV) { bestV = v; pick = t; }
+    }
+    if (pick && rand(s) < 0.5) {
+      u.grenades -= 1; u.ap -= 1; u.overwatch = false; faceToward(u, pick.x, pick.y);
+      const same = bldgAt(s, pick.x, pick.y) >= 0 && bldgAt(s, pick.x, pick.y) === bldgAt(s, u.x, u.y);
+      const r = blast(s, u, pick.x, pick.y, `${u.name} кидає гранату`, false, undefined, same ? flOf(pick) : 0);
+      await h.blast?.(r); return 'next';
+    }
+  }
   if (options.length) {
     const t = options[0].t;
     // тяжёлые и снайперы прижимают огнём, когда попасть трудно
     const sup = ['heavy', 'sniper', 'commander'].includes(u.kind) && u.ammo >= 2 && options[0].c < 35 && !t.suppressed ? suppress(s, u, t) : null;
     if (sup) { await h.shot(sup); return 'next'; }
     await h.shot(shoot2(s, u, t));
+    if (u.kind === 'sniper' && !u.static && flOf(u) === 0 && u.hp > 0 && u.ap > 0 && !st.retreated && rand(s) < 0.45) { // снайпер меняет позицию после выстрела
+      const spot = retreatSpot(s, u, humans);
+      if (spot) { st.retreated = true; u.ap -= 1; u.stance = 'stand'; await walk(spot); return 'next'; }
+    }
     // стрелки дальнего боя окапываются, если рядом нет укрытия
     const covered = hasCover(s, u.x, u.y);
     if (u.hp > 0 && u.ap > 0 && ['sniper', 'heavy', 'commander', 'trooper'].includes(u.kind) && !covered && !trenchAt(s, u.x, u.y) && (u.kind !== 'trooper' || mode === 'hold') && digIn(s, u)) await h.moved(u);
@@ -174,7 +200,7 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
     const seen = humans.some(t => score(s, ghost, t) !== null);
     const flank = humans.some(t => hitChance(s, ghost, t) !== null && isFlanked(s, ghost, t));
     const cov = hasCover(s, x, y);
-    const sc = ideal(u, nearT) - (seen ? 3 : 0) - (cov ? (bound ? 3.5 : 1.5) : 0) - (flank && idx % 2 === 1 ? 2.5 : 0) - s.height[y][x] * (u.kind === 'sniper' ? 1.5 : 0.7) - (trenchAt(s, x, y) ? 2 : 0);
+    const sc = ideal(u, nearT) - (seen ? 3 : 0) - (cov ? (bound ? 3.5 : 1.5) : 0) - (flank && idx % 2 === 1 ? 2.5 : 0) - s.height[y][x] * (u.kind === 'sniper' ? 1.5 : 0.7) - (trenchAt(s, x, y) ? 2 : 0) - (near < 16 && (u.kind === 'trooper' || u.kind === 'heavy') && bldgAt(s, x, y) >= 0 ? 2 : 0); // здания — укрытие и позиция у окон
     if (sc < bestScore) { bestScore = sc; best = [x, y]; }
   }
   if (!best) return 'stop';

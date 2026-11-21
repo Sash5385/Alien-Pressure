@@ -135,7 +135,9 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
     [u.x, u.y] = path[0]; if (s.huge && cf === 0) u.route = u.route!.slice(1); if (u.stance === 'stand' || u.stance === undefined) u.stance = 'stand'; u.overwatch = false; // лёжа ползёт, на колене крадётся
     if (s.huge && u.stance === 'stand') (s.noise ??= []).push({ x: u.x, y: u.y, r: 8 }); // бег шумит: лагеря в 8 клетках просыпаются
     // следующий шаг назначается раньше, чем боец дойдёт до клетки, поэтому бег непрерывный (без остановок на каждой клетке)
-    u.cd = step * 0.8 / (u.stance === 'prone' ? CRAWL_SPEED : u.stance === 'kneel' ? SNEAK_SPEED : RUN_SPEED); u.ap = 0;
+    const tired = (u.sta ?? 100) < 25;
+    u.sta = Math.max(0, (u.sta ?? 100) - step * (u.stance === 'prone' ? 0.6 : u.stance === 'kneel' ? 1.2 : 2.6)); // бег утомляет
+    u.cd = step * 0.8 / ((u.stance === 'prone' ? CRAWL_SPEED : u.stance === 'kneel' ? SNEAK_SPEED : RUN_SPEED) * (tired ? 0.8 : 1)); u.ap = 0;
     void hooks.step(u).catch(() => {});
     if ((!s.huge || cf > 0) && path.length === 1 && !wp) nextDest(u);
     return;
@@ -153,7 +155,7 @@ export function rtTick(s: GameState, dt: number, hooks: RtHooks) {
   const d = rt.paused ? 0 : dt * rt.speed;
   rt.clock += d;
   if (s.todOn) s.tod = (((s.tod0 ?? 0.45) + rt.clock / DAY_SECONDS) % 1 + 1) % 1; // время суток идёт вместе с миссией
-  for (const u of living(s)) settle(u, d);
+  for (const u of living(s)) { settle(u, d); if (u.team === 'human' && !u.dest) u.sta = Math.min(100, (u.sta ?? 100) + d * (u.stance === 'stand' || u.stance === undefined ? 5 : 8)); } // отдых восстанавливает силы
   if (d > 0) {
     // «ход»: волны, кровь, огонь, паника
     if (rt.clock - rt.pulseAt >= TURN_SECS) {
