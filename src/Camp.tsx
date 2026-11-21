@@ -17,6 +17,8 @@ import { DEFEND_KINDS } from './game/mission';
 
 const HEX = 'polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)';
 const panel: React.CSSProperties = { ...glass, borderRadius: 18, padding: 14 };
+/** Кількість стовпців, щоб n елементів заповнили рядки без «сиріт» (інакше max). */
+const symCols = (n: number, max: number) => { for (let k = Math.min(max, n); k >= 2; k--) if (n % k === 0) return k; return Math.max(1, Math.min(max, n)); };
 
 export function Camp({ c, onChange, onStart, onMenu }: {
   c: Campaign;
@@ -61,35 +63,34 @@ export function Camp({ c, onChange, onStart, onMenu }: {
 
   return (
     <HudScreen>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-        <h1 style={{ ...hudH, fontSize: 30 }}>База</h1>
+      <div style={{ display: 'grid', gap: 10 }}>
+        <h1 style={{ ...hudH, fontSize: 30, textAlign: 'center' }}>База</h1>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, textAlign: 'center' }}>
         <span style={{ border: `1px solid ${HN.accent}88`, background: '#06203acc', borderRadius: 4, padding: '3px 12px', fontWeight: 700 }}>Складність: {DIFF[c.difficulty].label}</span>
         <b style={{ border: `1px solid ${HN.accent}`, background: '#0a4a7acc', borderRadius: 4, padding: '3px 12px', color: HN.fg, boxShadow: `0 0 12px ${HN.accent}66` }}>{c.sandbox ? 'Пісочниця: усе відкрито' : `Трофеї: ${c.scrap}`}</b>
+        </div>
       </div>
       {c.sandbox && (() => {
         const cur = { objective: c.objective, biome: c.biome, boss: c.boss, risky: c.risky, variant: c.variant ?? 0 };
         const set = (patch: Partial<typeof cur>) => act(x => sandboxMission(x, { ...cur, ...patch }));
-        const chip = (on: boolean, label: string, click: () => void, title?: string) => <button key={label} title={title} style={{ ...btn(on), padding: '5px 10px', fontSize: 12 }} onClick={click}>{label}</button>;
+        const chip = (on: boolean, label: string, click: () => void, title?: string, extra?: React.CSSProperties) => <button key={label} title={title} style={{ ...btn(on), padding: '7px 8px', fontSize: 12, ...extra }} onClick={click}>{label}</button>;
+        // рівна сітка: стовпців стільки, щоб рядки заповнювались; осиротілий останній елемент розтягується
+        const grp = (items: { on: boolean; label: string; click: () => void; title?: string }[], max: number) => {
+          const n = items.length, cols = symCols(n, max);
+          return <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 6 }}>{items.map((it, i) => chip(it.on, it.label, it.click, it.title, n % cols && i === n - 1 ? { gridColumn: `span ${cols - (n % cols) + 1}` } : undefined))}</div>;
+        };
+        const lab = (t: string) => <span style={{ opacity: 0.7, fontSize: 12 }}>{t}</span>;
+        const objs = (Object.keys(OBJECTIVE_NAME) as (keyof typeof OBJECTIVE_NAME)[]).filter(o => o !== 'rescue');
         return (
-          <div style={{ ...panel, display: 'grid', gap: 10 }}>
+          <div style={{ ...panel, display: 'grid', gap: 8 }}>
             <b>Пісочниця · обери будь-яку місію</b>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ opacity: 0.7, fontSize: 12, width: 64 }}>Завдання</span>
-              {(Object.keys(OBJECTIVE_NAME) as (keyof typeof OBJECTIVE_NAME)[]).filter(o => o !== 'rescue').map(o => chip(c.objective === o && !c.boss, OBJECTIVE_NAME[o], () => set({ objective: o, boss: false })))}
-            </div>
-            {c.objective === 'defend' && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ opacity: 0.7, fontSize: 12, width: 64 }}>Оборона</span>
-                {DEFEND_KINDS.map((d, i) => chip((c.variant ?? 0) === i, d.name, () => set({ variant: i })))}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ opacity: 0.7, fontSize: 12, width: 64 }}>Місцевість</span>
-              {(Object.keys(BIOME_NAME) as (keyof typeof BIOME_NAME)[]).map(b => chip(c.biome === b, BIOME_NAME[b], () => set({ biome: b })))}
-              <span style={{ opacity: 0.7, fontSize: 12, marginLeft: 8 }}>Умови</span>
-              {chip(c.boss, 'Бос', () => set({ boss: !c.boss, objective: !c.boss ? 'assassinate' : c.objective }), 'Бос «Тиран» зі свитою')}
-              {chip(c.risky, 'Ризикована', () => set({ risky: !c.risky }), '+2 вороги')}
-            </div>
+            {lab('Завдання')}
+            {grp(objs.map(o => ({ on: c.objective === o && !c.boss, label: OBJECTIVE_NAME[o], click: () => set({ objective: o, boss: false }) })), narrow ? 2 : 5)}
+            {c.objective === 'defend' && <>{lab('Оборона')}{grp(DEFEND_KINDS.map((d, i) => ({ on: (c.variant ?? 0) === i, label: d.name, click: () => set({ variant: i }) })), narrow ? 2 : 4)}</>}
+            {lab('Місцевість')}
+            {grp((Object.keys(BIOME_NAME) as (keyof typeof BIOME_NAME)[]).map(b => ({ on: c.biome === b, label: BIOME_NAME[b], click: () => set({ biome: b }) })), 3)}
+            {lab('Умови')}
+            {grp([{ on: c.boss, label: 'Бос', click: () => set({ boss: !c.boss, objective: !c.boss ? 'assassinate' : c.objective }), title: 'Бос «Тиран» зі свитою' }, { on: c.risky, label: 'Ризикована', click: () => set({ risky: !c.risky }), title: '+2 вороги' }], 2)}
           </div>
         );
       })()}
@@ -120,22 +121,28 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         </div>
       </div>
       )}
-      <div style={{ ...panel, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 13, padding: 10 }}>
-        <span style={{ opacity: 0.8 }}>Режим бою:</span>
-        <button style={{ ...btn(!c.rt), padding: '4px 10px', fontSize: 12 }} onClick={() => act(x => setRt(x, false))}>Покроковий</button>
-        <button style={{ ...btn(c.rt), padding: '4px 10px', fontSize: 12 }} title="Час іде сам, пауза на пробіл, швидкість ×0.5 або ×1" onClick={() => act(x => setRt(x, true))}>Реальний час</button>
-        <span style={{ opacity: 0.7, marginLeft: 10 }}>Розмір карти:</span>
+      <div style={{ ...panel, display: 'grid', gap: 8, fontSize: 13, padding: 12 }}>
+        <span style={{ opacity: 0.8 }}>Режим бою</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        <button style={{ ...btn(!c.rt), padding: '8px 10px', fontSize: 13 }} onClick={() => act(x => setRt(x, false))}>Покроковий</button>
+        <button style={{ ...btn(c.rt), padding: '8px 10px', fontSize: 13 }} title="Час іде сам, пауза на пробіл, швидкість ×0.5 або ×1" onClick={() => act(x => setRt(x, true))}>Реальний час</button>
+        </div>
+        <span style={{ opacity: 0.8 }}>Розмір карти</span>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${narrow ? 2 : 4}, minmax(0, 1fr))`, gap: 6 }}>
         {([44, 64, 640, 1024] as const).map(n => (
-          <button key={n} style={{ ...btn(c.mapSize === n), padding: '4px 10px', fontSize: 12 }} title={n >= 640 ? 'Величезний ліс: прибульці чекають у таборах-руїнах і сидять у ямах, доки не підійдеш. Лише реальний час, без збереження посеред місії' : undefined} onClick={() => act(x => setMapSize(x, n))}>{n === 44 ? 'Середня 44×44' : n === 64 ? 'Велика 64×64' : n === 640 ? 'Величезний ліс 640×640' : 'Гігант 1024×1024'}</button>
+          <button key={n} style={{ ...btn(c.mapSize === n), padding: '8px 10px', fontSize: 13 }} title={n >= 640 ? 'Величезний ліс: прибульці чекають у таборах-руїнах і сидять у ямах, доки не підійдеш. Лише реальний час, без збереження посеред місії' : undefined} onClick={() => act(x => setMapSize(x, n))}>{n === 44 ? 'Середня 44×44' : n === 64 ? 'Велика 64×64' : n === 640 ? 'Величезний ліс 640×640' : 'Гігант 1024×1024'}</button>
         ))}
+        </div>
         {c.mapSize >= 640 && (
-          <select value={c.loc ?? -1} onChange={e => act(x => setLoc(x, Number(e.target.value)))} style={{ ...btn(false), padding: '4px 8px', fontSize: 12, maxWidth: 230 }} title="Локація великої карти: тип місцевості, забудова, погода">
+          <select value={c.loc ?? -1} onChange={e => act(x => setLoc(x, Number(e.target.value)))} style={{ ...btn(false), padding: '4px 8px', fontSize: 12, width: '100%' }} title="Локація великої карти: тип місцевості, забудова, погода">
             <option value={-1}>🎲 Локація за місією</option>
             {Array.from(new Set(LOCATIONS.map(l => l.arch))).map(a => <optgroup key={a} label={a}>{LOCATIONS.filter(l => l.arch === a).map(l => <option key={l.id} value={l.id}>{l.name}{l.weather ? ' · ' + ({ night: 'ніч', rain: 'дощ', fog: 'туман' } as Record<string, string>)[l.weather] : ''}</option>)}</optgroup>)}
           </select>
         )}
-        <button style={{ ...btn(achOpen), padding: '4px 10px', fontSize: 12 }} onClick={() => { setAchOpen(true); if (c.achNew?.length) act(x => { x.achNew = []; return null; }); }}>🏆 Досягнення ({(c.ach ?? []).length}/{ACH.length}){c.achNew?.length ? ` · нових ${c.achNew.length}` : ''}</button>
-        {c.mapSize >= 640 && <button style={{ ...btn(worldMap), padding: '4px 10px', fontSize: 12 }} onClick={() => setWorldMap(true)}>🗺 Карта світу ({(c.cleared ?? []).length}/{LOCATIONS.length})</button>}
+        <div style={{ display: 'grid', gridTemplateColumns: c.mapSize >= 640 ? '1fr 1fr' : '1fr', gap: 6 }}>
+        <button style={{ ...btn(achOpen), padding: '8px 10px', fontSize: 13 }} onClick={() => { setAchOpen(true); if (c.achNew?.length) act(x => { x.achNew = []; return null; }); }}>🏆 Досягнення ({(c.ach ?? []).length}/{ACH.length}){c.achNew?.length ? ` · нових ${c.achNew.length}` : ''}</button>
+        {c.mapSize >= 640 && <button style={{ ...btn(worldMap), padding: '8px 10px', fontSize: 13 }} onClick={() => setWorldMap(true)}>🗺 Карта світу ({(c.cleared ?? []).length}/{LOCATIONS.length})</button>}
+        </div>
       </div>
       {arsenal && (() => { const sd = c.roster.find(x => x.id === selId) ?? c.roster[0]; if (!sd) return null; return <Arsenal c={c} soldier={sd} mode={arsenal} onClose={() => setArsenal(null)} onPick={id => { act(cc => arsenal === 'weapon' ? equip(cc, sd.id, 'weapon', id!) : setSec(cc, sd.id, id)); if (id) setArsenal(null); }} onBuy={id => act(cc => unlock(cc, 'weapon', id))} />; })()}
       {achOpen && (
@@ -208,7 +215,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         const bar = (lab: string, pct: number, col = HN.accent) => <div key={lab} style={{ fontSize: 10, letterSpacing: '.14em', color: HN.dim, textTransform: 'uppercase' }}>{lab}<i style={{ display: 'block', height: 5, background: '#0b3558', marginTop: 3, position: 'relative' }}><i style={{ position: 'absolute', inset: '0 auto 0 0', width: `${Math.max(2, Math.min(100, pct))}%`, background: col, boxShadow: `0 0 8px ${col}` }} /></i></div>;
         return (
           <div style={{ ...panel, display: 'grid', gap: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${narrow ? 3 : 6}, minmax(0, 1fr))`, gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${symCols(c.roster.length, narrow ? 3 : 6)}, minmax(0, 1fr))`, gap: 8 }}>
               {c.roster.map(x => <button key={x.id} style={{ ...btn(x.id === s.id), padding: narrow ? '8px 4px' : '8px 14px', fontSize: narrow ? 13 : 14 }} onClick={() => { setSelId(x.id); setOpen(null); }}>{x.name}{ids.includes(x.id) ? ' ✓' : ''}</button>)}
             </div>
             <div style={{ textAlign: 'center' }}>
@@ -264,7 +271,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         );
       })()}
 
-      <div style={{ ...panel, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      <div style={{ ...panel, display: 'grid', gridTemplateColumns: `repeat(${narrow ? 1 : symCols(1 + Object.keys(TECH_INFO).length, 5)}, minmax(0, 1fr))`, gap: 8 }}>
         <button style={btn(false, c.roster.length >= MAX_ROSTER)} onClick={() => act(recruit)}>
           Найняти бійця ({COST.recruit}) · {c.roster.length}/{MAX_ROSTER}
         </button>
@@ -277,12 +284,12 @@ export function Camp({ c, onChange, onStart, onMenu }: {
 
       <div style={{ ...panel, display: 'grid', gap: 8 }}>
         <b>Арсенал</b>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <button style={btn()} onClick={() => setArsenal('weapon')}>🔫 Зброя: {Object.keys(WEAPONS).filter(w => c.weapons.includes(w) || WEAPONS[w].cost === 0).length}/{Object.keys(WEAPONS).length} відкрито — арсенал</button>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8 }}>
+          <button style={{ ...btn(), gridColumn: '1 / -1' }} onClick={() => setArsenal('weapon')}>🔫 Зброя: {Object.keys(WEAPONS).filter(w => c.weapons.includes(w) || WEAPONS[w].cost === 0).length}/{Object.keys(WEAPONS).length} відкрито — арсенал</button>
           {(Object.keys(ARMORS) as ArmorId[]).filter(a => !c.armors.includes(a)).map(a => (
             <button key={a} title={ARMORS[a].desc} style={btn()} onClick={() => act(x => unlock(x, 'armor', a))}>{ARMORS[a].name} ({ARMORS[a].cost})</button>
           ))}
-          {c.armors.length === Object.keys(ARMORS).length && <span style={{ opacity: 0.7 }}>Усе відкрито.</span>}
+          {c.armors.length === Object.keys(ARMORS).length && <span style={{ opacity: 0.7, gridColumn: '1 / -1', textAlign: 'center' }}>Усе відкрито.</span>}
         </div>
       </div>
 
@@ -290,7 +297,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
       {c.fallen.length > 0 && (
         <div style={{ fontSize: 13, opacity: 0.7 }}>Полеглі: {c.fallen.map(f => f.name).join(', ')}</div>
       )}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 8, alignItems: 'stretch' }}>
         <button style={cta(ids.length === 0)} disabled={ids.length === 0} onClick={() => onStart(ids)}>
           До місії ({ids.length}/{cap})
         </button>
