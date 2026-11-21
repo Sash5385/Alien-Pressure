@@ -4,6 +4,7 @@ import { applyTraits, shuffle } from './traits';
 import { ARMORS, WEAPONS } from './weapons';
 import { LOCATIONS } from './locations';
 import { stashItems } from './inventory';
+import { applyEquip } from './gear';
 import { footprint, roofAccess, stairTiles, tileCover, type BuildingSpec } from '../render/buildings';
 import type { Stash, Biome, Cover, Difficulty, GameState, House, Look, Objective, Soldier, Tech, Terrain, Unit } from './types';
 
@@ -22,6 +23,7 @@ const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
     bleeding: false, fracture: s.fracture, morale: 70, panic: false, traits: s.traits, perks: s.perks, bio: s.bio, kills: 0,
   };
   applyTraits(u);
+  applyEquip(u, s);
   for (const p of s.perks) { if (p === 'aim') u.aim += 5; if (p === 'hp') u.maxHp += 2; }
   u.maxHp += ar.hp;
   if (s.cls === 'assault') u.move += 1;

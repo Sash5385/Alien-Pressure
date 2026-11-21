@@ -2,18 +2,20 @@
 import { living, log } from './combat';
 import { ARMORS, WEAPONS } from './weapons';
 import { CATALOG, type Cat } from './catalog';
+import { gearKg } from './gear';
 import { SMOKE, SMOKE_IDS, smokeCount, type SmokeId } from './smoke';
 import type { GameState, Loot, LootKind, Stash, Unit, WeaponId } from './types';
 
 export const BAG = 12;
 export const bagUsed = (u: Unit) => u.mags + u.grenades + smokeCount(u);
-export const bagFree = (u: Unit) => Math.max(0, BAG - bagUsed(u));
+export const bagOf = (u: Unit) => BAG + (u.bagExtra ?? 0);
+export const bagFree = (u: Unit) => Math.max(0, bagOf(u) - bagUsed(u));
 export const WEAPON_ICON: Record<LootKind, string> = { mag: '▮', gren: '✹', mat: '▤', kit: '✚', wpn: '🔫', smoke: '☁' };
 export const LOOT_NAME: Record<LootKind, string> = { mag: 'магазин', gren: 'граната', mat: 'матеріали', kit: 'аптечка', wpn: 'зброя', smoke: 'димова' };
 const rnd = (s: { rng: number }) => { s.rng = (Math.imul(s.rng ^ (s.rng >>> 15), 2246822507) + 0x9e3779b9) >>> 0; return (s.rng >>> 8) / 16777216; };
 
 /** Вес снаряжения, кг: оружие, броня, магазины, гранаты, рюкзак. */
-export const loadOf = (u: Unit) => WEAPONS[u.weapon].kg + (u.sec ? WEAPONS[u.sec].kg : 0) + ARMORS[u.armor].kg + u.mags * 0.7 + u.grenades * 0.5 + Object.entries(u.smoke ?? {}).reduce((a, [k, n]) => a + n * (SMOKE[k as SmokeId]?.kg ?? 0.5), 0) + 1.5;
+export const loadOf = (u: Unit) => WEAPONS[u.weapon].kg + (u.sec ? WEAPONS[u.sec].kg : 0) + ARMORS[u.armor].kg + gearKg(u) + u.mags * 0.7 + u.grenades * 0.5 + Object.entries(u.smoke ?? {}).reduce((a, [k, n]) => a + n * (SMOKE[k as SmokeId]?.kg ?? 0.5), 0) + 1.5;
 /** Сколько можно нести без перегруза. */
 export const capOf = (u: Unit) => 16 + (u.cls === 'engineer' ? 2 : 0) + ((u.traits as string[]).includes('tough') ? 2 : 0);
 /** Перегруз 0..1: 0 — налегке, 1 — тяжело (скорость и выносливость падают, меткость хуже). */
@@ -51,7 +53,7 @@ export function autoPickup(s: GameState, u: Unit) {
     if (l.kind === 'kit') { s.medkits += l.n; log(s, `${u.name} находит аптечку.`); remove(s, l); continue; }
     if (l.kind === 'smoke') { const t = Math.min(l.n, bagFree(u)); if (t <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: рюкзак полон.`); } continue; } (u.smoke ??= {})[l.sm ?? 'white'] = ((u.smoke ??= {})[l.sm ?? 'white'] ?? 0) + t; log(s, `${u.name} бере: ${SMOKE[(l.sm ?? 'white') as SmokeId]?.name ?? 'димова'}.`); l.n -= t; if (l.n <= 0) remove(s, l); continue; }
     const take = Math.min(l.n, bagFree(u), Math.floor(Math.max(0, capOf(u) * 1.4 - loadOf(u)) / (l.kind === 'mag' ? 0.7 : 0.5)));
-    if (take <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: не унести — ${bagFree(u) <= 0 ? `рюкзак полон (${BAG}/${BAG})` : 'слишком тяжело'}.`); } continue; }
+    if (take <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: не унести — ${bagFree(u) <= 0 ? `рюкзак полон (${bagOf(u)}/${bagOf(u)})` : 'слишком тяжело'}.`); } continue; }
     if (l.kind === 'mag') u.mags += take; else u.grenades += take;
     log(s, `${u.name} берёт: ${LOOT_NAME[l.kind]}${take > 1 ? ` ×${take}` : ''}.`);
     l.n -= take; if (l.n <= 0) remove(s, l);

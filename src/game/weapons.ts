@@ -36,11 +36,19 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   ...Object.fromEntries(CATALOG.map(g => [g.id, { name: g.name, desc: specDesc(g), aim: g.stats.aim, dmg: g.stats.dmg, ammo: g.stats.ammo, range: g.stats.range, burst: g.stats.burst, falloffFrom: g.stats.falloffFrom, falloff: g.stats.falloff, move: g.stats.move, cost: g.stats.cost, kg: g.stats.kg, pen: g.stats.pen, recoil: g.stats.recoil, noise: g.stats.noise } as WeaponDef])),
 };
 
-export interface ArmorDef { kg: number; name: string; desc: string; hp: number; cut: number; move: number; aim: number; cost: number }
+export interface ArmorDef { stealth?: number; blast?: number; look?: 'none' | 'jacket' | 'vest' | 'carrier' | 'plate' | 'heavy' | 'exo' | 'sapper' | 'ghillie' | 'riot'; kg: number; name: string; desc: string; hp: number; cut: number; move: number; aim: number; cost: number }
 
 export const ARMORS: Record<ArmorId, ArmorDef> = {
-  none: { kg: 0, name: 'Без броні', desc: '', hp: 0, cut: 0, move: 0, aim: 0, cost: 0 },
-  vest: { kg: 2.5, name: 'Бронежилет', desc: '+2 HP', hp: 2, cut: 0, move: 0, aim: 0, cost: 3 },
-  plate: { kg: 5.5, name: 'Бронепластини', desc: '−1 шкоди від кожного влучання', hp: 0, cut: 1, move: 0, aim: 0, cost: 6 },
-  exo: { kg: 9, name: 'Екзоскелет', desc: '−1 шкоди, +3 HP, хід −1, влучність −5', hp: 3, cut: 1, move: -1, aim: -5, cost: 9 },
+  none: { kg: 0, name: 'Без броні', desc: '', hp: 0, cut: 0, move: 0, aim: 0, cost: 0, look: 'none' },
+  jacket: { kg: 1.2, name: 'Тактична куртка', desc: '+1 HP, трохи менш помітний', hp: 1, cut: 0, move: 0, aim: 0, cost: 1, stealth: 0.05, look: 'jacket' },
+  vest: { kg: 2.5, name: 'Бронежилет', desc: '+2 HP', hp: 2, cut: 0, move: 0, aim: 0, cost: 3, look: 'vest' },
+  carrier: { kg: 3.6, name: 'Плитоноска', desc: '+2 HP, +1 слот рюкзака, −1 шкоди від слабких куль', hp: 2, cut: 0, move: 0, aim: 0, cost: 4, look: 'carrier' },
+  stealth: { kg: 2.2, name: 'Розвідувальний камуфляж', desc: '+1 HP, на 25% важче помітити, +2 влучності', hp: 1, cut: 0, move: 0, aim: 2, cost: 5, stealth: 0.25, look: 'jacket' },
+  ghillie: { kg: 3.4, name: 'Маскхалат «Лісовик»', desc: 'на 40% важче помітити, +3 влучності, хід −1', hp: 0, cut: 0, move: -1, aim: 3, cost: 6, stealth: 0.4, look: 'ghillie' },
+  plate: { kg: 5.5, name: 'Бронепластини', desc: '−1 шкоди від кожного влучання', hp: 0, cut: 1, move: 0, aim: 0, cost: 6, look: 'plate' },
+  assault: { kg: 6.5, name: 'Штурмова броня', desc: '+2 HP, −1 шкоди, влучність −2', hp: 2, cut: 1, move: 0, aim: -2, cost: 8, look: 'plate' },
+  exo: { kg: 9, name: 'Екзоскелет', desc: '−1 шкоди, +3 HP, хід −1, влучність −5', hp: 3, cut: 1, move: -1, aim: -5, cost: 9, look: 'exo' },
+  heavy: { kg: 9.5, name: 'Важка броня', desc: '+3 HP, −1 шкоди, хід −1, влучність −3', hp: 3, cut: 1, move: -1, aim: -3, cost: 10, look: 'heavy' },
+  sapper: { kg: 11, name: 'Саперний костюм', desc: '+3 HP, −1 шкоди, вибухи б’ють на 2 слабше, хід −1, влучність −4', hp: 3, cut: 1, move: -1, aim: -4, cost: 11, blast: 2, look: 'sapper' },
+  riot: { kg: 13, name: 'Штурмовий щит-костюм', desc: '+3 HP, −2 шкоди, хід −2, влучність −6', hp: 3, cut: 2, move: -2, aim: -6, cost: 13, look: 'riot' },
 };

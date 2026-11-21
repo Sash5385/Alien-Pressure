@@ -16,7 +16,7 @@ import { weaponIcon } from './render/models';
 import { kickDoor, nearDoor, openQuiet } from './game/doors';
 import { SMOKE, SMOKE_IDS, smokeCount } from './game/smoke';
 import { setTension, startMusic, stopMusic } from './audio';
-import { BAG, bagUsed, canSwap, capOf, encumbrance, loadOf, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
+import { bagOf, bagUsed, canSwap, capOf, encumbrance, loadOf, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
@@ -506,11 +506,11 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
             <span style={{ opacity: sel.sec ? 1 : 0.55, display: 'flex', alignItems: 'center', gap: 6 }}>{sel.sec && weaponIcon(sel.sec) ? <img src={weaponIcon(sel.sec)!} alt="" style={{ width: 76, height: 38, objectFit: 'contain', filter: 'brightness(2.2) drop-shadow(0 0 2px rgba(255,255,255,.7))' }} /> : '🎽'}{sel.sec ? <span><b>{WEAPONS[sel.sec].name}</b><br />{sel.secAmmo ?? WEAPONS[sel.sec].ammo}</span> : 'запасної зброї немає'}</span>
             {sel.sec && <button style={{ ...nb(false, !canSwap(sel)), minHeight: 30 }} disabled={!canSwap(sel)} onClick={() => act2(() => swapWeapons(s, sel))}>⇄ Змінити зброю (1 дія)</button>}
           </div>
-          <div>Рюкзак {bagUsed(sel)}/{BAG} · аптечок {s.medkits} · матеріалів {s.mats ?? 0}</div>
+          <div>Рюкзак {bagUsed(sel)}/{bagOf(sel)} · аптечок {s.medkits} · матеріалів {s.mats ?? 0}</div>
           <div title="Перегруз сповільнює біг, швидше втомлює і псує влучність">Вага {loadOf(sel).toFixed(1)} / {capOf(sel)} кг{encumbrance(sel) > 0.05 ? ` · ${encumbrance(sel) > 0.6 ? 'ВАЖКО' : 'навантаження'}` : ''}
             <div style={{ height: 6, borderRadius: 4, background: 'rgba(255,255,255,.15)', overflow: 'hidden', marginTop: 3 }}><div style={{ width: `${Math.min(100, loadOf(sel) / (capOf(sel) * 1.4) * 100)}%`, height: '100%', background: encumbrance(sel) > 0.6 ? '#ff5a4a' : encumbrance(sel) > 0.05 ? '#ffd34d' : '#6fe39a' }} /></div></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
-            {Array.from({ length: BAG }, (_, i) => { const kind = i < sel.mags ? 'mag' : i < sel.mags + sel.grenades ? 'gren' : null; const isSmoke = !kind && i < sel.mags + sel.grenades + smokeCount(sel); return (
+            {Array.from({ length: bagOf(sel) }, (_, i) => { const kind = i < sel.mags ? 'mag' : i < sel.mags + sel.grenades ? 'gren' : null; const isSmoke = !kind && i < sel.mags + sel.grenades + smokeCount(sel); return (
               <button key={i} disabled={!kind} title={kind ? 'Передати сусідньому бійцю або викласти на землю' : 'Порожньо'} style={{ ...nb(false, !kind), minHeight: 40, minWidth: 0, padding: 0, fontSize: 18, borderStyle: kind ? 'solid' : 'dashed' }} onClick={() => kind && act2(() => giveItem(s, sel, kind))}>{kind === 'mag' ? '▮' : kind === 'gren' ? '✹' : isSmoke ? '☁' : ''}</button>); })}
           </div>
           {smokeCount(sel) > 0 && <div style={{ fontSize: 11 }}>☁ Димові: {SMOKE_IDS.filter(k => (sel.smoke?.[k] ?? 0) > 0).map(k => `${SMOKE[k].name} ×${sel.smoke![k]}`).join(' · ')}</div>}

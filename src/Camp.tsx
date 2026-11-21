@@ -4,12 +4,13 @@ import { LOCATIONS } from './game/locations';
 import { ACH, emptyStats } from './game/achievements';
 import { weaponIcon } from './render/models';
 import { Arsenal } from './Arsenal';
-import { ATT, setSec, toggleAtt, type AttId } from './game/campaign';
+import { ATT, setSec, setHelmet, toggleAtt, toggleGearItem, unlockGear, type AttId } from './game/campaign';
 import { chooseOption, sandboxMission, setMapSize, setLoc, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech } from './game/types';
 import { ARMORS, WEAPONS } from './game/weapons';
+import { GEARS, GEAR_SLOTS, HELMETS, type GearDef } from './game/gear';
 import { btn, comicH, cta, glass, INK, NM, UI_NAMES, UI_SCALES, useUiSize } from './ui';
 import { Backdrop } from './Title';
 import { SoldierView } from './SoldierView';
@@ -32,7 +33,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
   const [worldMap, setWorldMap] = useState(false);
   const [achOpen, setAchOpen] = useState(false);
   const [arsenal, setArsenal] = useState<'weapon' | 'sec' | null>(null);
-  const [open, setOpen] = useState<'weapon' | 'armor' | 'cls' | 'att' | 'sec' | null>(null);
+  const [open, setOpen] = useState<'weapon' | 'armor' | 'helm' | 'gear' | 'cls' | 'att' | 'sec' | null>(null);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
   const ids = deploy.filter(id => c.roster.some(s => s.id === id));
 
@@ -189,7 +190,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         const max = maxHpOf(s, c.tech), on = ids.includes(s.id);
         const w = WEAPONS[s.weapon], ar = ARMORS[s.armor];
         const grenades = 2 + (c.tech.grenades ? 1 : 0) + (s.cls === 'engineer' ? 1 : 0);
-        const hex = (k: 'weapon' | 'armor' | 'cls' | 'att' | 'sec' | null, icon: string, lab: string, val: string, side: 'l' | 'r', dx: number) => (
+        const hex = (k: 'weapon' | 'armor' | 'helm' | 'gear' | 'cls' | 'att' | 'sec' | null, icon: string, lab: string, val: string, side: 'l' | 'r', dx: number) => (
           <div style={{ display: 'flex', flexDirection: narrow ? 'column' : side === 'l' ? 'row' : 'row-reverse', alignItems: 'center', gap: narrow ? 4 : 10, transform: narrow ? undefined : `translateX(${side === 'l' ? dx : -dx}px)`, cursor: k ? 'pointer' : 'default' }}
             role={k ? 'button' : undefined} tabIndex={k ? 0 : undefined} onClick={() => k && setOpen(open === k ? null : k)} onKeyDown={e => { if (k && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(open === k ? null : k); } }}>
             <div style={{ width: 62, height: 70, flex: 'none', clipPath: HEX, background: open === k && k ? NM.accent : NM.line, display: 'grid', placeItems: 'center' }}>
@@ -214,13 +215,15 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', alignItems: 'center', gap: narrow ? 2 : 8 }}>
               <div style={{ display: 'grid', gap: narrow ? 10 : 26 }}>
                 {hex('weapon', weaponIcon(s.weapon) ?? '🔫', 'Зброя', w.name, 'l', 0)}
-                {hex('armor', '🛡', 'Броня', ar.name, 'l', 14)}
+                {hex('helm', '⛑', 'Шолом', HELMETS[s.helmet ?? 'none']?.name ?? 'немає', 'l', 14)}
+                {hex('armor', '🛡', 'Броня', ar.name, 'l', 0)}
+                {hex('gear', '🎒', 'Спорядження', (s.gear?.length ?? 0) ? s.gear!.map(g => GEARS[g]?.name).join(', ') : 'немає', 'l', 14)}
                 {hex('cls', '⚔', 'Клас', CLASSES[s.cls].name, 'l', 0)}
                 {hex('sec', (s.sec && weaponIcon(s.sec)) || '🎽', 'Запасна', s.sec ? WEAPONS[s.sec].name : 'немає', 'l', 0)}
                 {hex('att', '🔧', 'Обвіс', (s.att?.length ?? 0) ? s.att!.map(a => ATT[a].name).join(', ') : 'немає', 'l', 14)}
               </div>
               <div style={{ position: 'relative', display: 'grid', justifyItems: 'center' }}>
-                <SoldierView weapon={s.weapon} armor={s.armor} width={narrow ? 130 : 210} height={narrow ? 230 : 380} />
+                <SoldierView weapon={s.weapon} armor={s.armor} helmet={s.helmet} gear={s.gear} width={narrow ? 130 : 210} height={narrow ? 230 : 380} />
                 <div style={{ width: narrow ? 120 : 190, height: 30, borderRadius: '50%', background: 'radial-gradient(ellipse,#7ee0ff55 -20%,transparent 70%)', marginTop: -14 }} />
               </div>
               <div style={{ display: 'grid', gap: narrow ? 10 : 26 }}>
@@ -232,14 +235,16 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             {open && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
                 {open === 'weapon' && <button style={btn(false)} onClick={() => setArsenal('weapon')}>🔫 Відкрити арсенал ({Object.keys(WEAPONS).length})</button>}
-                {open === 'armor' && c.armors.map(x => <button key={x} title={ARMORS[x].desc} style={btn(s.armor === x)} onClick={() => act(cc => equip(cc, s.id, 'armor', x))}>{ARMORS[x].name}</button>)}
+                {open === 'armor' && (Object.keys(ARMORS) as ArmorId[]).map(x => { const own = c.armors.includes(x) || ARMORS[x].cost === 0; return <button key={x} title={`${ARMORS[x].desc} · ${ARMORS[x].kg} кг`} style={{ ...btn(s.armor === x), opacity: own ? 1 : 0.75 }} onClick={() => act(cc => own ? equip(cc, s.id, 'armor', x) : unlockGear(cc, 'armor', x))}>{ARMORS[x].name}{own ? '' : ` · ${ARMORS[x].cost} тр.`}</button>; })}
+                {open === 'helm' && Object.entries(HELMETS).map(([x, d]: [string, GearDef]) => { const own = (c.helmets ?? []).includes(x) || d.cost === 0; return <button key={x} title={`${d.desc} · ${d.kg} кг`} style={{ ...btn((s.helmet ?? 'none') === x), opacity: own ? 1 : 0.75 }} onClick={() => act(cc => own ? setHelmet(cc, s.id, x) : unlockGear(cc, 'helmet', x))}>{d.icon} {d.name}{own ? '' : ` · ${d.cost} тр.`}</button>; })}
+                {open === 'gear' && Object.entries(GEARS).map(([x, d]: [string, GearDef]) => { const own = (c.gears ?? []).includes(x) || d.cost === 0, on2 = !!s.gear?.includes(x); return <button key={x} title={`${d.desc} · ${d.kg} кг`} style={{ ...btn(on2), opacity: own ? 1 : 0.75 }} onClick={() => act(cc => own ? toggleGearItem(cc, s.id, x) : unlockGear(cc, 'gear', x))}>{d.icon} {d.name}{on2 ? ' ✓' : own ? '' : ` · ${d.cost} тр.`}</button>; })}
                 {open === 'sec' && <button style={btn(false)} onClick={() => setArsenal('sec')}>🎽 Обрати запасну (арсенал)</button>}
                 {open === 'att' && (Object.keys(ATT) as AttId[]).map(a => <button key={a} title={ATT[a].desc} style={btn(!!s.att?.includes(a))} onClick={() => act(cc => toggleAtt(cc, s.id, a))}>{ATT[a].icon} {ATT[a].name}{s.att?.includes(a) ? ' ✓' : ` · ${ATT[a].cost} тр.`}</button>)}
                 {open === 'cls' && CLASS_IDS.map(k => <button key={k} title={CLASSES[k].desc} style={btn(s.cls === k)} onClick={() => act(cc => setClass(cc, s.id, k))}>{CLASSES[k].name}</button>)}
               </div>
             )}
             <div style={{ fontSize: 12, opacity: 0.75, textAlign: 'center', maxWidth: 560, margin: '0 auto' }}>
-              {open === 'sec' ? 'Запасна зброя на ремені: у бою міняється кнопкою ⇄ у рюкзаку (🎒). Знайдена в бою зброя відкривається тут.' : open === 'att' ? 'Обвіс зберігається за бійцем. Установка коштує трофеїв, зняття безкоштовне.' : open === 'weapon' ? w.desc : open === 'armor' ? (ar.desc || 'Без захисту') : `${CLASSES[s.cls].desc} Пасивно: ${CLASSES[s.cls].passive}.`}
+              {open === 'sec' ? 'Запасна зброя на ремені: у бою міняється кнопкою ⇄ у рюкзаку (🎒). Знайдена в бою зброя відкривається тут.' : open === 'att' ? 'Обвіс зберігається за бійцем. Установка коштує трофеїв, зняття безкоштовне.' : open === 'weapon' ? w.desc : open === 'armor' ? (ar.desc || 'Без захисту') : open === 'helm' ? (HELMETS[s.helmet ?? 'none']?.desc ?? '') : open === 'gear' ? `Слотів обвісу: ${GEAR_SLOTS}. Придбані предмети лишаються назавжди. Наведи на кнопку — опис і вага.` : `${CLASSES[s.cls].desc} Пасивно: ${CLASSES[s.cls].passive}.`}
               <div style={{ marginTop: 4 }}>{s.traits.map(t => TRAITS[t].name).join(', ')} — {s.bio}</div>
               {s.perks.length > 0 && <div style={{ color: '#9be86a' }}>{s.perks.map(p => PERKS[p].split(' (')[0]).join(', ')}</div>}
             </div>

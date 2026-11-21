@@ -11,6 +11,8 @@ interface Loaded { scene: THREE.Object3D; clips: THREE.AnimationClip[]; height: 
 const cache = new Map<ModelName, Loaded>();
 export { weaponIcon, gunForWeapon, rawGun as gunModel } from './guns';
 import { buildGun, gunForWeapon, loadGunFile, type Att as GunAtt } from './guns';
+import { ARMORS } from '../game/weapons';
+import { HELMETS } from '../game/gear';
 export type Att = GunAtt;
 const loadGuns = loadGunFile;
 
@@ -144,15 +146,25 @@ function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE
   }
   // броня: бронежилет — накладка на грудь, пластины — ещё наплечники и поясница, экзоскелет — каркас на ногах
   const plate = mat(armor === 'exo' ? 0x5b6470 : 0x2c3036, 0.6), steel = mat(0x7d8794, 0.4);
-  if (armor !== 'none') {
+  const look = ARMORS[armor]?.look ?? 'none', platey = ['vest', 'carrier', 'plate', 'heavy', 'exo', 'sapper', 'riot'].includes(look);
+  if (platey) {
     items.push(box(0.5, 0.38, 0.07, plate, 0, 1.02, 0.27, torso));
     items.push(box(0.5, 0.3, 0.07, plate, 0, 1.0, -0.27, torso));
   }
-  if (armor === 'plate' || armor === 'exo') {
+  if (look === 'jacket') items.push(box(0.64, 0.14, 0.44, mat(0x3a4630, 0.9), 0, 1.22, 0, torso), box(0.4, 0.08, 0.3, mat(0x2d3626, 0.9), 0, 1.3, 0, torso)); // куртка: плечи и воротник
+  if (look === 'carrier') for (const x of [-0.18, 0.18]) items.push(box(0.14, 0.2, 0.08, pouch, x, 0.78, 0.27, torso)); // подсумки на поясе плитоноски
+  if (look === 'ghillie') { const gh = [0x4a5a2a, 0x6a5a32, 0x3a4a22]; for (let i = 0; i < 18; i++) items.push(box(0.04, 0.22, 0.04, mat(gh[i % 3], 0.95), -0.3 + (i % 6) * 0.12, 1.02 - Math.floor(i / 6) * 0.14, 0.2 + ((i * 7) % 5) * 0.02 - 0.26, torso)); }
+  if (look === 'heavy' || look === 'sapper' || look === 'riot') { // тяжёлые: шея, бёдра, плечи
+    items.push(box(0.34, 0.14, 0.3, plate, 0, 1.34, 0, torso));
+    for (const x of [-0.2, 0.2]) items.push(box(0.2, 0.34, 0.14, plate, x, 0.45, 0.12, hips));
+    if (look === 'sapper') { for (const x of [-0.42, 0.42]) items.push(box(0.2, 0.5, 0.26, plate, x, 1.02, 0, torso)); items.push(box(0.56, 0.2, 0.12, mat(0xb0602a, 0.7), 0, 1.1, 0.3, torso)); }
+    if (look === 'riot') { items.push(box(0.56, 0.22, 0.12, plate, 0, 0.62, 0.28, hips)); for (const x of [-0.19, 0.19]) items.push(box(0.16, 0.3, 0.14, plate, x, 0.18, 0.12, hips)); }
+  }
+  if (['plate', 'exo', 'heavy', 'sapper', 'riot'].includes(look)) {
     for (const x of [-0.36, 0.36]) items.push(box(0.2, 0.12, 0.3, plate, x, 1.28, 0, torso));
     items.push(box(0.56, 0.14, 0.4, plate, 0, 0.72, 0, hips));
   }
-  if (armor === 'exo') {
+  if (look === 'exo') {
     for (const x of [-0.19, 0.19]) { items.push(box(0.1, 0.5, 0.1, steel, x, 0.45, 0.14, hips)); items.push(box(0.18, 0.12, 0.14, plate, x, 0.2, 0.12, hips)); }
   }
   // лопатка на левом бедре: черенок и штык
@@ -164,7 +176,7 @@ function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE
 }
 
 
-export interface Who { id: number; cls?: string; kind?: string; weapon?: string }
+export interface Who { id: number; cls?: string; kind?: string; weapon?: string; helmet?: string; gear?: string[] }
 const TONES = [0xffffff, 0xc89a78, 0x9a6a4a, 0xe2b48f];
 /** Детали внешности и экипировки: лицо, шлем, знаки класса; у пришельцев — светящиеся глаза, шипы, пластины. Позиции в системе модели, привязка к костям. */
 function dressCharacter(inner: THREE.Object3D, mixer: THREE.AnimationMixer, pose: THREE.AnimationAction | undefined, name: ModelName, who: Who) {
@@ -197,9 +209,31 @@ function dressCharacter(inner: THREE.Object3D, mixer: THREE.AnimationMixer, pose
       for (const sx of [-1, 1]) for (let i = 0; i < 5; i++) put(box(0.03, 0.22, 0.03), std(gh[(i + 1) % 4], 0.95), sx * (0.34 + i * 0.05), hc.y - 0.42, -0.02 + (i - 2) * 0.07, torso, [0, 0, sx * 0.3]); }
     else if (cls === 'engineer') { put(box(0.62, 0.06, 0.34), std(0xe0b020, 0.7), hc.x, hc.y + 0.37, hc.z, head); put(box(0.1, 0.4, 0.1), std(0xe0b020, 0.7), 0.0, hc.y - 0.55, 0.3, torso); /* жёлтые акценты */ put(cyl(0.05, 0.5, 6), std(0x7a7f85, 0.4, 0.6), -0.28, hc.y - 0.62, -0.28, torso, [0.2, 0, 0.3]); }
     else { put(box(0.5, 0.2, 0.46), dk, hc.x, hc.y - 0.15, hc.z + 0.01, head); } // штурмовик: балаклава на нижней части лица
+    // каска: форма и цвет по виду; обвес — подсумки, рюкзак, пояса
+    const hd = HELMETS[who.helmet ?? 'none'], hlook = hd?.look ?? 'none', hcol = hd?.color ?? 0x4a5a34, gset = who.gear ?? [];
+    const shell = (r: number, dy: number, col: number, rough = 0.7) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), std(col, rough)); m.position.set(hc.x, hc.y + dy, hc.z); m.castShadow = true; inner.add(m); items.push({ o: m, host: head }); return m; };
+    if (hlook === 'steel') { shell(0.36, 0.05, hcol); put(cyl(0.38, 0.03, 16), std(hcol, 0.6), hc.x, hc.y + 0.06, hc.z, head); }
+    else if (hlook === 'kevlar') { shell(0.365, 0.05, hcol); put(box(0.5, 0.12, 0.08), std(hcol, 0.8), hc.x, hc.y - 0.02, hc.z - 0.3, head); for (const x of [-0.16, 0, 0.16]) put(box(0.04, 0.02, 0.5), std(0x2a2a20, 0.9), hc.x + x, hc.y + 0.4, hc.z, head); }
+    else if (hlook === 'ach') { shell(0.37, 0.06, hcol, 0.5); for (const x of [-0.33, 0.33]) put(box(0.04, 0.06, 0.28), std(0x55595f, 0.4, 0.5), hc.x + x, hc.y + 0.1, hc.z, head); put(box(0.2, 0.1, 0.06), std(0x33373d, 0.5, 0.4), hc.x, hc.y + 0.34, F - 0.02, head); }
+    else if (hlook === 'boonie') { put(cyl(0.52, 0.025, 20), std(hcol, 0.95), hc.x, hc.y + 0.14, hc.z, head); shell(0.32, 0.14, hcol, 0.95); }
+    else if (hlook === 'nvg') { shell(0.37, 0.06, hcol, 0.5); put(box(0.14, 0.08, 0.1), std(0x22262a, 0.5, 0.4), hc.x, hc.y + 0.3, F - 0.02, head); for (const x of [-0.07, 0.07]) { put(cyl(0.05, 0.16, 10), std(0x1d2024, 0.4, 0.5), hc.x + x, hc.y + 0.26, F + 0.06, head, [Math.PI / 2, 0, 0]); put(cyl(0.035, 0.02, 10), glow(0x6aff6a, 1.6), hc.x + x, hc.y + 0.26, F + 0.15, head, [Math.PI / 2, 0, 0]); } }
+    else if (hlook === 'visor') { shell(0.375, 0.07, hcol, 0.5); const vm = new THREE.Mesh(box(0.5, 0.34, 0.03), new THREE.MeshStandardMaterial({ color: 0x4a9ad0, transparent: true, opacity: 0.38, roughness: 0.1, metalness: 0.4 })); vm.position.set(hc.x, hc.y + 0.0, F + 0.04); inner.add(vm); items.push({ o: vm, host: head }); put(box(0.5, 0.05, 0.06), std(hcol, 0.6), hc.x, hc.y + 0.19, F + 0.05, head); }
+    else if (hlook === 'command') { shell(0.365, 0.05, hcol); put(box(0.4, 0.05, 0.05), std(0xc42a2a, 0.7), hc.x, hc.y + 0.12, F - 0.03, head); put(cyl(0.012, 0.5, 4), std(0x15171a), hc.x - 0.3, hc.y + 0.4, hc.z - 0.1, head); }
+    else if (hlook === 'hood') { shell(0.4, 0.02, hcol, 0.95); put(box(0.5, 0.2, 0.12), std(hcol, 0.95), hc.x, hc.y - 0.16, hc.z - 0.22, head); for (let i = 0; i < 8; i++) put(box(0.03, 0.14, 0.03), std(i % 2 ? 0x6a5a32 : 0x3a4a22, 0.95), hc.x - 0.28 + i * 0.08, hc.y + 0.26, hc.z + 0.05, head, [0.5, 0, 0]); }
+    else if (hlook === 'heavy') { shell(0.39, 0.07, hcol, 0.45); put(box(0.52, 0.34, 0.07), std(hcol, 0.45, 0.5), hc.x, hc.y - 0.04, F + 0.05, head); for (let i = -2; i <= 2; i++) put(box(0.02, 0.3, 0.02), std(0x15171a), hc.x + i * 0.1, hc.y - 0.04, F + 0.1, head); for (const x of [-0.37, 0.37]) put(box(0.05, 0.24, 0.22), std(hcol, 0.45, 0.5), hc.x + x, hc.y - 0.04, hc.z, head); }
+    if (gset.includes('pouches')) for (const x of [-0.3, -0.12, 0.12, 0.3]) put(box(0.12, 0.16, 0.1), std(0x2b3022, 0.9), x, hc.y - 0.78, 0.3, torso);
+    if (gset.includes('backpack')) { put(box(0.62, 0.8, 0.34), std(0x3a4a2c, 0.9), 0, hc.y - 0.55, -0.45, torso); for (const x of [-0.36, 0.36]) put(box(0.1, 0.4, 0.22), std(0x2f3a24, 0.9), x, hc.y - 0.62, -0.42, torso); }
+    if (gset.includes('grenrig')) for (const x of [-0.22, -0.07, 0.08, 0.23]) { const g = put(sph(0.065), std(0x2f4a23, 0.6), x, hc.y - 0.8, 0.3, torso); g.scale.y = 1.25; }
+    if (gset.includes('smokerig')) for (let i = 0; i < 3; i++) put(cyl(0.045, 0.2, 8), std([0xcfd3d6, 0xcfd3d6, 0xe03a3a][i], 0.6), -0.36 + i * 0.07, hc.y - 0.5, 0.26, torso);
+    if (gset.includes('ifak')) put(box(0.16, 0.2, 0.1), std(0xc42a2a, 0.7), -0.37, 0.5, 0.0, hips);
+    if (gset.includes('flask')) put(cyl(0.06, 0.2, 10), std(0x5a6a3a, 0.7), 0.3, 0.42, -0.25, hips);
+    if (gset.includes('sling')) put(box(0.06, 0.8, 0.04), std(0x1b1d1a, 0.8), 0.06, hc.y - 0.55, 0.28, torso, [0, 0, 0.7]);
+    if (gset.includes('headset')) put(cyl(0.012, 0.35, 4), std(0x15171a), hc.x + 0.32, hc.y + 0.2, hc.z - 0.15, head);
+    if (gset.includes('tourniquet')) { const ua = bone('UpperArm.R'); if (ua) put(box(0.14, 0.08, 0.14), std(0xc42a2a, 0.7), -0.62, hc.y - 0.3, 0.0, ua); }
+    if (gset.includes('gloves')) for (const n2 of ['L', 'R']) { const la = bone('LowerArm.' + n2); if (la) { const lw = inner.worldToLocal(la.getWorldPosition(new THREE.Vector3())); put(box(0.12, 0.14, 0.12), std(0x1b1d1a, 0.85), lw.x, lw.y - 0.2, lw.z + 0.02, la); } }
     // колени и ботинки
-    for (const n of ['L', 'R']) { const ul = bone('UpperLeg.' + n), ll = bone('LowerLeg.' + n), ft = bone('Foot.' + n); const kp = std(0x1d211a, 0.8);
-      if (ll) { const kw = ll.getWorldPosition(new THREE.Vector3()); const kl = inner.worldToLocal(kw); put(box(0.18, 0.18, 0.14), kp, kl.x, kl.y + 0.02, kl.z + 0.12, ll); void ul; }
+    for (const n of ['L', 'R']) { const ul = bone('UpperLeg.' + n), ll = bone('LowerLeg.' + n), ft = bone('Foot.' + n); const kp = std(gset.includes('kneepads') ? 0x23282a : 0x1d211a, 0.8);
+      if (ll && (gset.includes('kneepads') || who.gear === undefined)) { const kw = ll.getWorldPosition(new THREE.Vector3()); const kl = inner.worldToLocal(kw); put(box(0.18, 0.18, 0.14), kp, kl.x, kl.y + 0.02, kl.z + 0.12, ll); void ul; }
       if (ft) { const fw = inner.worldToLocal(ft.getWorldPosition(new THREE.Vector3())); put(box(0.2, 0.16, 0.36), std(0x1a1512, 0.85), fw.x, fw.y + 0.02, fw.z + 0.1, ft); } }
     // рюкзак с скаткой и рацией (антенна у каждого третьего)
     put(box(0.5, 0.55, 0.24), std(0x38412c, 0.9), 0, hc.y - 0.62, -0.38, torso); put(cyl(0.1, 0.55, 8), std(0x5a5a44, 0.95), 0, hc.y - 0.3, -0.38, torso, [0, 0, Math.PI / 2]);

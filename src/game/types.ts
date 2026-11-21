@@ -4,7 +4,7 @@ export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy' | 'com
 export type ClassId = 'assault' | 'sniper' | 'medic' | 'engineer';
 export type WeaponId = string; // 'rifle'|'smg'|'shotgun'|'sniper'|'launcher'|'mortar'|'ags' или номер из каталога (p01…m25)
 export type LaunchKind = 'ugl' | 'launcher' | 'mortar' | 'ags';
-export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
+export type ArmorId = string; // 'none'|'vest'|'plate'|'exo' и новые виды из game/weapons.ts
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
 export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container' | 'bags' | 'wall' | 'window' | 'car' | 'door';
 export type LootKind = 'mag' | 'gren' | 'mat' | 'kit' | 'wpn' | 'smoke';
@@ -37,6 +37,7 @@ export interface Soldier {
   armor: ArmorId;
   cls: ClassId;
   sec?: WeaponId; // запасное оружие
+  helmet?: string; gear?: string[]; // каска и до двух предметов обвеса
   att?: ('optic' | 'supp' | 'mag' | 'nvg')[]; // обвес оружия
 }
 
@@ -91,6 +92,14 @@ export interface Unit {
   cd?: number; // реальное время: секунд до следующего действия
   march?: { x: number; y: number }; // колонна идёт к этой точке, пока не заметит бойцов
   smoke?: Record<string, number>; // дымовые гранаты по видам
+  helmet?: string; gear?: string[]; // каска и обвес (для веса и отрисовки)
+  hcut?: number; // шанс, что каска погасит часть урона, %
+  stealth?: number; // заметность ниже: 0..0.6
+  blastRes?: number; // защита от взрывов
+  bagExtra?: number; // дополнительные слоты рюкзака
+  kneelAim?: number; // прибавка к меткости с колена и лёжа
+  sightBonus?: number; // прибавка к дальности зрения
+  healBonus?: number; staRegen?: number; radio?: boolean; bleedRes?: number;
   rec?: number; // накопленная отдача: падает со временем
   sta?: number; // выносливость 0..100: бег утомляет, отдых восстанавливает
   horn?: boolean; // командир уже поднял всех по тревоге

@@ -2,6 +2,7 @@ import { rand } from './combat';
 import { pickTraits, ROSTER, shuffle, XP_STEPS } from './traits';
 import { CLASS_IDS } from './classes';
 import { ARMORS, WEAPONS } from './weapons';
+import { GEARS, HELMETS, GEAR_SLOTS } from './gear';
 import { emptyStats, recordMission, type Stats } from './achievements';
 import { DEFEND_KINDS } from './mission';
 import type { ArmorId, Biome, ClassId, Difficulty, GameState, Objective, PerkId, Soldier, Tech, WeaponId } from './types';
@@ -28,6 +29,7 @@ export interface Campaign {
   over: boolean;
   weapons: WeaponId[]; // разблокированное оружие
   armors: ArmorId[]; // разблокированная броня
+  helmets?: string[]; gears?: string[]; // разблокированные каски и обвес
   boss: boolean; // следующая миссия — с боссом
   risky: boolean; // рискованная: +2 пехотинца, +3 трофея
   variant: number; // вариант обороны (DEFEND_KINDS)
@@ -102,7 +104,7 @@ function mkSoldier(c: Campaign, name: string, bio: string, cls?: ClassId): Soldi
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0, sandbox = false): Campaign {
   const c: Campaign = {
     v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', biome: 'ruins', mapSize: 44, roster: [], fallen: [], scrap: 3,
-    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg', 'p01', 'a01'], armors: ['none'], boss: false, risky: false, variant: 0, rt: false, options: [],
+    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg', 'p01', 'a01'], armors: ['none'], helmets: ['none', 'cap'], gears: ['kneepads'], boss: false, risky: false, variant: 0, rt: false, options: [],
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
   c.biome = pickBiome(c);
@@ -116,6 +118,7 @@ export function fillSandbox(c: Campaign) {
   c.sandbox = true;
   c.weapons = Object.keys(WEAPONS) as WeaponId[];
   c.armors = Object.keys(ARMORS) as ArmorId[];
+  c.helmets = Object.keys(HELMETS); c.gears = Object.keys(GEARS);
   c.tech = { armor: true, optics: true, kits: true, grenades: true };
   c.scrap = 9999; c.over = false;
   for (let i = 0; i < 12 && c.roster.length < MAX_ROSTER; i++) if (recruit(c)) break;
@@ -232,6 +235,7 @@ export function load(sandbox = false): Campaign | null {
     c.mapSize ??= 44;
     c.weapons ??= ['rifle', 'smg'];
     c.armors ??= ['none'];
+    c.helmets ??= ['none', 'cap']; c.gears ??= ['kneepads'];
     c.boss ??= false; c.risky ??= false; c.variant ??= 0; c.rt ??= false;
     c.options ??= [{ objective: c.objective, biome: c.biome, boss: false, risky: false }];
     for (const s of c.roster) { s.xp ??= 0; s.rank ??= 0; s.perks ??= []; s.perkPoints ??= 0; s.weapon ??= 'rifle'; s.armor ??= 'none'; s.cls ??= 'assault'; }
@@ -261,9 +265,32 @@ export function unlock(c: Campaign, kind: 'weapon' | 'armor', id: WeaponId | Arm
   return null;
 }
 
+/** Открыть каску/обвес/броню за трофеи. */
+export function unlockGear(c: Campaign, kind: 'helmet' | 'gear' | 'armor', id: string): string | null {
+  const tbl = kind === 'helmet' ? HELMETS : kind === 'gear' ? GEARS : ARMORS, list = (kind === 'helmet' ? (c.helmets ??= ['none', 'cap']) : kind === 'gear' ? (c.gears ??= ['kneepads']) : c.armors) as string[];
+  const def = tbl[id]; if (!def) return 'Недоступно.';
+  if (list.includes(id)) return 'Уже відкрито.';
+  if (c.scrap < def.cost) return 'Не вистачає трофеїв.';
+  c.scrap -= def.cost; list.push(id); return null;
+}
+const ownedGear = (c: Campaign, kind: 'helmet' | 'gear' | 'armor', id: string) => ((kind === 'helmet' ? c.helmets : kind === 'gear' ? c.gears : c.armors) as string[] | undefined)?.includes(id) || (kind === 'helmet' ? HELMETS[id]?.cost : kind === 'gear' ? GEARS[id]?.cost : ARMORS[id]?.cost) === 0;
+export function setHelmet(c: Campaign, soldierId: number, id: string): string | null {
+  const s = c.roster.find(x => x.id === soldierId); if (!s || !HELMETS[id] || !ownedGear(c, 'helmet', id)) return 'Недоступно.';
+  if (!(c.helmets ??= []).includes(id)) c.helmets.push(id);
+  s.helmet = id; return null;
+}
+export function toggleGearItem(c: Campaign, soldierId: number, id: string): string | null {
+  const s = c.roster.find(x => x.id === soldierId); if (!s || !GEARS[id] || !ownedGear(c, 'gear', id)) return 'Недоступно.';
+  const g = (s.gear ??= []);
+  if (g.includes(id)) { s.gear = g.filter(x => x !== id); return null; }
+  if (g.length >= GEAR_SLOTS) return `Лише ${GEAR_SLOTS} предмети обвісу — зніми щось.`;
+  if (!(c.gears ??= []).includes(id)) c.gears.push(id);
+  g.push(id); return null;
+}
 export function equip(c: Campaign, soldierId: number, kind: 'weapon' | 'armor', id: WeaponId | ArmorId): string | null {
   const s = c.roster.find(x => x.id === soldierId);
   const list = (kind === 'weapon' ? c.weapons : c.armors) as string[];
+  if (kind === 'armor' && !list.includes(id) && ARMORS[id as ArmorId]?.cost === 0) list.push(id);
   if (kind === 'weapon' && !list.includes(id) && WEAPONS[id as WeaponId]?.cost === 0) list.push(id); // безкоштовне — відкривається саме
   if (!s || !list.includes(id)) return 'Недоступно.';
   if (kind === 'weapon') s.weapon = id as WeaponId; else s.armor = id as ArmorId;

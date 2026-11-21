@@ -99,7 +99,7 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonu
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
-    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - Math.round(encumbrance(a) * 8) - (a.team === 'human' ? Math.round(a.rec ?? 0) : 0) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
+    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - Math.round(encumbrance(a) * 8) + (a.stance === 'kneel' || a.stance === 'prone' ? a.kneelAim ?? 0 : 0) - (a.team === 'human' ? Math.round(a.rec ?? 0) : 0) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
   const cat = catOf(a.weapon), tweak = cat === 'mg' ? (a.stance === 'prone' ? 10 : a.stance === 'kneel' ? 4 : -6) : cat === 'pistol' ? (dist <= 3 ? 10 : dist > 7 ? -6 : 0) : 0; // пулемёт — с сошек, пистолет — вблизи
   return Math.round(Math.min(95, Math.max(5, c + tweak + (a.team === 'human' && isFlanked(s, a, t) ? 10 : 0))));
 }
@@ -129,6 +129,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
   let dmg = hit ? a.dmg[0] + Math.floor(rand(s) * (a.dmg[1] - a.dmg[0] + 1)) : 0;
   const wd = WEAPONS[a.weapon], pen = a.team === 'human' ? wd?.pen ?? 0 : 0;
   if (hit && t.cut > 0) dmg = Math.max(1, dmg - Math.max(0, t.cut - pen)); // пробитие брони
+  if (hit && t.team === 'human' && t.hcut && rand(s) * 100 < t.hcut && dmg > 1) dmg -= 1; // каска гасит часть удара
   if (a.team === 'human') a.rec = Math.min(24, (a.rec ?? 0) + (wd?.recoil ?? 5) * (a.stance === 'prone' ? 0.5 : a.stance === 'kneel' ? 0.75 : 1)); // отдача копится
   const flank = isFlanked(s, a, t);
   t.hp = Math.max(0, t.hp - dmg);
@@ -144,7 +145,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
     if (hit && !killed) {
       shift(t, -10);
       const roll = rand(s);
-      if (roll < 0.25 && !t.bleeding) { t.bleeding = true; wound = 'bleed'; }
+      if (roll < 0.25 * (1 - (t.bleedRes ?? 0)) && !t.bleeding) { t.bleeding = true; wound = 'bleed'; }
       else if (roll >= 0.25 && roll < 0.45 && !t.fracture) { t.fracture = true; wound = 'fracture'; }
     } else if (!hit) shift(t, -4); // давление: пули свистят рядом
     if (killed) living(s, 'human').forEach(h => shift(h, -15));
@@ -421,7 +422,7 @@ export function bandage(s: GameState, medic: Unit): Unit | null {
   if (!pro) s.medkits -= 1;
   medic.ap -= 1;
   t.bleeding = false;
-  t.hp = Math.min(t.maxHp, t.hp + (pro ? 4 : 2));
+  t.hp = Math.min(t.maxHp, t.hp + (pro ? 4 : 2) + (medic.healBonus ?? 0));
   log(s, `${medic.name} перев’язує ${t.name}.`);
   return t;
 }
@@ -448,7 +449,7 @@ export const SIGHT = 12;
 export const isNight = (s: GameState) => s.todOn ? nightAmount(s.tod ?? 0.5) > 0.6 : s.weather === 'night';
 /** Радиус слышимости выстрела: у оружия свой, глушитель режет почти всё. */
 export const noiseOf = (a: Unit) => a.supp ? 5 : (a.team === 'human' ? WEAPONS[a.weapon]?.noise ?? 22 : 22);
-export const sightOf = (s: GameState, u: Unit) => (isNight(s) && !u.nvg ? 7 : SIGHT);
+export const sightOf = (s: GameState, u: Unit) => (isNight(s) && !u.nvg ? 7 : SIGHT) + (u.sightBonus ?? 0);
 
 /** Пересчёт зоны видимости бойцов (радиус + линия видимости) и карты исследованного. */
 const visMarks = new WeakMap<GameState, number[]>();
@@ -565,13 +566,13 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
   for (const t of living(s)) {
     const d = Math.hypot(t.x - x, t.y - y);
     if (d > R || flOf(t) !== fl) continue; // взрыв поражает только свой этаж
-    const dmg = Math.max(1, (d <= (opts ? Math.min(1, R * 0.6) : 1.0) ? (opts?.center ?? 5) : (opts?.edge ?? 3)) - t.cut - (s.trenches.some(tr => tr.x === t.x && tr.y === t.y) ? 1 : 0) - (t.stance === 'prone' ? 1 : 0));
+    const dmg = Math.max(1, (d <= (opts ? Math.min(1, R * 0.6) : 1.0) ? (opts?.center ?? 5) : (opts?.edge ?? 3)) - t.cut - (t.blastRes ?? 0) - (s.trenches.some(tr => tr.x === t.x && tr.y === t.y) ? 1 : 0) - (t.stance === 'prone' ? 1 : 0));
     t.hp = Math.max(0, t.hp - dmg);
     const killed = t.hp <= 0;
     hits.push({ id: t.id, dmg, killed });
     if (t.team === 'human') {
       shift(t, -10);
-      if (!killed && !t.bleeding && rand(s) < 0.25) t.bleeding = true;
+      if (!killed && !t.bleeding && rand(s) < 0.25 * (1 - (t.bleedRes ?? 0))) t.bleeding = true;
       if (killed) living(s, 'human').forEach(h => shift(h, -15));
     } else if (killed) {
       if (owner) { owner.kills += 1; shift(owner, 8); }
@@ -696,7 +697,7 @@ export const ALERT_SIGHT = 12;
 
 /** Пришелец видит бойца (радиус + линия видимости). */
 export const alienSees = (s: GameState, u: Unit) =>
-  living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= (isNight(s) ? 8 : ALERT_SIGHT) && los(s, u, h));
+  living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= (isNight(s) ? 8 : ALERT_SIGHT) * (1 - (h.stealth ?? 0)) && los(s, u, h));
 
 /** Тревога: все непредупреждённые пришельцы в радиусе узнают о бойцах. Возвращает их id. */
 export function raiseAlert(s: GameState, x: number, y: number, radius: number): number[] {
@@ -892,7 +893,7 @@ export function callSupply(s: GameState): boolean {
     if (s.cover[y]?.[x] !== 'none' || s.terrain[y][x] !== 'ground' || s.loot.some(l => l.x === x && l.y === y) || s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) continue;
     s.loot.push(kinds[k] === 'wpn' ? { x, y, ...randomWeapon(s, true) } : { x, y, kind: kinds[k], n: 1 }); k++;
   }
-  s.radioAt = (s.rt?.clock ?? 0) + 90;
+  s.radioAt = (s.rt?.clock ?? 0) + (hs.some(h => h.radio) ? 60 : 90);
   log(s, 'Рація: скид постачання здійснено, скрині поруч із загоном.');
   return true;
 }
