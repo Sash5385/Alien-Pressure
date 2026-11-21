@@ -467,7 +467,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     );
   };
   const fireBtn = (size: number, extra: React.CSSProperties = {}) => (
-    <button disabled={!canFire} onClick={fire} style={{ width: size, height: size, borderRadius: '50%', border: 0, background: 'linear-gradient(145deg,#a8ecff,#4cc3ea)', color: ONAC, fontWeight: 800, fontSize: size < 100 ? 14 : 16, font: 'inherit', cursor: canFire ? 'pointer' : 'default', opacity: canFire ? 1 : 0.45, boxShadow: OUT, display: 'grid', placeItems: 'center', alignContent: 'center', pointerEvents: 'auto', ...extra }}>
+    <button data-dk="fire" disabled={!canFire} onClick={fire} style={{ width: size, height: size, borderRadius: '50%', border: 0, background: 'linear-gradient(145deg,#a8ecff,#4cc3ea)', color: ONAC, fontWeight: 800, fontSize: size < 100 ? 14 : 16, font: 'inherit', cursor: canFire ? 'pointer' : 'default', opacity: canFire ? 1 : 0.45, boxShadow: OUT, display: 'grid', placeItems: 'center', alignContent: 'center', pointerEvents: 'auto', ...extra }}>
       <span style={{ fontWeight: 800 }}>{peek ? 'ВИГЛЯНУТИ' : wl && !tgt ? 'ЦІЛЬ' : 'ВОГОНЬ'}</span>
       <small style={{ fontWeight: 600, opacity: 0.75 }}>{wl ? LAUNCH[wl].name : chance !== null ? `${chance}%` : tb ? 'бочка' : ''}</small>
     </button>
@@ -479,12 +479,65 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       <button style={{ ...nb(ordersOpen), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Накази загону: збір, атака, зачистка будівлі, стояти" onClick={() => { setOrdersOpen(o => !o); sfx('click'); }}>📣</button>
       {([0.5, 1] as const).map(v => <button key={v} style={{ ...nb(s.rt!.speed === v), minWidth: 0, padding: narrow ? '6px 7px' : '6px 10px' }} title={`Швидкість ×${v}`} onClick={() => { s.rt!.speed = v; sfx('click'); rerender(); }}>×{v}</button>)}
     </div>
-  ) : <button style={{ ...nb(false, !canAct), color: AC, minWidth: narrow ? 84 : 120 }} disabled={!canAct} onClick={endTurn}>Кінець ходу</button>;
+  ) : <button data-dk="end" style={{ ...nb(false, !canAct), color: AC, minWidth: narrow ? 84 : 120 }} disabled={!canAct} onClick={endTurn}>Кінець ходу</button>;
+  // Перетягування кнопок: довге натискання → рух; позиції зберігаються (CSS translate не конфліктує з transform)
+  const hudRef = useRef<HTMLDivElement>(null);
+  const [btnEpoch, setBtnEpoch] = useState(0);
+  const dkMode = fan ? 'f' : narrow ? 'n' : 'd';
+  const dkOf = (b: HTMLElement) => dkMode + ':' + (b.dataset.dk || (b.textContent ?? '').replace(/[\d.%×]+/g, '').trim() || b.title);
+  const loadPos = (): Record<string, [number, number]> => { try { return JSON.parse(localStorage.getItem('ap_btnpos') ?? '{}'); } catch { return {}; } };
+  useEffect(() => { // применить сохранённые позиции ко всем кнопкам после каждой отрисовки
+    const root = hudRef.current; if (!root) return;
+    const pos = loadPos();
+    root.querySelectorAll<HTMLElement>('button').forEach(b => {
+      if (b.closest('[data-nodrag]')) return;
+      b.style.touchAction = 'none';
+      const p = pos[dkOf(b)]; b.style.translate = p ? `${p[0]}px ${p[1]}px` : '';
+    });
+  });
+  useEffect(() => {
+    const root = hudRef.current; if (!root) return;
+    let timer = 0, cur: { b: HTMLElement; id: number; sx: number; sy: number; ox: number; oy: number; on: boolean; key: string } | null = null;
+    const down = (e: PointerEvent) => {
+      const b = (e.target as HTMLElement).closest('button') as HTMLElement | null;
+      if (!b || b.closest('[data-nodrag]') || !root.contains(b)) return;
+      const key = dkOf(b), cp = loadPos()[key] ?? [0, 0];
+      cur = { b, id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: cp[0], oy: cp[1], on: false, key };
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => { if (!cur) return; cur.on = true; b.style.zIndex = '30'; b.style.outline = '2px dashed #7ee0ff'; b.style.opacity = '0.85'; try { b.setPointerCapture(cur.id); navigator.vibrate?.(25); } catch { /* */ } }, 450);
+    };
+    const move = (e: PointerEvent) => {
+      if (!cur) return;
+      if (!cur.on) { if (Math.hypot(e.clientX - cur.sx, e.clientY - cur.sy) > 10) { window.clearTimeout(timer); cur = null; } return; }
+      e.preventDefault();
+      let dx = cur.ox + (e.clientX - cur.sx) / z, dy = cur.oy + (e.clientY - cur.sy) / z;
+      const b = cur.b; b.style.translate = `${dx}px ${dy}px`;
+      const r = b.getBoundingClientRect(); // не выпускать за экран
+      if (r.left < 0) dx -= r.left / z; if (r.right > window.innerWidth) dx -= (r.right - window.innerWidth) / z;
+      if (r.top < 0) dy -= r.top / z; if (r.bottom > window.innerHeight) dy -= (r.bottom - window.innerHeight) / z;
+      b.style.translate = `${dx}px ${dy}px`; (cur as any).nx = dx; (cur as any).ny = dy;
+    };
+    const up = () => {
+      window.clearTimeout(timer);
+      if (cur?.on) {
+        const c: any = cur, pos = loadPos(); pos[c.key] = [c.nx ?? c.ox, c.ny ?? c.oy];
+        try { localStorage.setItem('ap_btnpos', JSON.stringify(pos)); } catch { /* */ }
+        c.b.style.zIndex = ''; c.b.style.outline = ''; c.b.style.opacity = '';
+        const stop = (ev: Event) => { ev.stopPropagation(); ev.preventDefault(); }; // клик после перетягивания не срабатывает
+        root.addEventListener('click', stop, { capture: true, once: true }); window.setTimeout(() => root.removeEventListener('click', stop, true), 400);
+      }
+      cur = null;
+    };
+    const noMenu = (e: Event) => { if ((e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('[data-nodrag]')) e.preventDefault(); };
+    root.addEventListener('pointerdown', down); root.addEventListener('pointermove', move); root.addEventListener('pointerup', up); root.addEventListener('pointercancel', up); root.addEventListener('contextmenu', noMenu);
+    return () => { window.clearTimeout(timer); root.removeEventListener('pointerdown', down); root.removeEventListener('pointermove', move); root.removeEventListener('pointerup', up); root.removeEventListener('pointercancel', up); root.removeEventListener('contextmenu', noMenu); };
+  }, [z, dkMode]);
+  void btnEpoch;
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
       <style>{'.hud>*{pointer-events:auto}@keyframes apPulse{0%,100%{opacity:.55}50%{opacity:1}}'}</style>
-      <div className="hud" style={{ position: 'absolute', left: 0, top: 0, width: `${100 / z}%`, height: `${100 / z}%`, transform: `scale(${z})`, transformOrigin: '0 0', pointerEvents: 'none' }}>
+      <div className="hud" ref={hudRef} style={{ position: 'absolute', left: 0, top: 0, width: `${100 / z}%`, height: `${100 / z}%`, transform: `scale(${z})`, transformOrigin: '0 0', pointerEvents: 'none' }}>
       {s.rt?.paused && s.status === 'playing' && (
         <div style={{ position: 'absolute', left: '50%', top: narrow ? '34%' : '30%', transform: 'translate(-50%,-50%)', pointerEvents: 'none', textAlign: 'center', animation: 'apPulse 1.6s ease-in-out infinite' }}>
           <div style={{ ...nbBase, borderRadius: 999, padding: narrow ? '8px 18px' : '12px 30px', fontSize: narrow ? 20 : 30, fontWeight: 800, letterSpacing: '.18em' }}>II ПАУЗА</div>
@@ -492,14 +545,14 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         </div>
       )}
       {s.smokeMode && sel && s.aiming === 'grenade' && (
-        <div style={{ position: 'absolute', top: narrow ? 92 : 64, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'center', maxWidth: narrow ? vw(94) : 640, pointerEvents: 'auto', zIndex: 4 }}>
+        <div data-nodrag="1" style={{ position: 'absolute', top: narrow ? 92 : 64, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'center', maxWidth: narrow ? vw(94) : 640, pointerEvents: 'auto', zIndex: 4 }}>
           {SMOKE_IDS.filter(k => (sel.smoke?.[k] ?? 0) > 0 || (k === 'white' && sel.grenades > 0)).map(k => (
             <button key={k} title={SMOKE[k].desc} style={{ ...nb(s.smokeKind === k, false), minHeight: 40, minWidth: 0, padding: '4px 8px' }} onClick={() => { s.smokeKind = k; sfx('click'); rerender(); }}>{SMOKE[k].icon} {SMOKE[k].name}<small style={{ opacity: 0.7, fontSize: 10 }}>×{sel.smoke?.[k] ?? sel.grenades}</small></button>
           ))}
         </div>
       )}
       {invOpen && sel && (
-        <div style={{ position: 'absolute', top: narrow ? 92 : 64, left: narrow ? 8 : 'calc(50% - 560px)', width: narrow ? vw(94) : 280, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, pointerEvents: 'auto', fontSize: 12, zIndex: 5 }}>
+        <div data-nodrag="1" style={{ position: 'absolute', top: narrow ? 92 : 64, left: narrow ? 8 : 'calc(50% - 560px)', width: narrow ? vw(94) : 280, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, pointerEvents: 'auto', fontSize: 12, zIndex: 5 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b style={{ fontSize: 14 }}>🎒 {sel.name}</b><button style={{ ...nb(false), minWidth: 0, minHeight: 26, padding: '0 10px' }} onClick={() => setInvOpen(false)}>✕</button></div>
           <div style={{ display: 'grid', gap: 4, padding: 6, borderRadius: 10, background: 'rgba(255,255,255,.07)' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{weaponIcon(sel.weapon) ? <img src={weaponIcon(sel.weapon)!} alt="" style={{ width: 76, height: 38, objectFit: 'contain', filter: 'brightness(2.2) drop-shadow(0 0 2px rgba(255,255,255,.7))' }} /> : '🔫'}<span><b>{WEAPONS[sel.weapon].name}</b><br />{sel.ammo}/{sel.maxAmmo}</span></span>
@@ -523,7 +576,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         </div>
       )}
       {ordersOpen && s.rt && s.status === 'playing' && (
-        <div style={{ position: 'absolute', top: narrow ? 92 : 64, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', maxWidth: narrow ? vw(94) : 520, pointerEvents: 'auto' }}>
+        <div data-nodrag="1" style={{ position: 'absolute', top: narrow ? 92 : 64, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', maxWidth: narrow ? vw(94) : 520, pointerEvents: 'auto' }}>
           {(() => {
             const ld = sel ?? s.units.find(u => u.team === 'human' && u.hp > 0 && !u.down);
             const run = (f: (l: NonNullable<typeof ld>) => string | boolean | null | void) => { if (!ld) return; const r = f(ld); if (typeof r === 'string') s.log.push(r); sfx('click'); view.current?.syncUnits(); rerender(); };
@@ -593,12 +646,12 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       )}
       <div style={{ position: 'absolute', right: 8, bottom: cornerBottom, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
         {showLog && (
-          <div style={{ ...nbBase, boxSizing: 'border-box', borderRadius: 16, boxShadow: OUT, padding: 10, width: narrow ? `calc(${vw(100)} - 16px)` : 340, maxHeight: 260, overflowY: 'auto', fontSize: 12, lineHeight: 1.45, pointerEvents: 'auto' }}>
+          <div data-nodrag="1" style={{ ...nbBase, boxSizing: 'border-box', borderRadius: 16, boxShadow: OUT, padding: 10, width: narrow ? `calc(${vw(100)} - 16px)` : 340, maxHeight: 260, overflowY: 'auto', fontSize: 12, lineHeight: 1.45, pointerEvents: 'auto' }}>
             {[...s.log].reverse().slice(0, 60).map((l, i) => <div key={i} style={{ opacity: l.startsWith('—') ? 0.55 : 1, borderTop: l.startsWith('—') ? '1px solid #2a3348' : undefined, paddingTop: l.startsWith('—') ? 4 : 0 }}>{l}</div>)}
           </div>
         )}
         {more && (
-          <div style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, boxSizing: 'border-box', display: 'grid', gap: 8, fontSize: 12, maxHeight: `calc(100vh / ${z} - 90px)`, overflowY: 'auto' }}>
+          <div data-nodrag="1" style={{ ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, boxSizing: 'border-box', display: 'grid', gap: 8, fontSize: 12, maxHeight: `calc(100vh / ${z} - 90px)`, overflowY: 'auto' }}>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setQuality(v.getQuality() === 'high' ? 'low' : 'high'); rerender(); }}>Графіка: {view.current?.getQuality() === 'low' ? 'звичайна' : 'висока'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручна' : 'авто'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setViewSq(!v.isViewSq()); rerender(); }}>Квадрати огляду: {view.current?.isViewSq() ? 'ввімк' : 'вимк'}</button>
@@ -610,7 +663,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
                 {UI_NAMES.map((n, i) => <button key={n} style={{ ...nb(i === uiIdx, false), minWidth: 0, minHeight: 34, padding: '4px 8px', width: 'auto', fontSize: 12, borderRadius: 10 }} onClick={() => { setUiIdx(i); saveUi(i); }}>{n}</button>)}
               </div>
             </div>
-            <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палець — рухати карту, 2 — обертати, щипок — масштаб, довге натискання — повернути бійця.' : 'ЛКМ із затисканням — рухати карту, ПКМ із затисканням — обертати, колесо — масштаб, затиснуте колесо — пауза (в реальному часі). Клік ПКМ — повернути бійця.'}</div>
+            <button style={nb(false, false)} onClick={() => { try { localStorage.removeItem('ap_btnpos'); } catch { /* */ } setBtnEpoch(n => n + 1); }}>Скинути позиції кнопок</button>
+            <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палець — рухати карту, 2 — обертати, щипок — масштаб, довге натискання — повернути бійця. Довге натискання на кнопці — перемістити її.' : 'ЛКМ із затисканням — рухати карту, ПКМ із затисканням — обертати, колесо — масштаб, затиснуте колесо — пауза (в реальному часі). Клік ПКМ — повернути бійця.'}</div>
             <div style={{ opacity: 0.45, textAlign: 'center' }}>{VERSION}</div>
           </div>
         )}
