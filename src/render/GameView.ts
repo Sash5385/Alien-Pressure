@@ -57,6 +57,7 @@ export class GameView {
   private leaves: Leaves | null = null;
   private mistTex: THREE.CanvasTexture | null = null;
   private skyMesh: THREE.Mesh | null = null;
+  private sunOff = new THREE.Vector3(14, 30, 8); // смещение солнца от центра камеры: длина и направление теней
   private skyU: { top: { value: THREE.Color }; mid: { value: THREE.Color }; hor: { value: THREE.Color }; sunDir: { value: THREE.Vector3 }; sunCol: { value: THREE.Color }; cloudCol: { value: THREE.Color }; cloud: { value: number }; stars: { value: number }; uTime: { value: number } } | null = null;
   private fogInit = false;
   private middle = false;
@@ -334,8 +335,12 @@ export class GameView {
       { // камера и тень не выходят за карту; тень следует за камерой
         const t = this.controls.target, cx = Math.max(0, Math.min(n, t.x)), cz = Math.max(0, Math.min(n, t.z));
         if (cx !== t.x || cz !== t.z) { this.camera.position.x += cx - t.x; this.camera.position.z += cz - t.z; t.x = cx; t.z = cz; }
-        this.sun.position.set(t.x + 14, 30, t.z + 8);
-        this.sun.target.position.set(t.x, 0, t.z);
+        // тень: размер охвата следует за высотой камеры, центр привязан к сетке текселей (без мерцания при движении)
+        const dist = this.camera.position.distanceTo(t), half = Math.max(22, Math.min(56, dist * 0.85)), sc = this.sun.shadow.camera;
+        if (Math.abs(sc.right - half) > half * 0.12) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
+        const q = (2 * sc.right) / this.sun.shadow.mapSize.x, sx = Math.round(t.x / q) * q, sz = Math.round(t.z / q) * q;
+        this.sun.position.set(sx + this.sunOff.x, this.sunOff.y, sz + this.sunOff.z);
+        this.sun.target.position.set(sx, 0, sz);
         this.sun.target.updateMatrixWorld();
       }
       this.adaptDpr(rawDt);
@@ -715,6 +720,7 @@ export class GameView {
       q.setFromEuler(e.set((nhash(i, 3) - 0.5) * 0.3, nhash(i, 9) * 6, (nhash(i, 5) - 0.5) * 0.3)); v.set(px, 0.13 * k + this.hs(px, pz), pz); sc.set(1, k, 1);
       im.setMatrixAt(i, m4.compose(v, q, sc)); im.setColorAt(i, c.set(cols[i % 4]));
     });
+    im.receiveShadow = true;
     im.computeBoundingSphere();
     this.scene.add(im);
     return im;
@@ -1526,17 +1532,21 @@ void main(){
     if (this.rain) { this.scene.remove(this.rain); this.rain.geometry.dispose(); this.rain = null; }
     if (this.torch) { this.scene.remove(this.torch, this.torch.target); this.torch = null; }
     this.sun.position.set(this.state.size, 20, this.state.size * 0.2);
+    this.sunOff.set(14, 30, 8); this.sun.shadow.intensity = 1;
     setAmbient(this.weatherOn ? (w === 'rain' ? 'rain' : this.state.biome === 'forest' ? 'wind' : this.state.biome === 'lake' ? 'water' : 'drone') : null);
-    if (w === 'dawn') { this.renderer.toneMappingExposure = 3.0; this.sun.color.set(0xffb070); this.sun.intensity = 1.8; this.sun.position.set(this.state.size, 6, this.state.size * 0.1); this.hemi.intensity = 1.0; fog.color.lerp(new THREE.Color(0xd9a07a), 0.45); }
+    if (w === 'dawn') { this.sunOff.set(34, 11, 6); this.renderer.toneMappingExposure = 3.0; this.sun.color.set(0xffb070); this.sun.intensity = 1.8; this.sun.position.set(this.state.size, 6, this.state.size * 0.1); this.hemi.intensity = 1.0; fog.color.lerp(new THREE.Color(0xd9a07a), 0.45); }
     if (w === 'night') {
+      this.sunOff.set(-12, 26, -10); this.sun.shadow.intensity = 0.7;
       this.renderer.toneMappingExposure = 2.2; this.sun.color.set(0x8aa6ff); this.sun.intensity = 0.7; this.hemi.intensity = 0.55; fog.color.lerp(new THREE.Color(0x0c1424), 0.8); fog.near = 10; fog.far = 60;
       this.torch = new THREE.SpotLight(0xffe2b0, 75, 22, 0.55, 0.6, 1.2);
+      if (this.quality === 'high') { this.torch.castShadow = true; this.torch.shadow.mapSize.set(1024, 1024); this.torch.shadow.bias = -0.0006; this.torch.shadow.normalBias = 0.03; this.torch.shadow.radius = 4; } // тени от фонарика
       this.scene.add(this.torch, this.torch.target);
     }
-    if (w === 'fog') { fog.color.lerp(new THREE.Color(0x9aa6a2), 0.7); fog.near = 6; fog.far = 46; }
-    if (w === 'dusk') { this.renderer.toneMappingExposure = 2.7; this.sun.color.set(0xff9a60); this.sun.intensity = 1.5; this.hemi.intensity = 0.9; fog.color.lerp(new THREE.Color(0x4a3a50), 0.5); }
+    if (w === 'fog') { this.sun.shadow.intensity = 0.4; fog.color.lerp(new THREE.Color(0x9aa6a2), 0.7); fog.near = 6; fog.far = 46; }
+    if (w === 'dusk') { this.sunOff.set(-30, 10, 9); this.renderer.toneMappingExposure = 2.7; this.sun.color.set(0xff9a60); this.sun.intensity = 1.5; this.hemi.intensity = 0.9; fog.color.lerp(new THREE.Color(0x4a3a50), 0.5); }
     if (this.skyU && (w === 'dawn' || w === 'dusk' || w === 'clear')) fog.color.lerp(this.skyU.hor.value, 0.75); // дымка в цвет горизонта
     if (w === 'rain') {
+      this.sun.shadow.intensity = 0.45;
       this.renderer.toneMappingExposure = 3.0; this.hemi.intensity = 1.0; this.sun.intensity = 1.3; fog.color.lerp(new THREE.Color(0x6a7480), 0.6); fog.near = 14; fog.far = 70;
       const n = 1600, pos = new Float32Array(n * 6);
       for (let i = 0; i < n; i++) {
