@@ -3,11 +3,12 @@ import { CLASS_IDS, CLASSES } from './game/classes';
 import { LOCATIONS } from './game/locations';
 import { ACH, emptyStats } from './game/achievements';
 import { weaponIcon } from './render/models';
+import { Arsenal } from './Arsenal';
 import { ATT, setSec, toggleAtt, type AttId } from './game/campaign';
 import { chooseOption, sandboxMission, setMapSize, setLoc, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
-import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
+import type { ArmorId, PerkId, Tech } from './game/types';
 import { ARMORS, WEAPONS } from './game/weapons';
 import { btn, comicH, cta, glass, INK, NM, UI_NAMES, UI_SCALES, useUiSize } from './ui';
 import { Backdrop } from './Title';
@@ -30,6 +31,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
   const [selId, setSelId] = useState<number>(() => c.roster[0]?.id ?? 0);
   const [worldMap, setWorldMap] = useState(false);
   const [achOpen, setAchOpen] = useState(false);
+  const [arsenal, setArsenal] = useState<'weapon' | 'sec' | null>(null);
   const [open, setOpen] = useState<'weapon' | 'armor' | 'cls' | 'att' | 'sec' | null>(null);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
   const ids = deploy.filter(id => c.roster.some(s => s.id === id));
@@ -135,6 +137,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         <button style={{ ...btn(achOpen), padding: '4px 10px', fontSize: 12 }} onClick={() => { setAchOpen(true); if (c.achNew?.length) act(x => { x.achNew = []; return null; }); }}>🏆 Досягнення ({(c.ach ?? []).length}/{ACH.length}){c.achNew?.length ? ` · нових ${c.achNew.length}` : ''}</button>
         {c.mapSize >= 640 && <button style={{ ...btn(worldMap), padding: '4px 10px', fontSize: 12 }} onClick={() => setWorldMap(true)}>🗺 Карта світу ({(c.cleared ?? []).length}/{LOCATIONS.length})</button>}
       </div>
+      {arsenal && (() => { const sd = c.roster.find(x => x.id === selId) ?? c.roster[0]; if (!sd) return null; return <Arsenal c={c} soldier={sd} mode={arsenal} onClose={() => setArsenal(null)} onPick={id => { act(cc => arsenal === 'weapon' ? equip(cc, sd.id, 'weapon', id!) : setSec(cc, sd.id, id)); if (id) setArsenal(null); }} onBuy={id => act(cc => unlock(cc, 'weapon', id))} />; })()}
       {achOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(8,14,28,.9)', overflow: 'auto', padding: 14 }} onClick={() => setAchOpen(false)}>
           <div style={{ maxWidth: 720, margin: '0 auto' }} onClick={e => e.stopPropagation()}>
@@ -228,9 +231,9 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             </div>
             {open && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-                {open === 'weapon' && c.weapons.map(x => <button key={x} title={WEAPONS[x].desc} style={btn(s.weapon === x)} onClick={() => act(cc => equip(cc, s.id, 'weapon', x))}>{WEAPONS[x].name}</button>)}
+                {open === 'weapon' && <button style={btn(false)} onClick={() => setArsenal('weapon')}>🔫 Відкрити арсенал ({Object.keys(WEAPONS).length})</button>}
                 {open === 'armor' && c.armors.map(x => <button key={x} title={ARMORS[x].desc} style={btn(s.armor === x)} onClick={() => act(cc => equip(cc, s.id, 'armor', x))}>{ARMORS[x].name}</button>)}
-                {open === 'sec' && <><button style={btn(!s.sec)} onClick={() => act(cc => setSec(cc, s.id, undefined))}>Немає</button>{c.weapons.filter(x => x !== s.weapon).map(x => <button key={x} title={WEAPONS[x].desc} style={btn(s.sec === x)} onClick={() => act(cc => setSec(cc, s.id, x))}>{WEAPONS[x].name}</button>)}</>}
+                {open === 'sec' && <button style={btn(false)} onClick={() => setArsenal('sec')}>🎽 Обрати запасну (арсенал)</button>}
                 {open === 'att' && (Object.keys(ATT) as AttId[]).map(a => <button key={a} title={ATT[a].desc} style={btn(!!s.att?.includes(a))} onClick={() => act(cc => toggleAtt(cc, s.id, a))}>{ATT[a].icon} {ATT[a].name}{s.att?.includes(a) ? ' ✓' : ` · ${ATT[a].cost} тр.`}</button>)}
                 {open === 'cls' && CLASS_IDS.map(k => <button key={k} title={CLASSES[k].desc} style={btn(s.cls === k)} onClick={() => act(cc => setClass(cc, s.id, k))}>{CLASSES[k].name}</button>)}
               </div>
@@ -270,13 +273,11 @@ export function Camp({ c, onChange, onStart, onMenu }: {
       <div style={{ ...panel, display: 'grid', gap: 8 }}>
         <b>Арсенал</b>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {(Object.keys(WEAPONS) as WeaponId[]).filter(w => !c.weapons.includes(w)).map(w => (
-            <button key={w} title={WEAPONS[w].desc} style={btn()} onClick={() => act(x => unlock(x, 'weapon', w))}>{WEAPONS[w].name} ({WEAPONS[w].cost})</button>
-          ))}
+          <button style={btn()} onClick={() => setArsenal('weapon')}>🔫 Зброя: {Object.keys(WEAPONS).filter(w => c.weapons.includes(w) || WEAPONS[w].cost === 0).length}/{Object.keys(WEAPONS).length} відкрито — арсенал</button>
           {(Object.keys(ARMORS) as ArmorId[]).filter(a => !c.armors.includes(a)).map(a => (
             <button key={a} title={ARMORS[a].desc} style={btn()} onClick={() => act(x => unlock(x, 'armor', a))}>{ARMORS[a].name} ({ARMORS[a].cost})</button>
           ))}
-          {c.weapons.length === Object.keys(WEAPONS).length && c.armors.length === Object.keys(ARMORS).length && <span style={{ opacity: 0.7 }}>Усе відкрито.</span>}
+          {c.armors.length === Object.keys(ARMORS).length && <span style={{ opacity: 0.7 }}>Усе відкрито.</span>}
         </div>
       </div>
 

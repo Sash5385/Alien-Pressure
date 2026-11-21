@@ -6,9 +6,9 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
-import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, setLife, setReverb, type Sfx } from '../audio';
-import { applyTwoHands, GUN_OF_WEAPON, gunModel, spawnCover, spawnModel, type Spawned } from './models';
+import { applyTwoHands, gunForWeapon, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
@@ -19,6 +19,8 @@ import { reachable, findPath } from '../game/pathfinding';
 import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
 import { bldgAt, coverAt, flOf } from '../game/floors';
 import { encumbrance } from '../game/inventory';
+import { SMOKE, throwSmokeKind, type SmokeId } from '../game/smoke';
+import { nodeOf } from '../game/catalog';
 
 let TS = 1; // масштаб времени (реальный режим: ×0.5 / ×1)
 export const setTimeScale = (x: number) => { TS = x; };
@@ -549,7 +551,7 @@ export class GameView {
       if (this.lootMeshes.has(l as unknown as string)) return;
       const g = new THREE.Group(), off = (i % 3) * 0.12 - 0.1;
       g.position.set(l.x + 0.5 + off, this.hy(l.x, l.y) + 0.12, l.y + 0.5 - off);
-      const lg = l.kind === 'wpn' && l.w ? gunModel(GUN_OF_WEAPON[l.w] ?? '') : null;
+      const lg = l.kind === 'wpn' && l.w ? gunForWeapon(l.w) : null;
       if (lg) { // реальная модель оружия на земле
         const sz = lg.userData.size as number[]; lg.scale.setScalar(0.78 / sz[0]); lg.position.y = 0.02; lg.rotation.y = ((l.x * 7 + l.y * 3) % 6); lg.rotation.z = 0;
         const ring = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.46, 20), new THREE.MeshBasicMaterial({ color: 0xff9f43, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = -0.1;
@@ -566,7 +568,7 @@ export class GameView {
         c1.position.y = c2.position.y = 0.11; box.castShadow = true; g.add(box, c1, c2);
       } else {
         const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.26), new THREE.MeshStandardMaterial({ color: 0x4a4f3a, roughness: 0.8 }));
-        const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.22), new THREE.MeshBasicMaterial({ color: { mag: 0xffd34d, gren: 0x6fe39a, mat: 0xc98a4a }[l.kind] }));
+        const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.22), new THREE.MeshBasicMaterial({ color: l.kind === 'smoke' ? (SMOKE[(l.sm ?? 'white') as SmokeId]?.color ?? 0xcccccc) : { mag: 0xffd34d, gren: 0x6fe39a, mat: 0xc98a4a }[l.kind as 'mag' | 'gren' | 'mat'] }));
         top.position.y = 0.12; box.castShadow = true; g.add(box, top);
       }
       this.scene.add(g); this.lootMeshes.set(l as unknown as string, g);
@@ -1295,9 +1297,9 @@ void main(){
     const height = { soldier: 1.05, trooper: 1.05, sniper: 1.15, psi: 1.05, heavy: 1.45, commander: 1.6 }[u.kind];
     const tint = { soldier: undefined, trooper: 0x7fd24a, sniper: 0x3f8f6a, psi: 0xb36bff, heavy: 0x6f8a2c, commander: 0xc0392b }[u.kind];
     const gun = u.team === 'human'
-      ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'RocketLauncher', mortar: 'MORTAR', ags: 'AGS' }[u.weapon]
+      ? nodeOf(u.weapon)
       : { soldier: '', trooper: 'AK', sniper: 'Sniper_2', psi: '', heavy: 'ShortCannon', commander: 'Revolver' }[u.kind];
-    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor, u.team === 'human' ? { optic: u.optic, supp: u.supp, mag: u.extMag } : undefined, { id: u.id, cls: u.cls, kind: u.kind });
+    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor, u.team === 'human' ? { optic: u.optic, supp: u.supp, mag: u.extMag } : undefined, { id: u.id, cls: u.cls, kind: u.kind, weapon: u.weapon });
     if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
     if (u.team === 'alien') { // инопланетная биолюминесценция: лёгкое свечение материалов
       const glow = { trooper: 0x39ff7a, sniper: 0x35e0c0, psi: 0xb36bff, heavy: 0xc8ff3a, commander: 0xff3a3a, soldier: 0x39ff7a }[u.kind] ?? 0x39ff7a;
@@ -1687,7 +1689,7 @@ void main(){
     for (const m of this.state.smokes ?? []) {
       const k = `${m.x},${m.y}`; live.add(k);
       if (!this.smokeMeshes.has(k)) {
-        const o = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 8), new THREE.MeshBasicMaterial({ color: 0xbfc4c8, transparent: true, opacity: 0.62, depthWrite: false }));
+        const o = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 8), new THREE.MeshBasicMaterial({ color: SMOKE[(m.kind ?? 'white') as SmokeId]?.color ?? 0xbfc4c8, transparent: true, opacity: 0.62, depthWrite: false }));
         o.position.set(m.x + 0.5, this.hy(m.x, m.y) + 0.8, m.y + 0.5);
         o.scale.set(1, 1.1, 1); o.userData = { bx: o.position.x, bz: o.position.z };
         this.scene.add(o); this.smokeMeshes.set(k, o);
@@ -2243,7 +2245,8 @@ void main(){
   async smokeAt(u: Unit, x: number, y: number) {
     const s = this.state;
     s.busy = true;
-    throwSmoke(s, u, x, y);
+    const sk = (s.smokeKind ?? 'white') as SmokeId;
+    if (!throwSmokeKind(s, u, x, y, sk)) { s.busy = false; return; }
     this.focusOn(x, y);
     this.blast.visible = false;
     this.play(u.id, 'Punch', true);
@@ -2254,7 +2257,8 @@ void main(){
     const dist = from.distanceTo(to);
     await this.tween(350 + dist * 60, k => { g.position.lerpVectors(from, to, k); g.position.y += Math.sin(k * Math.PI) * (1.2 + dist * 0.15); });
     this.scene.remove(g); g.geometry.dispose();
-    this.burst(to.clone().setY(to.y + 0.3), 0xcfd3d6, 24, 1.6, 900);
+    this.burst(to.clone().setY(to.y + 0.3), SMOKE[sk].color, 24, 1.6, 900);
+    if (sk === 'violet') { this.burst(to.clone().setY(to.y + 0.4), 0xffffff, 40, 5, 300); sfx('grenade'); } else if (sk === 'wp') this.burst(to.clone().setY(to.y + 0.3), 0xffa040, 30, 3, 700);
     sfx('splash');
     this.syncUnits();
     s.busy = false;

@@ -14,6 +14,7 @@ import { maxLevel } from './render/buildings';
 import { todLabel } from './game/tod';
 import { weaponIcon } from './render/models';
 import { kickDoor, nearDoor, openQuiet } from './game/doors';
+import { SMOKE, SMOKE_IDS, smokeCount } from './game/smoke';
 import { setTension, startMusic, stopMusic } from './audio';
 import { BAG, bagUsed, canSwap, capOf, encumbrance, loadOf, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
@@ -194,9 +195,11 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     view.current!.syncUnits();
     rerender();
   };
+  const canSmoke = canAct && !!sel && sel.ap > 0 && sel.stance !== 'prone' && (smokeCount(sel) > 0 || sel.grenades > 0);
   const toggleSmoke = () => {
-    if (!canGrenade) return;
+    if (!canSmoke || !sel) return;
     const on = s.aiming === 'grenade' && s.smokeMode;
+    if (!on && !((sel.smoke?.[s.smokeKind ?? ''] ?? 0) > 0)) s.smokeKind = SMOKE_IDS.find(k => (sel.smoke?.[k] ?? 0) > 0) ?? 'white';
     s.launch = undefined; s.smokeMode = !on; s.aiming = on ? null : 'grenade'; s.targetId = null;
     view.current!.syncUnits(); rerender();
   };
@@ -441,7 +444,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     it('✹', 'Граната', sel ? `${sel.grenades}` : '', s.aiming === 'grenade' && !s.launch && !s.smokeMode, !canGrenade, toggleGrenade, 'Граната'),
     ...(sel && (sel.ugl ?? 0) > 0 && !wl ? [it('◎', 'Підств.', `${sel.ugl}`, s.aiming === 'grenade' && s.launch === 'ugl', !canUgl, toggleUgl, 'Підствольник: дальність 2–10, радіус 1,2, 1 AP')] : []),
     it('✊', 'Удар', '', false, !canMeleeNow, doMelee, 'Ближній бій: ціль у сусідній клітинці, 1 AP, без набоїв, тихо'),
-    ...(sel?.cls === 'engineer' ? [it('☁', 'Дим', '', !!s.smokeMode && s.aiming === 'grenade', !canGrenade, toggleSmoke, 'Димова 3×3 на 2 ходи, витрачає гранату')] : []),
+    ...(sel && (smokeCount(sel) > 0 || sel.cls === 'engineer') ? [it('☁', 'Дим', `${smokeCount(sel)}`, !!s.smokeMode && s.aiming === 'grenade', !canSmoke, toggleSmoke, 'Димові гранати: біла, щільна, широка, фосфорна, сигнальні кольорові… обери вид у списку над панеллю')] : []),
     ...(bi >= 0 ? [it('⬆', 'Вгору', `${sf + 1}/${nfl}`, false, sf >= nfl - 1 || !!sel?.down, () => goFloor(1), 'Піднятися на поверх вище: боєць іде до сходів і піднімається')] : []),
     ...(bi >= 0 && sf > 0 ? [it('⬇', 'Вниз', `${sf + 1}/${nfl}`, false, !!sel?.down, () => goFloor(-1), 'Спуститися на поверх нижче')] : []),
     it('👁', 'Огляд', '', !!s.lookMode, !sel, toggleLook, 'Огляд: підсвітити зону огляду й дальність обраного бійця (без витрат AP)'),
@@ -487,6 +490,13 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <div style={{ marginTop: 6, fontSize: 12, textShadow: '0 1px 2px #000' }}>Режим планування: віддавай накази (Shift+клік — додати точку маршруту), потім Пробіл або ▶.</div>
         </div>
       )}
+      {s.smokeMode && sel && s.aiming === 'grenade' && (
+        <div style={{ position: 'absolute', top: narrow ? 92 : 64, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'center', maxWidth: narrow ? vw(94) : 640, pointerEvents: 'auto', zIndex: 4 }}>
+          {SMOKE_IDS.filter(k => (sel.smoke?.[k] ?? 0) > 0 || (k === 'white' && sel.grenades > 0)).map(k => (
+            <button key={k} title={SMOKE[k].desc} style={{ ...nb(s.smokeKind === k, false), minHeight: 40, minWidth: 0, padding: '4px 8px' }} onClick={() => { s.smokeKind = k; sfx('click'); rerender(); }}>{SMOKE[k].icon} {SMOKE[k].name}<small style={{ opacity: 0.7, fontSize: 10 }}>×{sel.smoke?.[k] ?? sel.grenades}</small></button>
+          ))}
+        </div>
+      )}
       {invOpen && sel && (
         <div style={{ position: 'absolute', top: narrow ? 92 : 64, left: narrow ? 8 : 'calc(50% - 560px)', width: narrow ? vw(94) : 280, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, pointerEvents: 'auto', fontSize: 12, zIndex: 5 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b style={{ fontSize: 14 }}>🎒 {sel.name}</b><button style={{ ...nb(false), minWidth: 0, minHeight: 26, padding: '0 10px' }} onClick={() => setInvOpen(false)}>✕</button></div>
@@ -499,9 +509,10 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           <div title="Перегруз сповільнює біг, швидше втомлює і псує влучність">Вага {loadOf(sel).toFixed(1)} / {capOf(sel)} кг{encumbrance(sel) > 0.05 ? ` · ${encumbrance(sel) > 0.6 ? 'ВАЖКО' : 'навантаження'}` : ''}
             <div style={{ height: 6, borderRadius: 4, background: 'rgba(255,255,255,.15)', overflow: 'hidden', marginTop: 3 }}><div style={{ width: `${Math.min(100, loadOf(sel) / (capOf(sel) * 1.4) * 100)}%`, height: '100%', background: encumbrance(sel) > 0.6 ? '#ff5a4a' : encumbrance(sel) > 0.05 ? '#ffd34d' : '#6fe39a' }} /></div></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
-            {Array.from({ length: BAG }, (_, i) => { const kind = i < sel.mags ? 'mag' : i < sel.mags + sel.grenades ? 'gren' : null; return (
-              <button key={i} disabled={!kind} title={kind ? 'Передати сусідньому бійцю або викласти на землю' : 'Порожньо'} style={{ ...nb(false, !kind), minHeight: 40, minWidth: 0, padding: 0, fontSize: 18, borderStyle: kind ? 'solid' : 'dashed' }} onClick={() => kind && act2(() => giveItem(s, sel, kind))}>{kind === 'mag' ? '▮' : kind === 'gren' ? '✹' : ''}</button>); })}
+            {Array.from({ length: BAG }, (_, i) => { const kind = i < sel.mags ? 'mag' : i < sel.mags + sel.grenades ? 'gren' : null; const isSmoke = !kind && i < sel.mags + sel.grenades + smokeCount(sel); return (
+              <button key={i} disabled={!kind} title={kind ? 'Передати сусідньому бійцю або викласти на землю' : 'Порожньо'} style={{ ...nb(false, !kind), minHeight: 40, minWidth: 0, padding: 0, fontSize: 18, borderStyle: kind ? 'solid' : 'dashed' }} onClick={() => kind && act2(() => giveItem(s, sel, kind))}>{kind === 'mag' ? '▮' : kind === 'gren' ? '✹' : isSmoke ? '☁' : ''}</button>); })}
           </div>
+          {smokeCount(sel) > 0 && <div style={{ fontSize: 11 }}>☁ Димові: {SMOKE_IDS.filter(k => (sel.smoke?.[k] ?? 0) > 0).map(k => `${SMOKE[k].name} ×${sel.smoke![k]}`).join(' · ')}</div>}
           <div style={{ opacity: 0.7, fontSize: 11 }}>▮ магазин · ✹ граната. Натисни предмет — передати сусіду або викласти.</div>
           {(nearStash || wpnHere) && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {nearStash && <button style={nb(true, sel.ap <= 0)} disabled={sel.ap <= 0} onClick={() => act2(() => searchStash(s, sel))}>📦 Обшукати</button>}

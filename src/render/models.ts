@@ -9,42 +9,10 @@ const NAMES: ModelName[] = ['Soldier', 'Enemy', 'Hazmat'];
 
 interface Loaded { scene: THREE.Object3D; clips: THREE.AnimationClip[]; height: number }
 const cache = new Map<ModelName, Loaded>();
-const gunCache = new Map<string, THREE.Object3D>();
-/** Модель оружия из пакета (CC0 Quaternius): Rifle, SMG, Shotgun, Sniper, Pistol, Scope, Silencer… Центр в начале, ствол по +X. */
-export function gunModel(name: string): THREE.Object3D | null {
-  const g = gunCache.get(name); if (!g) return null;
-  const c = g.clone(true); c.userData = { ...g.userData }; return c;
-}
-export const GUN_OF_WEAPON: Record<string, string> = { rifle: 'Rifle', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper' };
-const iconCache = new Map<string, string>();
-/** Картинка оружия для интерфейса (рендер модели в маленький холст), null — нет модели. */
-export function weaponIcon(weaponId: string): string | null { return iconCache.get(weaponId) ?? null; }
-function renderIcons() {
-  try {
-    const cv = document.createElement('canvas'); cv.width = 192; cv.height = 96;
-    const r = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, preserveDrawingBuffer: true });
-    r.setSize(192, 96, false); r.setClearColor(0x000000, 0);
-    const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.6)); const dl = new THREE.DirectionalLight(0xffffff, 2.4); dl.position.set(2, 4, 5); sc.add(dl);
-    for (const [wid, gname] of Object.entries(GUN_OF_WEAPON)) {
-      const g = gunModel(gname); if (!g) continue;
-      const size = g.userData.size as number[], k = 2.6 / size[0]; g.scale.setScalar(k); g.rotation.y = -0.35; sc.add(g);
-      const cam = new THREE.PerspectiveCamera(22, 2, 0.1, 50); cam.position.set(0, 0.1, 9); cam.lookAt(0, 0, 0);
-      g.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) { const mats = Array.isArray(m.material) ? m.material : [m.material]; mats.forEach(mm => { const std = mm as THREE.MeshStandardMaterial; if (std.color) std.color.multiplyScalar(1.7); }); } });
-      r.render(sc, cam); iconCache.set(wid, cv.toDataURL('image/png')); sc.remove(g);
-    }
-    r.dispose();
-  } catch { /* без иконок */ }
-}
-async function loadGuns() {
-  if (gunCache.size) return;
-  try {
-    const g = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/weapons.glb`);
-    const root = g.scene.children.length === 1 && !g.scene.children[0].name ? g.scene.children[0] : g.scene;
-    [...root.children].forEach(ch => { ch.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = false; const mats = Array.isArray(m.material) ? m.material : [m.material]; for (const mm of mats as THREE.MeshStandardMaterial[]) { mm.metalness = 0.3; mm.roughness = 0.5; mm.color.multiplyScalar(0.75); } } }); ch.removeFromParent(); gunCache.set(ch.name, ch); });
-    gunCache.forEach(ch => { const b = new THREE.Box3().setFromObject(ch); ch.userData.size = b.getSize(new THREE.Vector3()).toArray(); });
-    renderIcons();
-  } catch { /* без моделей оружия — прежние детали */ }
-}
+export { weaponIcon, gunForWeapon, rawGun as gunModel } from './guns';
+import { buildGun, gunForWeapon, loadGunFile, type Att as GunAtt } from './guns';
+export type Att = GunAtt;
+const loadGuns = loadGunFile;
 
 /** Грузит glTF из public/models/. Не найденные файлы просто пропускаются — сцена использует примитивы. */
 export async function loadModels(covers = true): Promise<void> {
@@ -196,7 +164,7 @@ function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE
 }
 
 
-export interface Who { id: number; cls?: string; kind?: string }
+export interface Who { id: number; cls?: string; kind?: string; weapon?: string }
 const TONES = [0xffffff, 0xc89a78, 0x9a6a4a, 0xe2b48f];
 /** Детали внешности и экипировки: лицо, шлем, знаки класса; у пришельцев — светящиеся глаза, шипы, пластины. Позиции в системе модели, привязка к костям. */
 function dressCharacter(inner: THREE.Object3D, mixer: THREE.AnimationMixer, pose: THREE.AnimationAction | undefined, name: ModelName, who: Who) {
@@ -281,7 +249,6 @@ function weaponFrame(node: THREE.Object3D, hand: THREE.Vector3) {
 }
 
 /** Детали оружия, которых нет в модели: прицелы, глушитель, цевьё. */
-export type Att = { optic?: boolean; supp?: boolean; mag?: boolean };
 function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<ReturnType<typeof weaponFrame>>, att?: Att) {
   const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.5, metalness: 0.4, flatShading: true });
   const glass = new THREE.MeshStandardMaterial({ color: 0x4aa8ff, roughness: 0.1, metalness: 0.6, emissive: 0x0b3a6b });
@@ -323,9 +290,10 @@ function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<Retur
 }
 
 /** Ставит модель оружия из пакета вместо родной: по длинной оси, направлению ствола и «верху» исходного узла. */
-function mountGun(node: THREE.Object3D, weapon: string, f: NonNullable<ReturnType<typeof weaponFrame>>, att?: Att, enemy = false): boolean {
-  const key = (enemy ? { AK: 'Rifle2', Sniper_2: 'Sniper', Revolver: 'Revolver', Revolver_Small: 'Pistol' } : { AK: 'Rifle', SMG: 'SMG', Shotgun: 'Shotgun', Sniper: 'Sniper' } as Record<string, string>)[weapon];
-  const gun = key ? gunModel(key) : null;
+function mountGun(node: THREE.Object3D, weapon: string, f: NonNullable<ReturnType<typeof weaponFrame>>, att?: Att, enemy = false, wid?: string): boolean {
+  const gun = enemy
+    ? buildGun({ body: ({ AK: 'AssaultRifle2_1', Sniper_2: 'SniperRifle_3', Revolver: 'Revolver_1', Revolver_Small: 'Pistol_1' } as Record<string, string>)[weapon] ?? '', finish: 'black', len: 1 })
+    : wid ? gunForWeapon(wid, att) : null;
   if (!gun) return false;
   const size = gun.userData.size as number[];
   node.children.forEach(c => { c.visible = false; }); // родная модель скрыта
@@ -335,14 +303,6 @@ function mountGun(node: THREE.Object3D, weapon: string, f: NonNullable<ReturnTyp
   holder.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex, ey, ez));
   holder.position.copy(f.ctr); holder.scale.setScalar(f.len / size[0]);
   holder.add(gun);
-  // насадки: глушитель на дуле, оптика сверху — по габариту этого оружия
-  const gb = new THREE.Box3().setFromObject(gun), L = size[0];
-  let barrelY = 0, nB = 0, topY = -1e9;
-  gun.updateMatrixWorld(true);
-  gun.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh) return; const p = m.geometry.attributes.position; for (let i = 0; i < p.count; i += 2) { const v = new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); if (v.x > gb.max.x - L * 0.06) { barrelY += v.y; nB++; } if (Math.abs(v.x) < L * 0.08) topY = Math.max(topY, v.y); } });
-  barrelY = nB ? barrelY / nB : 0;
-  if (att?.supp) { const sl = gunModel('Silencer'); if (sl) { const sw = (sl.userData.size as number[])[0]; sl.position.set(gb.max.x + sw / 2 - L * 0.02, barrelY, 0); holder.add(sl); } }
-  if (att?.optic && weapon !== 'Sniper') { const sc = gunModel('Scope'); if (sc) { const sh = (sc.userData.size as number[])[1]; sc.scale.setScalar(L * 0.17 / (sc.userData.size as number[])[0]); sc.position.set(0, topY + sh * 0.5 * (L * 0.17 / (sc.userData.size as number[])[0]) - 0.02, 0); holder.add(sc); } }
   node.add(holder);
   return true;
 }
@@ -463,7 +423,7 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
       inner.updateMatrixWorld(true);
       const f = weaponFrame(node, rigR.wrist.getWorldPosition(new THREE.Vector3()));
       if (f) {
-        const mounted = mountGun(node, weapon, f, att);
+        const mounted = mountGun(node, weapon, f, att, false, who?.weapon);
         addWeaponParts(node, mounted ? 'mounted' : weapon, f, mounted ? { mag: att?.mag } : att);
         const local = f.hl.clone(); local[f.la] = Math.max(f.bb.min[f.la], Math.min(f.bb.max[f.la], f.hl[f.la] + f.mz * f.len * 0.38)); // хват впереди, на цевье
         local[f.ha] = f.ctr[f.ha] - f.up * f.size[f.ha] * 0.1;

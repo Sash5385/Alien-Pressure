@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import type { ArmorId, WeaponId } from './game/types';
+import { catOf } from './game/catalog';
 
 const GEAR = '#8fa0c4', SIL = '#0f1420', ACC = '#7ee0ff';
 
@@ -34,7 +35,7 @@ export function Silhouette({ weapon, armor, grenades, mags, kit, width = 200 }: 
       {Array.from({ length: Math.min(grenades, 5) }, (_, i) => <circle key={'g' + i} cx={110 + i * 12} cy="190" r="5" fill={ACC} />)}
       {Array.from({ length: Math.min(mags, 5) }, (_, i) => <rect key={'m' + i} x={70 + i * 10} y="182" width="7" height="14" rx="1" fill={GEAR} />)}
       {kit && <><rect x="64" y="198" width="22" height="16" rx="2" fill="#e8e8e8" opacity=".85" /><path d="M75 201v10M70 206h10" stroke="#d33" strokeWidth="3" /></>}
-      <g transform="translate(30 148) rotate(-14)" fill={GEAR} stroke={SIL} strokeWidth="1.5">{W[weapon]}</g>
+      <g transform="translate(30 148) rotate(-14)" fill={GEAR} stroke={SIL} strokeWidth="1.5">{W[weapon] ?? W[({ pistol: 'smg', auto: 'rifle', rifle: 'sniper', mg: 'launcher' } as Record<string, string>)[catOf(weapon) ?? 'auto']]}</g>
       <circle cx="48" cy="168" r="7" fill={SIL} /><circle cx="116" cy="140" r="7" fill={SIL} />
     </svg>
   );

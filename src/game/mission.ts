@@ -29,6 +29,7 @@ const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
   if (s.cls === 'engineer') u.grenades += 1;
   if (s.att?.includes('optic')) { u.aim += 8; u.range += 3; u.optic = true; }
   if (s.att?.includes('mag')) { u.extMag = true; u.maxAmmo = Math.ceil(u.maxAmmo * 1.5); u.ammo = u.maxAmmo; }
+  u.smoke = s.cls === 'engineer' ? { white: 2, dense: 1, thermal: 1, red: 1 } : { white: 1 }; // дымовые гранаты в рюкзаке
   if (s.sec) { u.sec = s.sec; u.secAmmo = WEAPONS[s.sec].ammo; }
   if (s.att?.includes('supp')) u.supp = true;
   if (s.att?.includes('nvg')) u.nvg = true;

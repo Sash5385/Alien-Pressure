@@ -1,17 +1,19 @@
 // Инвентарь бойца: оружие на ремне, рюкзак на BAG слотов (магазины и гранаты), лут, ящики.
 import { living, log } from './combat';
 import { ARMORS, WEAPONS } from './weapons';
+import { CATALOG, type Cat } from './catalog';
+import { SMOKE, SMOKE_IDS, smokeCount, type SmokeId } from './smoke';
 import type { GameState, Loot, LootKind, Stash, Unit, WeaponId } from './types';
 
-export const BAG = 10;
-export const bagUsed = (u: Unit) => u.mags + u.grenades;
+export const BAG = 12;
+export const bagUsed = (u: Unit) => u.mags + u.grenades + smokeCount(u);
 export const bagFree = (u: Unit) => Math.max(0, BAG - bagUsed(u));
-export const WEAPON_ICON: Record<LootKind, string> = { mag: '▮', gren: '✹', mat: '▤', kit: '✚', wpn: '🔫' };
-export const LOOT_NAME: Record<LootKind, string> = { mag: 'магазин', gren: 'граната', mat: 'матеріали', kit: 'аптечка', wpn: 'зброя' };
+export const WEAPON_ICON: Record<LootKind, string> = { mag: '▮', gren: '✹', mat: '▤', kit: '✚', wpn: '🔫', smoke: '☁' };
+export const LOOT_NAME: Record<LootKind, string> = { mag: 'магазин', gren: 'граната', mat: 'матеріали', kit: 'аптечка', wpn: 'зброя', smoke: 'димова' };
 const rnd = (s: { rng: number }) => { s.rng = (Math.imul(s.rng ^ (s.rng >>> 15), 2246822507) + 0x9e3779b9) >>> 0; return (s.rng >>> 8) / 16777216; };
 
 /** Вес снаряжения, кг: оружие, броня, магазины, гранаты, рюкзак. */
-export const loadOf = (u: Unit) => WEAPONS[u.weapon].kg + (u.sec ? WEAPONS[u.sec].kg : 0) + ARMORS[u.armor].kg + u.mags * 0.7 + u.grenades * 0.5 + 1.5;
+export const loadOf = (u: Unit) => WEAPONS[u.weapon].kg + (u.sec ? WEAPONS[u.sec].kg : 0) + ARMORS[u.armor].kg + u.mags * 0.7 + u.grenades * 0.5 + Object.entries(u.smoke ?? {}).reduce((a, [k, n]) => a + n * (SMOKE[k as SmokeId]?.kg ?? 0.5), 0) + 1.5;
 /** Сколько можно нести без перегруза. */
 export const capOf = (u: Unit) => 16 + (u.cls === 'engineer' ? 2 : 0) + ((u.traits as string[]).includes('tough') ? 2 : 0);
 /** Перегруз 0..1: 0 — налегке, 1 — тяжело (скорость и выносливость падают, меткость хуже). */
@@ -47,6 +49,7 @@ export function autoPickup(s: GameState, u: Unit) {
     if (l.kind === 'wpn') continue;
     if (l.kind === 'mat') { s.mats = (s.mats ?? 0) + 2 * l.n; log(s, `${u.name} находит материалы (+${2 * l.n}).`); remove(s, l); continue; }
     if (l.kind === 'kit') { s.medkits += l.n; log(s, `${u.name} находит аптечку.`); remove(s, l); continue; }
+    if (l.kind === 'smoke') { const t = Math.min(l.n, bagFree(u)); if (t <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: рюкзак полон.`); } continue; } (u.smoke ??= {})[l.sm ?? 'white'] = ((u.smoke ??= {})[l.sm ?? 'white'] ?? 0) + t; log(s, `${u.name} бере: ${SMOKE[(l.sm ?? 'white') as SmokeId]?.name ?? 'димова'}.`); l.n -= t; if (l.n <= 0) remove(s, l); continue; }
     const take = Math.min(l.n, bagFree(u), Math.floor(Math.max(0, capOf(u) * 1.4 - loadOf(u)) / (l.kind === 'mag' ? 0.7 : 0.5)));
     if (take <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: не унести — ${bagFree(u) <= 0 ? `рюкзак полон (${BAG}/${BAG})` : 'слишком тяжело'}.`); } continue; }
     if (l.kind === 'mag') u.mags += take; else u.grenades += take;
@@ -99,7 +102,7 @@ export function searchStash(s: GameState, u: Unit): boolean {
   t.opened = true; u.ap -= 1; u.overwatch = false;
   if (!t.items.length) { log(s, `${u.name} обыскивает ящик: пусто.`); return true; }
   for (const it of t.items) {
-    (s.loot ??= []).push({ x: u.x, y: u.y, kind: it.kind, n: it.n, w: it.w, ammo: it.ammo });
+    (s.loot ??= []).push({ x: u.x, y: u.y, kind: it.kind, n: it.n, w: it.w, ammo: it.ammo, sm: it.sm });
   }
   log(s, `${u.name} открывает ${t.big ? 'контейнер' : 'ящик'}: ${t.items.map(i => i.kind === 'wpn' ? WEAPONS[i.w!].name : `${LOOT_NAME[i.kind]}${i.n > 1 ? ' ×' + i.n : ''}`).join(', ')}.`);
   autoPickup(s, u);
@@ -114,15 +117,18 @@ export function stashItems(s: { rng: number }, big: boolean): Stash['items'] {
     const r = rnd(s);
     if (r < 0.3) items.push({ kind: 'mag', n: 1 + Math.floor(rnd(s) * 2) });
     else if (r < 0.52) items.push({ kind: 'gren', n: 1 });
-    else if (r < 0.72) items.push({ kind: 'kit', n: 1 });
+    else if (r < 0.62) items.push({ kind: 'kit', n: 1 });
+    else if (r < 0.78) items.push({ kind: 'smoke', n: 1, sm: SMOKE_IDS[Math.floor(rnd(s) * SMOKE_IDS.length)] });
     else if (r < 0.9) items.push({ kind: 'mat', n: 1 });
     else items.push(randomWeapon(s, big));
   }
   if (big && !items.some(i => i.kind === 'wpn') && rnd(s) < 0.3) items.push(randomWeapon(s, true));
   return items;
 }
-export function randomWeapon(s: { rng: number }, rich = false): { kind: 'wpn'; n: number; w: WeaponId; ammo: number } {
-  const pool: WeaponId[] = rich ? ['smg', 'shotgun', 'sniper', 'rifle', 'launcher', 'mortar'] : ['smg', 'shotgun', 'rifle', 'sniper'];
-  const w = pool[Math.floor(rnd(s) * pool.length)];
+export function randomWeapon(s: { rng: number }, rich = false, cat?: Cat): { kind: 'wpn'; n: number; w: WeaponId; ammo: number } {
+  const pool = CATALOG.filter(g => (!cat || g.cat === cat) && (rich || g.stats.cost <= 6));
+  const base: WeaponId[] = ['smg', 'shotgun', 'rifle', 'sniper'];
+  const useBase = !cat && rnd(s) < 0.2;
+  const w: WeaponId = useBase ? base[Math.floor(rnd(s) * base.length)] : pool[Math.floor(rnd(s) * pool.length)].id;
   return { kind: 'wpn', n: 1, w, ammo: Math.max(1, Math.ceil(WEAPONS[w].ammo * (0.5 + rnd(s) * 0.5))) };
 }

@@ -1,10 +1,11 @@
+import { nodeOf } from './game/catalog';
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { applyTwoHands, loadModels, spawnModel } from './render/models';
 import type { ArmorId, WeaponId } from './game/types';
 
-const GUN: Record<WeaponId, string> = { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'RocketLauncher', mortar: 'MORTAR', ags: 'AGS' };
+
 
 /** Боец в 3D для экрана снаряжения: форма, разгрузка, броня и оружие видны на фигуре; вращается мышью или пальцем. */
 export function SoldierView({ weapon, armor, width, height }: { weapon: WeaponId; armor: ArmorId; width: number; height: number }) {
@@ -36,7 +37,7 @@ export function SoldierView({ weapon, armor, width, height }: { weapon: WeaponId
     let mixer: THREE.AnimationMixer | null = null;
     void loadModels(false).then(() => {
       if (dead) return;
-      const sp = spawnModel('Soldier', 1.8, undefined, GUN[weapon], armor);
+      const sp = spawnModel('Soldier', 1.8, undefined, nodeOf(weapon), armor);
       if (!sp) return;
       sp.actions.get('Idle')?.play();
       sp.mixer.update(0);

@@ -68,7 +68,8 @@ export type AttId = keyof typeof ATT;
 export function setSec(c: Campaign, soldierId: number, id: WeaponId | undefined): string | null {
   const s = c.roster.find(x => x.id === soldierId);
   if (!s) return 'Недоступно.';
-  if (id !== undefined && !c.weapons.includes(id)) return 'Недоступно.';
+  if (id !== undefined && !c.weapons.includes(id) && WEAPONS[id]?.cost !== 0) return 'Недоступно.';
+  if (id !== undefined && !c.weapons.includes(id)) c.weapons.push(id);
   s.sec = id; return null;
 }
 export function toggleAtt(c: Campaign, soldierId: number, a: AttId): string | null {
@@ -101,7 +102,7 @@ function mkSoldier(c: Campaign, name: string, bio: string, cls?: ClassId): Soldi
 export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0, sandbox = false): Campaign {
   const c: Campaign = {
     v: 1, rng: seed, difficulty, missionNo: 1, objective: 'clear', biome: 'ruins', mapSize: 44, roster: [], fallen: [], scrap: 3,
-    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg'], armors: ['none'], boss: false, risky: false, variant: 0, rt: false, options: [],
+    tech: { armor: false, optics: false, kits: false, grenades: false }, nextId: 1, over: false, weapons: ['rifle', 'smg', 'p01', 'a01'], armors: ['none'], boss: false, risky: false, variant: 0, rt: false, options: [],
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
   c.biome = pickBiome(c);
@@ -263,6 +264,7 @@ export function unlock(c: Campaign, kind: 'weapon' | 'armor', id: WeaponId | Arm
 export function equip(c: Campaign, soldierId: number, kind: 'weapon' | 'armor', id: WeaponId | ArmorId): string | null {
   const s = c.roster.find(x => x.id === soldierId);
   const list = (kind === 'weapon' ? c.weapons : c.armors) as string[];
+  if (kind === 'weapon' && !list.includes(id) && WEAPONS[id as WeaponId]?.cost === 0) list.push(id); // безкоштовне — відкривається саме
   if (!s || !list.includes(id)) return 'Недоступно.';
   if (kind === 'weapon') s.weapon = id as WeaponId; else s.armor = id as ArmorId;
   return null;

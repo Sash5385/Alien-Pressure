@@ -2,14 +2,14 @@ import type { TraitId } from './traits';
 
 export type UnitKind = 'soldier' | 'trooper' | 'sniper' | 'psi' | 'heavy' | 'commander';
 export type ClassId = 'assault' | 'sniper' | 'medic' | 'engineer';
-export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'launcher' | 'mortar' | 'ags';
+export type WeaponId = string; // 'rifle'|'smg'|'shotgun'|'sniper'|'launcher'|'mortar'|'ags' или номер из каталога (p01…m25)
 export type LaunchKind = 'ugl' | 'launcher' | 'mortar' | 'ags';
 export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
 export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container' | 'bags' | 'wall' | 'window' | 'car' | 'door';
-export type LootKind = 'mag' | 'gren' | 'mat' | 'kit' | 'wpn';
-export interface Loot { x: number; y: number; kind: LootKind; n: number; raid?: boolean; w?: WeaponId; ammo?: number; warn?: boolean }
-export interface Stash { x: number; y: number; opened: boolean; items: { kind: LootKind; n: number; w?: WeaponId; ammo?: number }[]; big?: boolean }
+export type LootKind = 'mag' | 'gren' | 'mat' | 'kit' | 'wpn' | 'smoke';
+export interface Loot { x: number; y: number; kind: LootKind; n: number; sm?: string; raid?: boolean; w?: WeaponId; ammo?: number; warn?: boolean }
+export interface Stash { x: number; y: number; opened: boolean; items: { kind: LootKind; n: number; w?: WeaponId; ammo?: number; sm?: string }[]; big?: boolean }
 export interface House { x: number; y: number; w: number; h: number; id: number; hp: number }
 export type Stance = 'stand' | 'kneel' | 'prone';
 export type Biome = 'ruins' | 'forest' | 'lake';
@@ -90,6 +90,7 @@ export interface Unit {
   ugl?: number; // выстрелов подствольника
   cd?: number; // реальное время: секунд до следующего действия
   march?: { x: number; y: number }; // колонна идёт к этой точке, пока не заметит бойцов
+  smoke?: Record<string, number>; // дымовые гранаты по видам
   sta?: number; // выносливость 0..100: бег утомляет, отдых восстанавливает
   horn?: boolean; // командир уже поднял всех по тревоге
   static?: boolean; // турель: не ходит
@@ -165,7 +166,8 @@ export interface GameState {
   rng: number; // состояние генератора (сид миссии)
   boss?: boolean; // миссия с боссом (ликвидация)
   rt?: { speed: 0.5 | 1; paused: boolean; clock: number; pulseAt: number; planAt: number; auto: boolean }; // режим реального времени
-  smokes?: { x: number; y: number; ttl: number }[]; // дым: закрывает обзор
+  smokeKind?: string; // выбранный вид дымовой гранаты
+  smokes?: { x: number; y: number; ttl: number; kind?: string }[]; // дым: закрывает обзор
   drone?: { x: number; y: number; until: number }; // разведдрон: видит всё вокруг точки, пока не истечёт время
   droneAt?: number; // дрон снова готов
   radioAt?: number; // реальное время, с которого рация снова готова

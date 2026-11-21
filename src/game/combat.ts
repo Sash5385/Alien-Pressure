@@ -3,7 +3,9 @@ import { nightAmount } from './tod';
 import { openDoorAt } from './doors';
 import { autoPickup, encumbrance, randomWeapon } from './inventory';
 import { wallKey } from '../render/buildings';
-import type { GameState, LaunchKind, Stance, Unit, WeaponId } from './types';
+import type { GameState, LaunchKind, Stance, Unit } from './types';
+import { catOf } from './catalog';
+import { smokeTick, thermalAt } from './smoke';
 import { WEAPONS } from './weapons';
 
 export interface ShotResult {
@@ -98,7 +100,8 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonu
   if (dist > a.range || !los(s, a, t)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
     - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - Math.round(encumbrance(a) * 8) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
-  return Math.round(Math.min(95, Math.max(5, c + (a.team === 'human' && isFlanked(s, a, t) ? 10 : 0))));
+  const cat = catOf(a.weapon), tweak = cat === 'mg' ? (a.stance === 'prone' ? 10 : a.stance === 'kneel' ? 4 : -6) : cat === 'pistol' ? (dist <= 3 ? 10 : dist > 7 ? -6 : 0) : 0; // пулемёт — с сошек, пистолет — вблизи
+  return Math.round(Math.min(95, Math.max(5, c + tweak + (a.team === 'human' && isFlanked(s, a, t) ? 10 : 0))));
 }
 
 const has = (u: Unit, t: string) => (u.traits as string[]).includes(t) || (u.perks as string[]).includes(t) || u.cls === t;
@@ -197,11 +200,12 @@ function lootTick(s: GameState) {
       a.looted = true;
       if (rand(s) < 0.55) {
         const r = rand(s);
-        s.loot.push({ x: a.x, y: a.y, kind: r < 0.4 ? 'mag' : r < 0.65 ? 'gren' : r < 0.82 ? 'mat' : 'kit', n: 1 });
+        s.loot.push(r < 0.12 ? { x: a.x, y: a.y, kind: 'smoke', n: 1, sm: (['white', 'dense', 'red', 'green', 'violet', 'wp'] as const)[Math.floor(rand(s) * 6)] } : { x: a.x, y: a.y, kind: r < 0.4 ? 'mag' : r < 0.65 ? 'gren' : r < 0.82 ? 'mat' : 'kit', n: 1 });
       }
       if (rand(s) < (a.kind === 'sniper' || a.kind === 'heavy' || a.kind === 'commander' ? 0.35 : 0.2)) { // оружие пришельца
-        const w: WeaponId = a.kind === 'sniper' ? 'sniper' : a.kind === 'heavy' ? 'launcher' : a.kind === 'commander' ? 'shotgun' : (['rifle', 'smg', 'shotgun'] as const)[Math.floor(rand(s) * 3)];
-        s.loot.push({ x: a.x, y: a.y, kind: 'wpn', n: 1, w, ammo: Math.max(1, Math.ceil(WEAPONS[w].ammo * 0.6)) });
+        const cat = a.kind === 'sniper' ? 'rifle' : a.kind === 'heavy' ? 'mg' : a.kind === 'commander' ? 'pistol' : 'auto';
+        const dr = randomWeapon(s, a.kind === 'commander', cat); dr.ammo = Math.max(1, Math.ceil(WEAPONS[dr.w].ammo * 0.6));
+        s.loot.push({ x: a.x, y: a.y, ...dr });
       }
     } else { // снаряжение павшего бойца остаётся на теле
       a.looted = true;
@@ -346,6 +350,7 @@ export function alienReactions(s: GameState, mover: Unit): ShotResult[] {
 export function humanPulse(s: GameState) {
   for (const a of living(s)) a.suppressed = false;
   tickFire(s);
+  smokeTick(s);
   if (s.smokes) s.smokes = s.smokes.map(m => ({ ...m, ttl: m.ttl - 1 })).filter(m => m.ttl > 0);
   for (const u of living(s, 'human')) {
     if (u.down) {
@@ -372,6 +377,7 @@ export function humanPulse(s: GameState) {
 export function startHumanTurn(s: GameState) {
   for (const a of living(s, 'alien')) a.suppressed = false;
   tickFire(s);
+  smokeTick(s);
   if (s.smokes) s.smokes = s.smokes.map(m => ({ ...m, ttl: m.ttl - 1 })).filter(m => m.ttl > 0);
   for (const u of living(s, 'human')) {
     u.ap = Math.max(1, u.maxAp - (u.suppressed ? 1 : 0));
@@ -459,7 +465,7 @@ export function updateVision(s: GameState) {
     const dr = s.drone;
     if (dr && (s.rt?.clock ?? 0) < dr.until) { // дрон: всё в радиусе 24 видно без учёта леса
       for (let y = Math.max(0, dr.y - 24); y <= Math.min(n - 1, dr.y + 24); y++) for (let x = Math.max(0, dr.x - 24); x <= Math.min(n - 1, dr.x + 24); x++) {
-        if (!s.vis[y][x] && Math.hypot(x - dr.x, y - dr.y) <= 24) { s.vis[y][x] = true; s.seen[y][x] = true; marks.push(y * n + x); }
+        if (!s.vis[y][x] && Math.hypot(x - dr.x, y - dr.y) <= 24 && !thermalAt(s, x, y)) { s.vis[y][x] = true; s.seen[y][x] = true; marks.push(y * n + x); }
       }
     } else if (dr) s.drone = undefined;
     visMarks.set(s, marks);
