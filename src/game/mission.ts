@@ -3,7 +3,7 @@ import { BIOME_NAME, DIFF } from './difficulty';
 import { applyTraits, shuffle } from './traits';
 import { ARMORS, WEAPONS } from './weapons';
 import { LOCATIONS } from './locations';
-import { footprint, type BuildingSpec } from '../render/buildings';
+import { footprint, stairTiles, tileCover, type BuildingSpec } from '../render/buildings';
 import type { Biome, Cover, Difficulty, GameState, House, Look, Objective, Soldier, Tech, Terrain, Unit } from './types';
 
 export const MAP_SIZE = 44;
@@ -530,6 +530,8 @@ function createHugeForest(o: MissionOpts): GameState {
     }
     for (let i = 0; i < loc.crates; i++) { const xx = cx - R + Math.floor(rand(rng) * (2 * R + 1)), yy = cy - R + Math.floor(rand(rng) * (2 * R + 1)); if (cover[yy]?.[xx] === 'none' && !bmask[yy][xx] && terrain[yy][xx] === 'ground') { const half = rand(rng) < 0.6; cover[yy][xx] = half ? 'half' : 'full'; look[yy][xx] = half ? 'crate' : 'container'; } }
   }
+  const bidx = new Int16Array(n * n);
+  bldgs.forEach((b, i) => { for (let yy = b.y!; yy < b.y! + b.d; yy++) for (let xx = b.x!; xx < b.x! + b.w; xx++) bidx[yy * n + xx] = i + 1; });
   // ямы: по одной, по лесу; в яме сидит пришелец
   const pits: { x: number; y: number }[] = [];
   const nPits = Math.round(n / 14);
@@ -572,6 +574,19 @@ function createHugeForest(o: MissionOpts): GameState {
     a.grp = 500 + i; a.dormant = true; a.hidden = true; a.alert = false;
     aliens.push(a);
   });
+  // снайперы на верхних этажах: сидят на месте, стреляют из окон (до 25)
+  let upN = 0;
+  for (const b of bldgs) {
+    if (upN >= 25 || b.floors < 2 || hhash(b.id!, 77, seed) > 0.08) continue;
+    const f = b.floors - 1, st = stairTiles(b);
+    const spots: [number, number][] = [];
+    for (let dy = 1; dy < b.d - 1; dy++) for (let dx = 1; dx < b.w - 1; dx++) if (tileCover(b, dx, dy, f) === 'none' && !(dx === st.dx && dy >= st.bottom && dy <= st.top)) spots.push([dx, dy]);
+    if (!spots.length) continue;
+    const [dx, dy] = spots[Math.floor(hhash(b.id!, 78, seed) * spots.length)];
+    const a = alien(id++, 'sniper', 0, b.x! + dx, b.y! + dy, o.difficulty);
+    a.fl = f; a.grp = 800 + upN; a.dormant = true; a.alert = false;
+    aliens.push(a); upN++;
+  }
   // снайперские гнёзда: на холмах, далеко от старта; сидят скрытно и замечают издалека
   for (let t = 0, want = Math.round(n / 40), made = 0; made < want && t < want * 60; t++) {
     const x = 8 + Math.floor(rand(rng) * (n - 16)), y = 8 + Math.floor(rand(rng) * (n - 50));
@@ -582,7 +597,7 @@ function createHugeForest(o: MissionOpts): GameState {
   }
   const seen = grid(n, false);
   const st: GameState = {
-    size: n, cover, terrain, height, look, houses, bldgs, locName: loc.name, trenches: [], biome: 'forest', units: [...humans, ...aliens], selectedId: null, targetId: null,
+    size: n, cover, terrain, height, look, houses, bldgs, bidx, locName: loc.name, trenches: [], biome: 'forest', units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels: [], fires: [], scorched: grid(n, false), bridges: [], targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: 'clear', markId: null, beacons: [], holdTurns: HOLD_TURNS, zone: null, weather: loc.weather ?? (o.missionNo % 2 === 0 ? 'night' : undefined), sides: 'all', waveBoost: 0,

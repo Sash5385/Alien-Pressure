@@ -12,9 +12,10 @@ import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
-import { buildBuilding, showFloors, type BuildingObj } from './buildings';
+import { buildBuilding, showFloors, STOREY, type BuildingObj } from './buildings';
 import { reachable, findPath } from '../game/pathfinding';
 import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
+import { bldgAt, coverAt, flOf } from '../game/floors';
 
 let TS = 1; // масштаб времени (реальный режим: ×0.5 / ×1)
 export const setTimeScale = (x: number) => { TS = x; };
@@ -700,9 +701,13 @@ export class GameView {
   /** Крыша и верхние этажи скрываются, когда внутри есть бойцы или видимые пришельцы. */
   private updateBuildingVis() {
     const s = this.state, who = s.units.filter(u => u.hp > 0 && (u.team === 'human' || isVisible(s, u)));
+    const sel = s.units.find(u => u.id === s.selectedId && u.hp > 0);
     for (const ch of this.chunks.values()) for (const e of ch.blds) {
-      const inside = who.some(u => u.x >= e.x && u.x < e.x + e.w && u.y >= e.y && u.y < e.y + e.d);
-      showFloors(e.b, inside ? 0 : 99, !inside);
+      const inb = (u: Unit) => u.x >= e.x && u.x < e.x + e.w && u.y >= e.y && u.y < e.y + e.d;
+      const occ = who.filter(inb);
+      if (!occ.length) { showFloors(e.b, 99, true); continue; }
+      const lvl = sel && inb(sel) ? flOf(sel) : Math.max(...occ.map(flOf));
+      showFloors(e.b, lvl, false);
     }
   }
 
@@ -1198,7 +1203,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       const fromPit = !m && u.team === 'alien' && !!this.state.pits?.some(p => p.x === u.x && p.y === u.y); // пришельцев без видимости не создаём (огромные карты: сотни спящих)
       const inTrench = this.state.trenches.some(t => t.x === u.x && t.y === u.y);
       const inWater = this.state.terrain[u.y]?.[u.x] === 'water';
-      const goal = new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) - (inTrench && u.hp > 0 ? 0.2 : 0) - (inWater ? 0.3 : 0), u.y + 0.5); // в траншее боец стоит ниже бруствера
+      const goal = new THREE.Vector3(u.x + 0.5, this.uy(u) - (inTrench && u.hp > 0 ? 0.2 : 0) - (inWater ? 0.3 : 0), u.y + 0.5); // в траншее боец стоит ниже бруствера
       const key = `${u.x},${u.y}`, prev = this.lastPos.get(u.id);
       if (prev && prev !== key) { const [px, py] = prev.split(',').map(Number); u.facing = Math.atan2(u.x - px, u.y - py); }
       this.lastPos.set(u.id, key);
@@ -1212,7 +1217,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       this.lastAmmo.set(u.id, u.ammo); this.lastHp.set(u.id, u.hp); this.lastBleed.set(u.id, u.bleeding);
       this.lastStance.set(u.id, u.stance); this.lastOw.set(u.id, u.overwatch);
       if (this.sndReady && q.length && isVisible(this.state, u)) q.forEach((k, i) => setTimeout(() => sfx(k), i * 170));
-      if (!m) { m = this.makeUnit(u); m.rotation.order = 'YXZ'; m.position.copy(goal); m.rotation.y = u.facing; this.unitMeshes.set(u.id, m); this.scene.add(m); if (fromPit) { this.emerges.set(u.id, this.clock.elapsedTime); sfx('emerge'); this.burst(new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) + 0.1, u.y + 0.5), 0x7a6a4a, 18, 2.2, 700); } }
+      if (!m) { m = this.makeUnit(u); m.rotation.order = 'YXZ'; m.position.copy(goal); m.rotation.y = u.facing; this.unitMeshes.set(u.id, m); this.scene.add(m); if (fromPit) { this.emerges.set(u.id, this.clock.elapsedTime); sfx('emerge'); this.burst(new THREE.Vector3(u.x + 0.5, this.uy(u) + 0.1, u.y + 0.5), 0x7a6a4a, 18, 2.2, 700); } }
       this.goals.set(u.id, goal);
       m.visible = isVisible(this.state, u);
       if (instant) m.position.copy(goal);
@@ -1346,11 +1351,11 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     const m = new THREE.Mesh(this.printGeo, new THREE.MeshLambertMaterial({ color: col, transparent: true, opacity: 0.38, depthWrite: false })); // с освещением: ночью след не светится
     m.rotation.x = -Math.PI / 2; m.rotation.z = f;
     m.scale.set(crawl ? 2.4 : 0.9, crawl ? 1.2 : 1.6, 1);
-    m.position.set(u.x + 0.5 + sx * off - Math.sin(f) * 0.12, this.hy(u.x, u.y) + 0.025, u.y + 0.5 + sz * off - Math.cos(f) * 0.12);
+    m.position.set(u.x + 0.5 + sx * off - Math.sin(f) * 0.12, this.uy(u) + 0.025, u.y + 0.5 + sz * off - Math.cos(f) * 0.12);
     this.scene.add(m);
     this.prints.push({ m, t0: this.clock.elapsedTime });
     if (this.prints.length > 260) { const o = this.prints.shift()!; this.scene.remove(o.m); (o.m.material as THREE.Material).dispose(); }
-    if (!crawl && u.stance !== 'kneel') this.burst(new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) + 0.05, u.y + 0.5), 0xb9a984, 3, 0.7, 380); // пыль из-под ног
+    if (!crawl && u.stance !== 'kneel') this.burst(new THREE.Vector3(u.x + 0.5, this.uy(u) + 0.05, u.y + 0.5), 0xb9a984, 3, 0.7, 380); // пыль из-под ног
   }
 
   /** Высота ствола/груди над землёй по стойке. */
@@ -1626,9 +1631,10 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     this.fogTex.needsUpdate = true;
   }
 
-  private ring(x: number, y: number, color: number, r0 = 0.3, r1 = 0.42) {
+  private uy(u: { x: number; y: number; fl?: number }) { return this.hy(u.x, u.y) + (u.fl ? u.fl * STOREY + 0.1 : 0); }
+  private ring(x: number, y: number, color: number, r0 = 0.3, r1 = 0.42, fl = 0) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 24), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2; ring.position.set(x + 0.5, this.hy(x, y) + 0.07, y + 0.5);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(x + 0.5, this.hy(x, y) + 0.07 + fl * STOREY, y + 0.5);
     this.highlight.add(ring);
   }
 
@@ -1663,11 +1669,11 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     for (const o of s.units) if (o.hp > 0 && o.overwatch && (o.team === 'human' || isVisible(s, o))) this.ring(o.x, o.y, o.team === 'human' ? 0x35e0e0 : 0xff6a3a, 0.46, 0.52);
     for (const o of s.units) if (o.hp > 0 && o.down) this.ring(o.x, o.y, 0xffffff, 0.3, 0.36);
     for (const o of s.units) if (o.hp > 0 && o.team === 'human' && o.dest) {
-      this.ring(o.dest.x, o.dest.y, 0x4fd7ff, 0.18, 0.28);
+      this.ring(o.dest.x, o.dest.y, 0x4fd7ff, 0.18, 0.28, o.dest.fl ?? 0);
       if (s.rt) { // линия пути до цілі приказа
         const path = s.huge ? (o.route ?? []) : findPath(s, o.x, o.y, o.dest.x, o.dest.y, 80);
         if (path.length) {
-          const pts = [new THREE.Vector3(o.x + 0.5, this.hy(o.x, o.y) + 0.1, o.y + 0.5), ...path.map(([x, y]) => new THREE.Vector3(x + 0.5, this.hy(x, y) + 0.1, y + 0.5))];
+          const pts = [new THREE.Vector3(o.x + 0.5, this.uy(o) + 0.1, o.y + 0.5), ...path.map(([x, y]) => new THREE.Vector3(x + 0.5, this.hy(x, y) + 0.1, y + 0.5))];
           const geo = new THREE.BufferGeometry().setFromPoints(pts);
           this.highlight.add(new THREE.Line(geo, this.pathMat));
         }
@@ -1696,7 +1702,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     if (t) this.ring(t.x, t.y, 0xff3b3b);
     const u = s.units.find(v => v.id === s.selectedId && v.hp > 0);
     if (!u) return;
-    if (!u.dest) this.ring(u.x, u.y, 0xffd34d, 0.24, 0.285); // в движении кружок скрыт
+    if (!u.dest) this.ring(u.x, u.y, 0xffd34d, 0.24, 0.285, u.fl ?? 0); // в движении кружок скрыт
     if (!s.busy && s.aiming !== 'grenade' && (this.viewSq || s.lookMode)) { // обзор выбранного бойца
       const vm = new THREE.MeshBasicMaterial({ color: s.lookMode ? 0x7ee0ff : 0xffffff, transparent: true, opacity: s.lookMode ? 0.2 : 0.045, depthWrite: false }), R = s.lookMode ? Math.min(u.range, 14) : 9;
       for (let y = Math.max(0, u.y - R); y <= Math.min(s.size - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(s.size - 1, u.x + R); x++) {
@@ -1833,9 +1839,9 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       await sleep(Math.round(700 / speedOf(a)));
     }
     const am = this.unitMeshes.get(a.id);
-    const chest = new THREE.Vector3(t.x + 0.5, this.eye(t) - 0.05 + this.hy(t.x, t.y), t.y + 0.5);
+    const chest = new THREE.Vector3(t.x + 0.5, this.eye(t) - 0.05 + this.uy(t), t.y + 0.5);
     const f = a.facing;
-    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, this.eye(a) + this.hy(a.x, a.y), a.y + 0.5 + Math.cos(f) * 0.5);
+    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, this.eye(a) + this.uy(a), a.y + 0.5 + Math.cos(f) * 0.5);
     if (r.psi) {
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([muzzle, chest]), new THREE.LineBasicMaterial({ color: 0xc58bff }));
       const flash = new THREE.PointLight(0xb36bff, 6, 5);
@@ -1854,7 +1860,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       if (d < 0.1 && (am.position.distanceTo(this.goals.get(a.id) ?? am.position) < 0.15)) break;
       await sleep(30);
     }
-    if (am) { const yaw = am.rotation.y; muzzle.set(am.position.x + Math.sin(yaw) * 0.5, this.eye(a) + this.hy(a.x, a.y), am.position.z + Math.cos(yaw) * 0.5); }
+    if (am) { const yaw = am.rotation.y; muzzle.set(am.position.x + Math.sin(yaw) * 0.5, this.eye(a) + this.uy(a), am.position.z + Math.cos(yaw) * 0.5); }
     if (!r.reaction) await sleep(a.team === 'alien' ? 250 : 100); // короткая пауза на прицеливание
     // звук выстрела по оружию: автомат/ПП/дробовик/снайперка; у пришельцев — по типу
     const variant = a.team === 'human' ? a.weapon : a.kind === 'sniper' ? 'sniper' : a.kind === 'heavy' || a.kind === 'commander' ? 'shotgun' : undefined;
@@ -1879,7 +1885,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     if (r.hit) {
       sfx('hit');
       this.floatText(t.x + 0.5, t.y + 0.5, `−${r.dmg}`, '#ff6b6b');
-      if (r.hit) { this.spray(new THREE.Vector3(t.x + 0.5, this.eye(t) + this.hy(t.x, t.y) - 0.2, t.y + 0.5), new THREE.Vector3(a.x + 0.5, 0, a.y + 0.5)); this.knockback(t, a, r.killed ? 0.3 : 0.16); }
+      if (r.hit) { this.spray(new THREE.Vector3(t.x + 0.5, this.eye(t) + this.uy(t) - 0.2, t.y + 0.5), new THREE.Vector3(a.x + 0.5, 0, a.y + 0.5)); this.knockback(t, a, r.killed ? 0.3 : 0.16); }
       if (!r.killed) this.play(t.id, 'HitReact', true);
     } else this.floatText(t.x + 0.5, t.y + 0.5, r.suppress ? 'придушений' : 'повз', r.suppress ? '#ffd34d' : '#c9ced3');
     if (r.alerted?.length) this.alertFx(r.alerted);
@@ -1890,7 +1896,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     await sleep(r.reaction ? 300 : 550);
     if (r.peek) { // назад за укрытие
       a.x = home.x; a.y = home.y; a.facing = home.face;
-      this.goals.set(a.id, new THREE.Vector3(a.x + 0.5, this.hy(a.x, a.y), a.y + 0.5));
+      this.goals.set(a.id, new THREE.Vector3(a.x + 0.5, this.uy(a), a.y + 0.5));
       this.play(a.id, 'Run');
       await sleep(Math.round(700 / speedOf(a)));
     }
@@ -1907,7 +1913,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     this.play(u.id, 'Punch', true);
     sfx('pin');
     setTimeout(() => sfx('throw'), 220);
-    const from = new THREE.Vector3(u.x + 0.5, 1.0 + this.hy(u.x, u.y), u.y + 0.5);
+    const from = new THREE.Vector3(u.x + 0.5, 1.0 + this.uy(u), u.y + 0.5);
     const to = new THREE.Vector3(x + 0.5, 0.1 + this.hy(x, y), y + 0.5);
     const dist = from.distanceTo(to);
     const g = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), new THREE.MeshStandardMaterial({ color: 0x3c4a2a }));
@@ -1971,7 +1977,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     this.play(u.id, 'Idle_Shoot', true);
     for (let i = 0; i < results.length; i++) {
       const res = results[i];
-      const from = new THREE.Vector3(u.x + 0.5 + Math.sin(u.facing) * 0.5, this.eye(u) + this.hy(u.x, u.y), u.y + 0.5 + Math.cos(u.facing) * 0.5);
+      const from = new THREE.Vector3(u.x + 0.5 + Math.sin(u.facing) * 0.5, this.eye(u) + this.uy(u), u.y + 0.5 + Math.cos(u.facing) * 0.5);
       const to = new THREE.Vector3(res.x + 0.5, 0.2 + this.hy(res.x, res.y), res.y + 0.5);
       sfx(kind === 'mortar' ? 'mortar' : 'launcher');
       this.muzzleFlash(from);
@@ -2001,7 +2007,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     this.blast.visible = false;
     this.play(u.id, 'Punch', true);
     sfx('pin'); setTimeout(() => sfx('throw'), 220);
-    const from = new THREE.Vector3(u.x + 0.5, 1.0 + this.hy(u.x, u.y), u.y + 0.5), to = new THREE.Vector3(x + 0.5, 0.1 + this.hy(x, y), y + 0.5);
+    const from = new THREE.Vector3(u.x + 0.5, 1.0 + this.uy(u), u.y + 0.5), to = new THREE.Vector3(x + 0.5, 0.1 + this.hy(x, y), y + 0.5);
     const g = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), new THREE.MeshStandardMaterial({ color: 0x9aa0a4 }));
     this.scene.add(g);
     const dist = from.distanceTo(to);
@@ -2022,7 +2028,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     this.play(a.id, 'Punch', true);
     if (m) { const k0 = m.position.clone(); m.position.x += (t.x - a.x) * 0.35; m.position.z += (t.y - a.y) * 0.35; setTimeout(() => m.position.copy(k0), 160); }
     await sleep(260);
-    const chest = new THREE.Vector3(t.x + 0.5, this.eye(t) + this.hy(t.x, t.y) - 0.2, t.y + 0.5);
+    const chest = new THREE.Vector3(t.x + 0.5, this.eye(t) + this.uy(t) - 0.2, t.y + 0.5);
     if (r.hit) {
       sfx('hit');
       this.burst(chest, 0xff5533, 10, 2, 300);
@@ -2040,7 +2046,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
   async barrelShotFx(a: Unit, res: GrenadeResult) {
     this.focusOn(res.x, res.y);
     const f = a.facing;
-    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, this.eye(a) + this.hy(a.x, a.y), a.y + 0.5 + Math.cos(f) * 0.5);
+    const muzzle = new THREE.Vector3(a.x + 0.5 + Math.sin(f) * 0.5, this.eye(a) + this.uy(a), a.y + 0.5 + Math.cos(f) * 0.5);
     this.play(a.id, 'Idle_Shoot', true);
     await this.fireRound(muzzle, new THREE.Vector3(res.x + 0.5, 0.4 + this.hy(res.x, res.y), res.y + 0.5), 0, true, true, a.team === 'human');
     await this.explode(res);
@@ -2097,7 +2103,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     if (!at && (s.rt || u.ap > 0) && reachable(s, u.x, u.y, s.rt ? 80 : moveRange(u)).has(`${t.x},${t.y}`)) {
       const path = findPath(s, u.x, u.y, t.x, t.y, s.rt ? 80 : moveRange(u));
       if (path.length) {
-        const pts = [new THREE.Vector3(u.x + 0.5, this.hy(u.x, u.y) + 0.12, u.y + 0.5), ...path.map(([x, y]) => new THREE.Vector3(x + 0.5, this.hy(x, y) + 0.12, y + 0.5))];
+        const pts = [new THREE.Vector3(u.x + 0.5, this.uy(u) + 0.12, u.y + 0.5), ...path.map(([x, y]) => new THREE.Vector3(x + 0.5, this.hy(x, y) + 0.12, y + 0.5))];
         this.pathLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xffd34d }));
         this.scene.add(this.pathLine);
         const cov = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => (s.cover[t.y + dy]?.[t.x + dx] ?? 'none') !== 'none');
@@ -2198,7 +2204,8 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     else if (at?.team === 'alien') { if (sel) { s.targetId = at.id; s.targetBarrel = null; if (s.rt && !sel.down) { orderAttack(sel, at); sfx('click'); } } }
     else if (barrelAt(s, x, y)) { if (sel) { s.targetBarrel = { x, y }; s.targetId = null; } }
     else if (s.rt) { // реальное время: приказ идти
-      if (sel && !sel.down && (s.huge ? (s.cover[y]?.[x] === 'none' && s.terrain[y]?.[x] === 'ground') : reachable(s, sel.x, sel.y, 80).has(`${x},${y}`))) { orderMove(sel, x, y); s.targetId = null; sfx('click'); }
+      const bi = bldgAt(s, x, y), tfl = bi >= 0 && bi === bldgAt(s, sel?.x ?? -1, sel?.y ?? -1) ? flOf(sel!) : 0; // внутри своего здания — на том же этаже
+      if (sel && !sel.down && (s.huge ? (tfl > 0 ? coverAt(s, x, y, tfl) === 'none' : s.cover[y]?.[x] === 'none' && s.terrain[y]?.[x] === 'ground') : reachable(s, sel.x, sel.y, 80).has(`${x},${y}`))) { orderMove(sel, x, y, tfl); s.targetId = null; sfx('click'); }
     }
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
       const before = { id: sel.id, x: sel.x, y: sel.y, ap: sel.ap, stance: sel.stance, overwatch: sel.overwatch, facing: sel.facing };

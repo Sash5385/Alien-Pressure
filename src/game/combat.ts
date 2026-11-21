@@ -1,3 +1,4 @@
+import { coverAt, flOf } from './floors';
 import type { GameState, LaunchKind, Stance, Unit } from './types';
 import { WEAPONS } from './weapons';
 
@@ -37,21 +38,26 @@ export function log(s: GameState, msg: string) {
 }
 
 /** Линия видимости (Bresenham): полное укрытие блокирует, половинное — нет. */
-export function los(s: GameState, a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+export function los(s: GameState, a: { x: number; y: number; fl?: number }, b: { x: number; y: number; fl?: number }): boolean {
   let x = a.x, y = a.y;
   const la = s.height[a.y][a.x], lb = s.height[b.y][b.x];
-  const dx = Math.abs(b.x - x), dy = Math.abs(b.y - y);
+  const fa = flOf(a), fb = flOf(b), multi = fa > 0 || fb > 0;
+  const dx = Math.abs(b.x - x), dy = Math.abs(b.y - y), tot = Math.max(1, dx + dy);
   const sx = x < b.x ? 1 : -1, sy = y < b.y ? 1 : -1;
-  let err = dx - dy;
+  let err = dx - dy, k = 0;
   while (x !== b.x || y !== b.y) {
     const e2 = 2 * err;
-    if (e2 > -dy) { err -= dy; x += sx; }
-    if (e2 < dx) { err += dx; y += sy; }
+    if (e2 > -dy) { err -= dy; x += sx; k++; }
+    if (e2 < dx) { err += dx; y += sy; k++; }
     if (x === b.x && y === b.y) break;
+    if (s.smokes?.length && s.smokes.some(m => m.x === x && m.y === y)) return false; // дым
+    if (multi) { // этажи: уровень луча меняется от стрелка к цели; стены зданий — по этажам, лес сверху не мешает
+      const rf = k / tot < 0.5 ? fa : fb;
+      if (rf > 0) { if (coverAt(s, x, y, rf) === 'full') return false; continue; }
+    }
     const lv = s.height[y][x];
     if (lv > Math.max(la, lb)) return false; // холм закрывает обзор
     if (s.cover[y][x] === 'full' && lv >= la) return false; // полное укрытие, если стрелок не выше
-    if (s.smokes?.length && s.smokes.some(m => m.x === x && m.y === y)) return false; // дым
   }
   return true;
 }
@@ -62,7 +68,7 @@ export function coverSource(s: GameState, shooter: Unit, target: Unit): { bonus:
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const cx = target.x + dx, cy = target.y + dy;
     if (cx < 0 || cy < 0 || cx >= s.size || cy >= s.size) continue;
-    const c = s.cover[cy][cx];
+    const c = flOf(target) > 0 ? coverAt(s, cx, cy, flOf(target)) : s.cover[cy][cx];
     if (c === 'none') continue;
     if ((shooter.x - target.x) * dx + (shooter.y - target.y) * dy <= 0) continue;
     const bonus = c === 'full' ? 40 : 20;
@@ -450,7 +456,7 @@ export function wakeTick(s: GameState) {
   log(s, `Засідка! Прибульці піднялися: ${count}.`);
 }
 
-export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || u.id === s.markId || ((s.vis[u.y][u.x] || s.revealed.includes(u.id)) && !(u.hidden && !living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= 3.2)));
+export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || u.id === s.markId || ((s.vis[u.y][u.x] && (flOf(u) === 0 || living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= SIGHT && los(s, h, u))) || s.revealed.includes(u.id)) && !(u.hidden && !living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= 3.2)));
 
 /** Перезаряджання: 1 AP; у людей тратит запасной магазин. */
 export function reload(s: GameState, u: Unit): boolean {
@@ -765,7 +771,7 @@ export function tickFire(s: GameState) {
 
 /** Высота: стрелок выше — +10% за уровень (до +20), ниже — −10%. */
 export function heightBonus(s: GameState, a: Unit, t: Unit): number {
-  const dh = s.height[a.y][a.x] - s.height[t.y][t.x];
+  const dh = s.height[a.y][a.x] - s.height[t.y][t.x] + flOf(a) - flOf(t);
   return dh > 0 ? Math.min(20, dh * 10) : dh < 0 ? -10 : 0;
 }
 

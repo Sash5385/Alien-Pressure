@@ -95,16 +95,29 @@ export function cellKind(sp: BuildingSpec, side: Side, idx: number, f: number): 
   return r > 0.93 && f === 0 && side !== 'F' ? 'solid' : 'window';
 }
 
+const kindCover = (k: CellKind) => (k === 'solid' ? 'full' : k === 'window' ? 'half' : 'none') as 'none' | 'half' | 'full';
+/** Укрытие клетки (dx,dy от угла здания) на этаже f. */
+export function tileCover(sp: BuildingSpec, dx: number, dy: number, f: number): 'none' | 'half' | 'full' {
+  const { w, d } = sp;
+  if (dy === d - 1) return kindCover(cellKind(sp, 'F', dx, f));
+  if (dy === 0) return kindCover(cellKind(sp, 'B', dx, f));
+  if (dx === 0) return kindCover(cellKind(sp, 'L', dy, f));
+  if (dx === w - 1) return kindCover(cellKind(sp, 'R', dy, f));
+  const px = partX(sp);
+  return px >= 0 && dx === px && dy !== Math.floor(d / 2) ? 'full' : 'none';
+}
+/** Лестница: нижняя и верхняя клетки (в клетках от угла здания). Столбец w-2. */
+export function stairTiles(sp: BuildingSpec) {
+  const slen = Math.min(1.7, sp.d - 2 - 0.1);
+  return { dx: sp.w - 2, bottom: 1, top: Math.max(1, Math.ceil(1 + slen) - 1) };
+}
+
 /** Клетки основания (этаж 0): укрытия и вид. dx,dy — от угла здания. */
 export function footprint(sp: BuildingSpec): { dx: number; dy: number; cover: 'none' | 'half' | 'full'; look: 'wall' | 'window' | '' }[] {
-  const { w, d } = sp, out: { dx: number; dy: number; cover: 'none' | 'half' | 'full'; look: 'wall' | 'window' | '' }[] = [];
-  const put = (dx: number, dy: number, k: CellKind) => out.push(k === 'solid' ? { dx, dy, cover: 'full', look: 'wall' } : k === 'window' ? { dx, dy, cover: 'half', look: 'window' } : { dx, dy, cover: 'none', look: '' });
-  for (let i = 0; i < w; i++) { put(i, d - 1, cellKind(sp, 'F', i, 0)); put(i, 0, cellKind(sp, 'B', i, 0)); }
-  for (let j = 1; j < d - 1; j++) { put(0, j, cellKind(sp, 'L', j, 0)); put(w - 1, j, cellKind(sp, 'R', j, 0)); }
-  const px = partX(sp);
-  for (let j = 1; j < d - 1; j++) for (let i = 1; i < w - 1; i++) {
-    if (px >= 0 && i === px && j !== Math.floor(d / 2)) out.push({ dx: i, dy: j, cover: 'full', look: 'wall' });
-    else out.push({ dx: i, dy: j, cover: 'none', look: '' });
+  const out: { dx: number; dy: number; cover: 'none' | 'half' | 'full'; look: 'wall' | 'window' | '' }[] = [];
+  for (let dy = 0; dy < sp.d; dy++) for (let dx = 0; dx < sp.w; dx++) {
+    const c = tileCover(sp, dx, dy, 0);
+    out.push({ dx, dy, cover: c, look: c === 'full' ? 'wall' : c === 'half' ? 'window' : '' });
   }
   return out;
 }

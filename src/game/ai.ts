@@ -92,7 +92,7 @@ export interface AiSt { shots: number; retreated: boolean }
 export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | undefined, st: AiSt): Promise<'next' | 'stop'> {
   const idx = g ? g.members.indexOf(u) : 0;
   if (!u.alert && alienSees(s, u)) h.alerted?.(raiseAlert(s, u.x, u.y, 8));
-  if (!u.alert) { await patrol(s, u, h); return u.alert ? 'next' : 'stop'; }
+  if (!u.alert) { if ((u.fl ?? 0) > 0) return 'stop'; await patrol(s, u, h); return u.alert ? 'next' : 'stop'; }
   const humans = living(s, 'human');
   if (u.maxAmmo > 0 && u.ammo <= 0) { reload(s, u); return 'next'; }
   const options = humans
@@ -102,6 +102,7 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
   const near = humans.length ? Math.min(...humans.map(t => Math.hypot(t.x - u.x, t.y - u.y))) : 99;
   const mode = u.kind === 'commander' ? 'assault' : g?.mode ?? 'assault';
   const walk = async (spot: [number, number]) => {
+    if ((u.fl ?? 0) > 0) return; // на верхних этажах пришельцы не ходят: держат позицию
     for (const [x, y] of findPath(s, u.x, u.y, spot[0], spot[1], u.move)) {
       u.x = x; u.y = y;
       await h.moved(u);

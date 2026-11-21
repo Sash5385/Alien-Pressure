@@ -7,7 +7,8 @@ import { btn, cta, glass, loadUi, saveUi, UI_NAMES, UI_SCALES, VERSION } from '.
 import { TRAITS } from './game/traits';
 import { reinforce } from './game/mission';
 import { GameView, setTimeScale, WEATHER_NAME, weatherOf, type Weather } from './render/GameView';
-import { rtTick, orderAttack, type RtHooks } from './game/rt';
+import { rtTick, orderAttack, orderMove, type RtHooks } from './game/rt';
+import { bldgAt, flOf, stairPos } from './game/floors';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
@@ -391,6 +392,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const round = (on = false): React.CSSProperties => ({ ...nbBase, background: on ? AC : nbBase.background, width: 46, height: 46, borderRadius: '50%', boxShadow: OUTS, color: on ? ONAC : '#f2f6ff', fontSize: 18, cursor: 'pointer' });
   type Item = { icon: string; label: string; sub: string; on: boolean; off: boolean; click: () => void; title?: string };
   const it = (icon: string, label: string, sub: string, on: boolean, off: boolean, click: () => void, title?: string): Item => ({ icon, label, sub, on, off, click, title });
+  const bi = sel && s.bldgs ? bldgAt(s, sel.x, sel.y) : -1, sf = sel ? flOf(sel) : 0, nfl = bi >= 0 ? s.bldgs![bi].floors : 1;
+  const goFloor = (dir: 1 | -1) => { if (!sel || bi < 0 || sel.down) return; const p = stairPos(s, bi, dir > 0 ? 'top' : 'bottom'); orderMove(sel, p.x, p.y, sf + dir); s.targetId = null; view.current?.syncUnits(); rerender(); };
   const toggleLook = () => { s.lookMode = !s.lookMode; view.current?.syncUnits(); rerender(); };
   const bigL = it('◉', 'Засідка', '', false, !canOw, overwatch, 'Засідка (overwatch): боєць стоїть і стріляє по ворогу, що потрапив у поле зору');
   const itemsL: Item[] = [
@@ -408,6 +411,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     ...(sel && (sel.ugl ?? 0) > 0 && !wl ? [it('◎', 'Підств.', `${sel.ugl}`, s.aiming === 'grenade' && s.launch === 'ugl', !canUgl, toggleUgl, 'Підствольник: дальність 2–10, радіус 1,2, 1 AP')] : []),
     it('✊', 'Удар', '', false, !canMeleeNow, doMelee, 'Ближній бій: ціль у сусідній клітинці, 1 AP, без набоїв, тихо'),
     ...(sel?.cls === 'engineer' ? [it('☁', 'Дим', '', !!s.smokeMode && s.aiming === 'grenade', !canGrenade, toggleSmoke, 'Димова 3×3 на 2 ходи, витрачає гранату')] : []),
+    ...(bi >= 0 ? [it('⬆', 'Вгору', `${sf + 1}/${nfl}`, false, sf >= nfl - 1 || !!sel?.down, () => goFloor(1), 'Піднятися на поверх вище: боєць іде до сходів і піднімається')] : []),
+    ...(bi >= 0 && sf > 0 ? [it('⬇', 'Вниз', `${sf + 1}/${nfl}`, false, !!sel?.down, () => goFloor(-1), 'Спуститися на поверх нижче')] : []),
     it('👁', 'Огляд', '', !!s.lookMode, !sel, toggleLook, 'Огляд: підсвітити зону огляду й дальність обраного бійця (без витрат AP)'),
   ];
   const fan = !narrow && vwE >= 900;

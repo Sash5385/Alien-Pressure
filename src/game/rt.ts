@@ -1,4 +1,5 @@
 import { alienIter, planGroups, type AiHooks, type AiSt, type Grp } from './ai';
+import { bldgAt, climb, flOf, stairPos } from './floors';
 import { checkEnd, hitChance, humanPulse, isVisible, living, log, peekShot, peekTile, reload, shoot, type ShotResult, updateVision } from './combat';
 import { reinforce } from './mission';
 import { findPath, reachable } from './pathfinding';
@@ -26,7 +27,7 @@ const aiState = new WeakMap<Unit, AiSt>();
 let plan = new Map<number, Grp>();
 
 /** Приказ идти (бойцы выполняют по клетке за раз). */
-export function orderMove(u: Unit, x: number, y: number) { u.dest = { x, y }; u.atk = undefined; u.route = undefined; }
+export function orderMove(u: Unit, x: number, y: number, fl = 0) { u.dest = { x, y, fl }; u.atk = undefined; u.route = undefined; }
 /** Приказ атаковать цель до её гибели. */
 export function orderAttack(u: Unit, t: Unit) { u.atk = t.id; u.dest = undefined; }
 
@@ -72,45 +73,57 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
     if (peekTile(s, u, t)) { fire(s, u, t, hooks, true); return; }
     // немає лінії вогню: подойти к ближайшей клетке, откуда цель видна
     let best: [number, number] | null = null, bd = 1e9;
-    for (const k of reachable(s, u.x, u.y, 14).keys()) {
+    for (const k of reachable(s, u.x, u.y, 14, flOf(u)).keys()) {
       const [x, y] = k.split(',').map(Number);
       const c = hitChance(s, { ...u, x, y }, t);
       const d = Math.hypot(x - u.x, y - u.y);
       if (c !== null && d < bd) { bd = d; best = [x, y]; }
     }
-    if (best) u.dest = { x: best[0], y: best[1] }; else { u.atk = undefined; return; }
+    if (best) u.dest = { x: best[0], y: best[1], fl: flOf(u) }; else { u.atk = undefined; return; }
   }
   if (u.dest) {
-    if (u.dest.x === u.x && u.dest.y === u.y) { u.dest = undefined; return; }
+    const cf = flOf(u), tf = u.dest.fl ?? 0;
+    let wp: { x: number; y: number } | null = null; // лестница по пути на другой этаж
+    if (tf !== cf) {
+      const bi = cf > 0 ? bldgAt(s, u.x, u.y) : bldgAt(s, u.dest.x, u.dest.y);
+      if (bi < 0) { u.dest = undefined; return; }
+      wp = stairPos(s, bi, tf > cf ? 'bottom' : 'top');
+      if (u.x === wp.x && u.y === wp.y) {
+        if (climb(s, u, tf > cf ? 1 : -1)) { u.route = undefined; u.cd = CD_PER_AP * 0.6; u.ap = 0; u.overwatch = false; void hooks.step(u).catch(() => {}); } else u.dest = undefined;
+        return;
+      }
+    } else if (cf > 0 && bldgAt(s, u.dest.x, u.dest.y) !== bldgAt(s, u.x, u.y)) { u.dest = undefined; return; }
+    const tx0 = wp ? wp.x : u.dest.x, ty0 = wp ? wp.y : u.dest.y;
+    if (!wp && u.dest.x === u.x && u.dest.y === u.y) { u.dest = undefined; return; }
     let path: [number, number][];
-    if (s.huge) { // далёкие цели: маршрут считается кусками по 60 клеток и кэшируется
+    if (cf > 0) path = findPath(s, u.x, u.y, tx0, ty0, 40, cf);
+    else if (s.huge) { // далёкие цели: маршрут считается кусками по 60 клеток и кэшируется
       const nxt = u.route?.[0];
-      if (!u.route?.length || (nxt && s.units.some(v => v.hp > 0 && v.id !== u.id && v.x === nxt[0] && v.y === nxt[1]))) {
-        const dx = u.dest.x - u.x, dy = u.dest.y - u.y, dd = Math.hypot(dx, dy);
-        let tx = u.dest.x, ty = u.dest.y;
+      if (!u.route?.length || (nxt && s.units.some(v => v.hp > 0 && v.id !== u.id && flOf(v) === 0 && v.x === nxt[0] && v.y === nxt[1]))) {
+        const dx = tx0 - u.x, dy = ty0 - u.y, dd = Math.hypot(dx, dy);
+        let tx = tx0, ty = ty0;
         if (dd > 60) { tx = Math.round(u.x + dx / dd * 60); ty = Math.round(u.y + dy / dd * 60); }
         let best: [number, number] | null = null; // ближайшая свободная клетка к промежуточной точке
         for (let r = 0; r <= 12 && !best; r++) for (let oy = -r; oy <= r && !best; oy++) for (let ox = -r; ox <= r; ox++) {
           if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
           const x = tx + ox, y = ty + oy;
-          if (x >= 1 && y >= 1 && x < s.size - 1 && y < s.size - 1 && s.cover[y][x] === 'none' && s.terrain[y][x] === 'ground' && !s.units.some(v => v.hp > 0 && v.x === x && v.y === y)) { best = [x, y]; break; }
+          if (x >= 1 && y >= 1 && x < s.size - 1 && y < s.size - 1 && s.cover[y][x] === 'none' && s.terrain[y][x] === 'ground' && !s.units.some(v => v.hp > 0 && flOf(v) === 0 && v.x === x && v.y === y)) { best = [x, y]; break; }
         }
         u.route = best ? findPath(s, u.x, u.y, best[0], best[1], 110) : [];
         if (!u.route.length) { u.dest = undefined; u.route = undefined; return; }
       }
       path = u.route!;
-      if (path.length === 1 && Math.hypot(u.dest.x - path[0][0], u.dest.y - path[0][1]) <= 1.5) u.dest = u.dest; // дошли до конца кэша: пересчитаем в следующем шаге
     } else {
-      path = findPath(s, u.x, u.y, u.dest.x, u.dest.y, 80);
+      path = findPath(s, u.x, u.y, tx0, ty0, 80);
     }
     if (!path.length) { u.dest = undefined; return; }
     const step = Math.hypot(path[0][0] - u.x, path[0][1] - u.y);
-    [u.x, u.y] = path[0]; if (s.huge) u.route = u.route!.slice(1); if (u.stance === 'stand' || u.stance === undefined) u.stance = 'stand'; u.overwatch = false; // лёжа ползёт, на колене крадётся
+    [u.x, u.y] = path[0]; if (s.huge && cf === 0) u.route = u.route!.slice(1); if (u.stance === 'stand' || u.stance === undefined) u.stance = 'stand'; u.overwatch = false; // лёжа ползёт, на колене крадётся
     if (s.huge && u.stance === 'stand') (s.noise ??= []).push({ x: u.x, y: u.y, r: 8 }); // бег шумит: лагеря в 8 клетках просыпаются
     // следующий шаг назначается раньше, чем боец дойдёт до клетки, поэтому бег непрерывный (без остановок на каждой клетке)
     u.cd = step * 0.8 / (u.stance === 'prone' ? CRAWL_SPEED : u.stance === 'kneel' ? SNEAK_SPEED : RUN_SPEED); u.ap = 0;
     void hooks.step(u).catch(() => {});
-    if (!s.huge && path.length === 1) u.dest = undefined;
+    if ((!s.huge || cf > 0) && path.length === 1 && !wp) u.dest = undefined;
     return;
   }
   if (s.rt?.auto && !launcher(u)) { // огонь по готовности

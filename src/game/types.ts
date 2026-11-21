@@ -84,7 +84,8 @@ export interface Unit {
   retreatUntil?: number; // до какого хода держит оборону после отхода
   ugl?: number; // выстрелов подствольника
   cd?: number; // реальное время: секунд до следующего действия
-  dest?: { x: number; y: number }; // приказ «идти» (реальное время)
+  fl?: number; // этаж здания (0 — земля)
+  dest?: { x: number; y: number; fl?: number }; // приказ «идти» (реальное время)
   atk?: number; // приказ «атаковать» (id цели)
   busyRt?: boolean;
   route?: [number, number][]; // кэш маршрута к далёкой цели (огромные карты)
@@ -102,6 +103,7 @@ export interface GameState {
   height: number[][]; // уровень рельефа 0–3: подъём на 1 проходим, обрыв (2+) — нет
   look: Look[][]; // вид укрытия (дерево, камень, дом…)
   houses: House[];
+  bidx?: Int16Array; // клетка → номер здания + 1
   bldgs?: import('../render/buildings').BuildingSpec[]; // будівлі з поверхами (великі карти)
   locName?: string;
   trenches: { x: number; y: number }[]; // окопы
