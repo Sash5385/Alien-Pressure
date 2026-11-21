@@ -17,6 +17,7 @@ export interface ShotResult {
   killed: boolean;
   reaction: boolean;
   wound?: 'bleed' | 'fracture';
+  part?: BodyPart;
   alerted?: number[];
   suppress?: boolean;
   psi?: boolean;
@@ -97,7 +98,7 @@ export const coverBonus = (s: GameState, shooter: Unit, target: Unit) => coverSo
 export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 0): number | null {
   if (a.ammo <= 0 || a.hp <= 0 || t.hp <= 0 || a.team === t.team) return null;
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
-  if (dist > a.range || !los(s, a, t)) return null;
+  if (dist > a.range || !los(s, a, t) || !canFire(a)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
     - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - Math.round(encumbrance(a) * 8) + (a.stance === 'kneel' || a.stance === 'prone' ? a.kneelAim ?? 0 : 0) - (a.team === 'human' ? Math.round(a.rec ?? 0) : 0) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
   const cat = catOf(a.weapon), tweak = cat === 'mg' ? (a.stance === 'prone' ? 10 : a.stance === 'kneel' ? 4 : -6) : cat === 'pistol' ? (dist <= 3 ? 10 : dist > 7 ? -6 : 0) : 0; // пулемёт — с сошек, пистолет — вблизи
@@ -112,7 +113,23 @@ function shift(u: Unit, d: number) {
   u.morale = Math.min(100, Math.max(0, Math.round(u.morale + (d < 0 ? d * moraleFactor(u) : d))));
 }
 
-export const moveRange = (u: Unit) => Math.min(u.stance === 'prone' ? 2 : 99, Math.max(1, u.move - (u.fracture ? 2 : 0))); // лёжа — ползком не больше 2 клеток
+/** Части тела бойца: голова — мгновенная смерть, торс — медлительность, руки — оружие, ноги — движение. */
+export type BodyPart = 'head' | 'torso' | 'armL' | 'armR' | 'legL' | 'legR';
+export const PART_NAME: Record<BodyPart, string> = { head: 'голова', torso: 'тіло', armL: 'ліва рука', armR: 'права рука', legL: 'ліва нога', legR: 'права нога' };
+export const hurtN = (u: Unit, k: 'arm' | 'leg') => (u.hurt ?? []).filter(p => p.startsWith(k)).length;
+export const torsoHurt = (u: Unit) => (u.hurt ?? []).includes('torso');
+/** Раненая рука: двуручное нельзя (пистолет — можно); обе — стрелять нельзя совсем. */
+export const canFire = (u: Unit) => u.team !== 'human' || (hurtN(u, 'arm') === 0 || (hurtN(u, 'arm') === 1 && catOf(u.weapon) === 'pistol'));
+export const immobile = (u: Unit) => u.team === 'human' && hurtN(u, 'leg') >= 2;
+/** Множитель медлительности: торс ×1.4, одна нога ×2. */
+export const slowMul = (u: Unit) => u.team !== 'human' ? 1 : (torsoHurt(u) ? 1.4 : 1) * (hurtN(u, 'leg') === 1 ? 2 : 1);
+export function rollPart(s: GameState): BodyPart {
+  const r = rand(s);
+  return r < 0.1 ? 'head' : r < 0.5 ? 'torso' : r < 0.62 ? 'armL' : r < 0.74 ? 'armR' : r < 0.87 ? 'legL' : 'legR';
+}
+export function maimed(u: Unit, p: BodyPart) { if (p === 'head') return; const h = (u.hurt ??= []); if (!h.includes(p)) h.push(p); }
+
+export const moveRange = (u: Unit) => immobile(u) ? 0 : Math.min(u.stance === 'prone' ? 2 : 99, Math.max(1, Math.ceil((u.move - (u.fracture ? 2 : 0)) / (hurtN(u, 'leg') === 1 ? 2 : 1)))); // лёжа — ползком не больше 2 клеток
 
 export function faceToward(u: Unit, x: number, y: number) {
   if (x !== u.x || y !== u.y) u.facing = Math.atan2(x - u.x, y - u.y);
@@ -137,6 +154,12 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
   if (hit && t.team === 'human' && t.hp <= 0 && !t.revived && rand(s) < 0.6) { // не гибнет сразу: падает, его можно поднять за 3 хода
     t.hp = 1; t.down = true; t.bleedOut = 3; t.revived = true; t.stance = 'prone'; t.overwatch = false; downed = true;
   }
+  let part: BodyPart | undefined;
+  if (hit && t.team === 'human') {
+    part = rollPart(s);
+    if (part === 'head') { if (t.hcut && rand(s) * 100 < t.hcut) part = 'torso'; else { t.hp = 0; t.down = false; downed = false; } } // каска может увести пулю
+    else if (t.hp > 0) maimed(t, part);
+  }
   const killed = hit && t.hp <= 0;
   if (flank && t.team === 'human' && a.team === 'alien') shift(t, -3);
   const alerted = a.team === 'human' ? raiseAlert(s, a.x, a.y, Math.max(4, Math.round(noiseOf(a) * 0.6))) : undefined; // выстрел слышно
@@ -159,11 +182,12 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
     const cs = coverSource(s, a, t);
     if (cs && !cs.trench && s.look[cs.y][cs.x] !== 'rock' && s.look[cs.y][cs.x] !== 'house') { s.cover[cs.y][cs.x] = 'none'; broken = { x: cs.x, y: cs.y }; }
   }
-  const wtxt = wound === 'bleed' ? ', кровотеча' : wound === 'fracture' ? ', перелом' : '';
+  const ptxt = part ? ` [${PART_NAME[part]}${part === 'head' && killed ? ' — смерть' : part !== 'head' && part !== 'torso' ? (part.startsWith('arm') ? ' — рука виведена' : ' — нога виведена') : part === 'torso' ? ' — уповільнення' : ''}]` : '';
+  const wtxt = ptxt + (wound === 'bleed' ? ', кровотеча' : wound === 'fracture' ? ', перелом' : '');
   const btxt = broken ? ' Укриття зруйновано.' : '';
   log(s, `${reaction ? '[Засідка] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', вбито' : ''}${downed ? ', важко поранений — упав' : ''}${wtxt}` : 'повз'} (${chance}%)${flank ? ' · фланг' : ''}${btxt}`);
   checkEnd(s);
-  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound, broken, alerted, flank, downed };
+  return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction, wound, part, broken, alerted, flank, downed };
 }
 
 /** Реакция overwatch бойцов на движущегося пришельца. */
@@ -415,13 +439,13 @@ export function startHumanTurn(s: GameState) {
 export function bandage(s: GameState, medic: Unit): Unit | null {
   if (medic.ap <= 0 || (s.medkits <= 0 && !has(medic, 'medic'))) return null;
   const t = living(s, 'human')
-    .filter(h => h.bleeding && Math.abs(h.x - medic.x) + Math.abs(h.y - medic.y) <= 1)
+    .filter(h => (h.bleeding || (h.hurt?.length ?? 0) > 0) && Math.abs(h.x - medic.x) + Math.abs(h.y - medic.y) <= 1)
     .sort((a, b) => a.hp - b.hp)[0];
   if (!t) return null;
   const pro = has(medic, 'medic');
   if (!pro) s.medkits -= 1;
   medic.ap -= 1;
-  t.bleeding = false;
+  t.bleeding = false; if (t.hurt?.length) { const ord = ['legL', 'legR', 'armL', 'armR', 'torso']; t.hurt.sort((a, b) => ord.indexOf(a) - ord.indexOf(b)); t.hurt.shift(); } // шина/жгут: одна рана снята
   t.hp = Math.min(t.maxHp, t.hp + (pro ? 4 : 2) + (medic.healBonus ?? 0));
   log(s, `${medic.name} перев’язує ${t.name}.`);
   return t;
@@ -558,6 +582,17 @@ export function throwGrenade(s: GameState, u: Unit, x: number, y: number): Grena
   s.aiming = null;
   const same = bldgAt(s, x, y) >= 0 && bldgAt(s, x, y) === bldgAt(s, u.x, u.y);
   return blast(s, u, x, y, `${u.name} кидає гранату`, false, undefined, same ? flOf(u) : 0); // из окна верхнего этажа — на тот же этаж, иначе на землю
+}
+
+/** Обе руки выведены: единственное, что остаётся, — подорвать себя гранатой вместе с врагами рядом. */
+export const canSelfBlast = (u: Unit) => u.team === 'human' && u.hp > 0 && hurtN(u, 'arm') >= 2 && u.grenades > 0 && !u.down;
+export function selfBlast(s: GameState, u: Unit): GrenadeResult {
+  u.grenades -= 1; u.overwatch = false; s.aiming = null;
+  const res = blast(s, u, u.x, u.y, `${u.name} підриває себе гранатою`, false, { r: BLAST + 0.6, center: 9, edge: 5 }, flOf(u));
+  u.hp = 0;
+  if (!res.hits.some(h => h.id === u.id)) res.hits.push({ id: u.id, dmg: 99, killed: true });
+  checkEnd(s);
+  return res;
 }
 
 /** Взрыв (граната/мина): центр 5, край 3 (−броня); бьёт и по своим, срывает половинные укрытия. Убийства засчитываются owner. */

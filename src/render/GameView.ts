@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
-import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, type GrenadeResult, canThrow, selfBlast, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, setLife, setReverb, type Sfx } from '../audio';
 import { applyTwoHands, gunForWeapon, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -2296,6 +2296,20 @@ void main(){
     await this.fireRound(muzzle, new THREE.Vector3(res.x + 0.5, 0.4 + this.hy(res.x, res.y), res.y + 0.5), 0, true, true, a.team === 'human');
     await this.explode(res);
     this.syncUnits();
+  }
+
+  /** Боец с двумя ранеными руками подрывает себя гранатой. */
+  async selfBlastAt(u: Unit) {
+    const s = this.state;
+    s.busy = true;
+    const res = selfBlast(s, u);
+    this.hold(this.hitIds(res));
+    this.focusOn(u.x, u.y);
+    sfx('pin');
+    await this.explode(res);
+    s.busy = false;
+    this.syncUnits();
+    this.onChange();
   }
 
   /** Взрыв, начатый ИИ (мина). */

@@ -93,6 +93,7 @@ export interface Unit {
   march?: { x: number; y: number }; // колонна идёт к этой точке, пока не заметит бойцов
   smoke?: Record<string, number>; // дымовые гранаты по видам
   helmet?: string; gear?: string[]; // каска и обвес (для веса и отрисовки)
+  hurt?: string[]; // ранены части тела: torso, armL, armR, legL, legR
   hcut?: number; // шанс, что каска погасит часть урона, %
   stealth?: number; // заметность ниже: 0..0.6
   blastRes?: number; // защита от взрывов

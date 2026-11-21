@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { runAlienTurn } from './game/ai';
-import { callSupply, radioReady, droneReady, aimedShot, bandage, canLaunch, LAUNCH, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
+import { PART_NAME, canFire as armsOk, canSelfBlast, immobile, type BodyPart, callSupply, radioReady, droneReady, aimedShot, bandage, canLaunch, LAUNCH, peekShot, peekTile, canMelee, canRevive, coverSource, melee, revive, canShootBarrel, checkEnd, digIn, setStance, trenchAt, hitChance, isVisible, living, log, medicHeal, mineTile, nearBeacon, placeCharge, placeMine, reload, shoot, shootBarrel, startHumanTurn, suppress } from './game/combat';
 import { CLASSES } from './game/classes';
 import type { GameState, Unit } from './game/types';
 import { btn, cta, glass, loadUi, saveUi, UI_NAMES, UI_SCALES, VERSION } from './ui';
@@ -374,7 +374,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const leave = () => onExit(s);
 
   const info = sel
-    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · ${s.rt ? ((sel.cd ?? 0) > 0 ? `чекає ${(sel.cd ?? 0).toFixed(1)} с` : 'готовий') : `AP ${sel.ap}/${sel.maxAp}`} · мораль ${sel.morale} · сили ${Math.round(sel.sta ?? 100)}%${sel.overwatch ? ' · засідка' : ''}${sel.bleeding ? ' · кровотеча' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНІКА' : ''}${sel.down ? ` · ВАЖКО ПОРАНЕНИЙ (${sel.bleedOut ?? 3} ходи)` : ''}`
+    ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · ${s.rt ? ((sel.cd ?? 0) > 0 ? `чекає ${(sel.cd ?? 0).toFixed(1)} с` : 'готовий') : `AP ${sel.ap}/${sel.maxAp}`} · мораль ${sel.morale} · сили ${Math.round(sel.sta ?? 100)}%${sel.overwatch ? ' · засідка' : ''}${sel.hurt?.length ? ' · поранено: ' + sel.hurt.map(p => PART_NAME[p as BodyPart]).join(', ') : ''}${immobile(sel) ? ' · НЕ РУХАЄТЬСЯ' : ''}${!armsOk(sel) ? ' · НЕ СТРІЛЯЄ' : ''}${sel.bleeding ? ' · кровотеча' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНІКА' : ''}${sel.down ? ` · ВАЖКО ПОРАНЕНИЙ (${sel.bleedOut ?? 3} ходи)` : ''}`
     : 'Обери бійця';
   const cmd = s.units.find(u => u.kind === 'commander' && u.hp > 0);
   const goal = s.scn === 'storm' ? `штурм: ворогів ${living(s, 'alien').filter(a => (a.grp ?? 0) < 500).length}` : {
@@ -434,6 +434,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     it('✚', 'Бинт', `${s.medkits}`, false, !canBandage, heal, 'Перев’язка'),
     sel ? it('★', { assault: 'Придуш.', sniper: 'Снайп.', medic: 'Лікувати', engineer: 'Міна' }[sel.cls], abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, `${abilityLabel}: ${CLASSES[sel.cls].desc}`) : it('★', 'Вміння', '', false, true, () => {}),
     ...(doorNear && sel ? [it('🚪', 'Відкрити', '', true, sel.ap <= 0, () => act2(() => openQuiet(s, sel)), 'Тихо відчинити двері (1 дія)'), it('🦶', 'Виламати', '70%', true, sel.ap <= 0, () => act2(() => { const r = kickDoor(s, sel); if (r) sfx('kick'); return r; }), 'Вибити двері: швидко, але гучно (чутно за 12 клітинок), 70% успіху')] : []),
+    ...(sel && canSelfBlast(sel) ? [it('💥', 'Підрив', 'себе', true, false, () => { if (confirm('Підірвати себе гранатою?')) void view.current!.selfBlastAt(sel); }, 'Обидві руки виведені: єдине, що лишилось — підірвати себе гранатою разом з ворогами поруч')] : []),
     ...(nearStash && sel ? [it('📦', 'Обшук', '', true, sel.ap <= 0, () => act2(() => searchStash(s, sel)), 'Обшукати ящик поруч (1 дія)')] : []),
     ...(wpnHere && sel ? [it('🔫', 'Взяти', WEAPONS[wpnHere.w!].name.slice(0, 7), true, sel.ap <= 0, () => act2(() => takeWeapon(s, sel)), `Підняти: ${WEAPONS[wpnHere.w!].name}`)] : []),
     ...(sel?.sec ? [it('⇄', 'Зброя', WEAPONS[sel.sec].name.slice(0, 7), false, !canSwap(sel), () => act2(() => swapWeapons(s, sel)), 'Змінити зброю на запасну (1 дія)')] : []),

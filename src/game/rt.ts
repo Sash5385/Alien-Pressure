@@ -2,7 +2,7 @@ import { alienIter, planGroups, type AiHooks, type AiSt, type Grp } from './ai';
 import { bldgAt, climb, flOf, stairPos } from './floors';
 import { encumbrance } from './inventory';
 import { openDoorAt } from './doors';
-import { checkEnd, hitChance, humanPulse, isVisible, living, log, peekShot, peekTile, reload, shoot, type ShotResult, updateVision } from './combat';
+import { checkEnd, immobile, slowMul, hitChance, humanPulse, isVisible, living, log, peekShot, peekTile, reload, shoot, type ShotResult, updateVision } from './combat';
 import { reinforce } from './mission';
 import { DAY_SECONDS } from './tod';
 import { findPath, reachable } from './pathfinding';
@@ -31,6 +31,7 @@ let plan = new Map<number, Grp>();
 
 /** Приказ идти (бойцы выполняют по клетке за раз). */
 export function orderMove(u: Unit, x: number, y: number, fl = 0, append = false) {
+  if (immobile(u)) return;
   u.atk = undefined;
   if (append && u.dest) { (u.queue ??= []).push({ x, y, fl }); return; }
   u.dest = { x, y, fl }; u.queue = undefined; u.route = undefined;
@@ -47,7 +48,7 @@ function settle(u: Unit, d: number) {
     if (u.cd <= 0) { u.cd = 0; u.ap = u.maxAp; u.overwatch = false; }
   } else if (u.ap < u.maxAp && !u.busyRt) {
     const spent = u.maxAp - u.ap;
-    u.cd = spent * CD_PER_AP * (u.suppressed ? 1.25 : 1);
+    u.cd = spent * CD_PER_AP * (u.suppressed ? 1.25 : 1) * slowMul(u);
     u.ap = 0;
   }
 }
@@ -96,6 +97,7 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
     }
     if (best) u.dest = { x: best[0], y: best[1], fl: flOf(u) }; else { u.atk = undefined; return; }
   }
+  if (u.dest && immobile(u)) { u.dest = undefined; u.queue = undefined; u.route = undefined; u.atk = undefined; } // обе ноги ранены — оборона на месте
   if (u.dest) {
     const cf = flOf(u), tf = u.dest.fl ?? 0;
     let wp: { x: number; y: number } | null = null; // лестница по пути на другой этаж
@@ -139,7 +141,7 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
     // следующий шаг назначается раньше, чем боец дойдёт до клетки, поэтому бег непрерывный (без остановок на каждой клетке)
     const tired = (u.sta ?? 100) < 25, en = encumbrance(u);
     u.sta = Math.max(0, (u.sta ?? 100) - step * (u.stance === 'prone' ? 0.6 : u.stance === 'kneel' ? 1.2 : 2.6) * (1 + en)); // бег утомляет, с тяжёлым грузом — сильнее
-    u.cd = step * 0.8 / ((u.stance === 'prone' ? CRAWL_SPEED : u.stance === 'kneel' ? SNEAK_SPEED : RUN_SPEED) * (tired ? 0.8 : 1) * (1 - 0.3 * en)); u.ap = 0;
+    u.cd = step * 0.8 / ((u.stance === 'prone' ? CRAWL_SPEED : u.stance === 'kneel' ? SNEAK_SPEED : RUN_SPEED) * (tired ? 0.8 : 1) * (1 - 0.3 * en)) * slowMul(u); u.ap = 0;
     void hooks.step(u).catch(() => {});
     if ((!s.huge || cf > 0) && path.length === 1 && !wp) nextDest(u);
     return;
