@@ -367,7 +367,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     sabotage: `маяки ${s.beacons.filter(b => b.done).length}/${s.beacons.length}`,
     rescue: `полонені ${s.captives?.filter(c => c.saved).length ?? 0}/${s.captives?.length ?? 0}`,
     storm: '', holdbld: '', hostage: '',
-  }[s.objective] || (s.scn === 'storm' ? `штурм: ворогів ${living(s, 'alien').filter(a => (a.grp ?? 0) < 500).length}` : s.scn === 'hostage' ? `заручник ${s.captives?.filter(c => c.saved).length ?? 0}/1` : s.scn === 'holdbld' ? `утримання будівлі ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}` : '');
+  }[s.objective] || (s.scn === 'hostage' ? `заручник ${s.captives?.filter(c => c.saved).length ?? 0}/1` : s.scn === 'holdbld' ? `утримання будівлі ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}` : '');
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
   const campHint = (() => {
     if (!s.huge || s.scn) return '';
