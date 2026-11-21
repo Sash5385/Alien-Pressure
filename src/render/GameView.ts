@@ -12,6 +12,7 @@ import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
+import { bushGeo as mkBush, containerGeo, crateGeo, deadGeo, flowerGeo, grassClumpGeo, oakGeo, pineGeo, rockGeo as mkRock } from './props';
 import { buildBuilding, lampParts, roadMaterial, setWeatherVisuals, showFloors, STOREY, type BuildingObj } from './buildings';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { reachable, findPath } from '../game/pathfinding';
@@ -41,6 +42,24 @@ export type Weather = 'clear' | 'rain' | 'fog' | 'dusk' | 'dawn' | 'night';
 export const WEATHER_NAME: Record<Weather, string> = { clear: 'ясно', rain: '☔ дощ', fog: '🌫 туман', dusk: '🌆 сутінки', dawn: '🌅 світанок', night: '🌙 ніч' };
 /** Погода миссии: чисто визуальная, зависит от номера миссии и локации. */
 export const weatherOf = (missionNo: number, biome: string): Weather => (['clear', 'clear', 'rain', 'fog', 'dawn', 'dusk', 'night', 'clear'] as const)[(missionNo * 7 + (biome === 'forest' ? 3 : biome === 'lake' ? 6 : 0)) % 8];
+
+const SKY: Record<string, { top: number; mid: number; hor: number; sun: number; cc: number; cloud: number; stars: number; dir: [number, number, number] }> = {
+  clear: { top: 0x2f6fc4, mid: 0x6fa8e0, hor: 0xbcd8ee, sun: 0xfff0c0, cc: 0xffffff, cloud: 0.55, stars: 0, dir: [0.5, 0.55, 0.3] },
+  dawn: { top: 0x3c5a98, mid: 0xd89a9a, hor: 0xffc08a, sun: 0xffa060, cc: 0xffd0b0, cloud: 0.5, stars: 0, dir: [0.9, 0.12, 0.1] },
+  dusk: { top: 0x24244e, mid: 0xa85c70, hor: 0xf08c50, sun: 0xff7040, cc: 0xe0a090, cloud: 0.5, stars: 0, dir: [-0.9, 0.1, 0.2] },
+  night: { top: 0x040818, mid: 0x0a1430, hor: 0x16223a, sun: 0x8aa6ff, cc: 0x1a2540, cloud: 0.25, stars: 1, dir: [-0.4, 0.55, -0.3] },
+  rain: { top: 0x545d69, mid: 0x76808a, hor: 0x939ca5, sun: 0x000000, cc: 0x6a727c, cloud: 1, stars: 0, dir: [0.5, 0.55, 0.3] },
+  fog: { top: 0xa0aaa7, mid: 0xa5afac, hor: 0xaab4b1, sun: 0x000000, cc: 0xb4bcb9, cloud: 0.1, stars: 0, dir: [0.5, 0.55, 0.3] },
+};
+
+/** Освещение по времени суток: ключевые кадры (параметры солнца, неба, дымки, ночи). */
+const LIGHT: Record<string, { exp: number; sun: number; sunI: number; hemi: number; fogTo: number | null; fogAmt: number; near: number | null; far: number | null; off: [number, number, number]; night: number }> = {
+  clear: { exp: 3.5, sun: 0xfff0d0, sunI: 2.0, hemi: 1.3, fogTo: null, fogAmt: 0, near: null, far: null, off: [14, 30, 8], night: 0 },
+  dawn: { exp: 3.0, sun: 0xffb070, sunI: 1.8, hemi: 1.0, fogTo: 0xd9a07a, fogAmt: 0.45, near: null, far: null, off: [34, 11, 6], night: 0.25 },
+  dusk: { exp: 2.7, sun: 0xff9a60, sunI: 1.5, hemi: 0.9, fogTo: 0x4a3a50, fogAmt: 0.5, near: null, far: null, off: [-30, 10, 9], night: 0.3 },
+  night: { exp: 2.2, sun: 0x8aa6ff, sunI: 0.7, hemi: 0.55, fogTo: 0x0c1424, fogAmt: 0.8, near: 10, far: 60, off: [-12, 26, -10], night: 1 },
+};
+const TOD_KEYS: [number, string][] = [[0, 'night'], [0.2, 'night'], [0.27, 'dawn'], [0.37, 'clear'], [0.63, 'clear'], [0.73, 'dusk'], [0.81, 'night'], [1, 'night']];
 
 export class GameView {
   private renderer: THREE.WebGLRenderer;
@@ -239,6 +258,7 @@ export class GameView {
       this.perfGovernor(rawDt);
       this.stepRain(dt);
       if (this.skyU) this.skyU.uTime.value = this.clock.elapsedTime;
+      this.todT += rawDt; if (this.todT > 0.4) { this.todT = 0; if (this.state.todOn) this.applyTod(this.state.tod ?? 0.5); if (this.lampLights.length) this.updateLampLights(); }
       tickWind(this.clock.elapsedTime);
       if (this.state.huge) { if (this.skyMesh) this.skyMesh.position.set(this.controls.target.x, 0, this.controls.target.z); this.hugeT += rawDt; if (this.hugeT > 0.15) { this.hugeT = 0; this.updateHuge(); } }
       if (this.prints.length) { const now = this.clock.elapsedTime; this.prints = this.prints.filter(p => { const k = (now - p.t0) / 40; if (k >= 1) { this.scene.remove(p.m); (p.m.material as THREE.Material).dispose(); return false; } (p.m.material as THREE.MeshLambertMaterial).opacity = 0.38 * (1 - k); return true; }); }
@@ -621,27 +641,29 @@ export class GameView {
   private carGeo!: THREE.BufferGeometry;
   private hugeT = 0; private hugeSigT = 0;
   private treeGeo!: THREE.BufferGeometry; private treeMat!: THREE.Material;
-  private bushGeo!: THREE.BufferGeometry; private rockGeo!: THREE.BufferGeometry; private boxGeo!: THREE.BufferGeometry;
+  private bushGeo!: THREE.BufferGeometry; private rockGeo!: THREE.BufferGeometry;
+  private oakGeo!: THREE.BufferGeometry; private deadGeo!: THREE.BufferGeometry; private crateGeo!: THREE.BufferGeometry; private containerGeo!: THREE.BufferGeometry; private crateMat!: THREE.Material; private contMat!: THREE.Material; private flowerGeo!: THREE.BufferGeometry;
   private bushMat!: THREE.Material; private rockMat!: THREE.Material; private boxMat!: THREE.Material; private grassMat!: THREE.Material; private grassGeo!: THREE.BufferGeometry;
 
   private setupHuge() {
     this.ground.visible = false;
     this.scene.add(this.groundGroup);
-    const col = (g: THREE.BufferGeometry, c: number) => { const k = new THREE.Color(c), a: number[] = []; for (let i = 0; i < g.attributes.position.count; i++) a.push(k.r, k.g, k.b); g.setAttribute('color', new THREE.Float32BufferAttribute(a, 3)); return g; };
-    const trunk = col(new THREE.CylinderGeometry(0.07, 0.11, 0.8, 6).translate(0, 0.4, 0), 0x5a3f25);
-    const c1 = col(new THREE.ConeGeometry(0.55, 1.1, 7).translate(0, 1.0, 0), 0x34642a);
-    const c2 = col(new THREE.ConeGeometry(0.38, 0.9, 7).translate(0, 1.6, 0), 0x3e7230);
-    this.treeGeo = mergeGeometries([trunk, c1, c2])!;
+    this.treeGeo = pineGeo(); this.oakGeo = oakGeo(); this.deadGeo = deadGeo();
     this.treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
     sway(this.treeMat, { amp: 0.05, h: 2.1, base: 0, oh: 2.1 });
-    this.bushGeo = new THREE.IcosahedronGeometry(0.42, 0); this.bushGeo.scale(1.1, 0.8, 1.1); this.bushGeo.translate(0, 0.3, 0);
-    this.bushMat = new THREE.MeshStandardMaterial({ color: 0x3f7a2e, flatShading: true }); sway(this.bushMat, { amp: 0.025, h: 0.7, base: 0, oh: 0.7 });
-    this.rockGeo = new THREE.IcosahedronGeometry(0.5, 0); this.rockGeo.scale(1.05, 0.8, 0.95); this.rockGeo.translate(0, 0.28, 0);
-    this.rockMat = new THREE.MeshStandardMaterial({ color: 0x7d7a72, roughness: 1, flatShading: true });
-    this.boxGeo = new THREE.BoxGeometry(0.9, 1, 0.9).translate(0, 0.5, 0);
+    this.bushGeo = mkBush();
+    this.bushMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }); sway(this.bushMat, { amp: 0.025, h: 0.7, base: 0, oh: 0.7 });
+    this.rockGeo = mkRock();
+    this.rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
     this.boxMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
-    this.grassGeo = new THREE.ConeGeometry(0.05, 0.3, 4);
-    this.grassMat = new THREE.MeshStandardMaterial({ roughness: 1 }); sway(this.grassMat, { amp: 0.07, h: 1 });
+    const tbs = (import.meta as any).env?.BASE_URL ?? '/', tlo = new THREE.TextureLoader();
+    const wtex = tlo.load(`${tbs}tex/crate.jpg`); wtex.wrapS = wtex.wrapT = THREE.RepeatWrapping; wtex.colorSpace = THREE.SRGBColorSpace;
+    const stex = tlo.load(`${tbs}tex/steel.jpg`); stex.wrapS = stex.wrapT = THREE.RepeatWrapping; stex.colorSpace = THREE.SRGBColorSpace;
+    this.crateGeo = crateGeo(); this.containerGeo = containerGeo(); this.flowerGeo = flowerGeo();
+    this.crateMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: wtex, roughness: 0.85 });
+    this.contMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 }); void stex;
+    this.grassGeo = grassClumpGeo();
+    this.grassMat = new THREE.MeshStandardMaterial({ roughness: 1, vertexColors: true, side: THREE.DoubleSide }); sway(this.grassMat, { amp: 0.09, h: 0.4, base: 0.02, oh: 0.4 });
     const fog = this.scene.fog as THREE.Fog; fog.near = 45; fog.far = 135;
     // ямы: тёмный круг и земляной вал
     const pits = this.state.pits ?? [];
@@ -661,6 +683,13 @@ export class GameView {
     }
     const body = new THREE.BoxGeometry(1.0, 0.3, 0.52).translate(0, 0.24, 0), cab = new THREE.BoxGeometry(0.5, 0.26, 0.46).translate(-0.05, 0.52, 0);
     this.carGeo = mergeGeometries([body, cab])!;
+    if ((this.state.roads?.length ?? 0) > 0) { // пул ламповых источников: свет вблизи камеры
+      for (let i = 0; i < (this.quality === 'high' ? 4 : 2); i++) {
+        const L = new THREE.PointLight(0xffd39a, 0, 11, 1.5); L.castShadow = this.quality === 'high' && i === 0;
+        if (L.castShadow) { L.shadow.mapSize.set(384, 384); L.shadow.bias = -0.003; L.shadow.normalBias = 0.04; L.shadow.radius = 3; L.shadow.camera.near = 0.15; L.shadow.camera.far = 12; }
+        this.scene.add(L); this.lampLights.push(L);
+      }
+    }
     this.updateHuge(true);
   }
 
@@ -670,12 +699,12 @@ export class GameView {
   private buildChunkObjects(cx: number, cz: number) {
     const s = this.state, n = s.size, CH = GameView.CH;
     const x0 = Math.max(0, cx * CH), x1 = Math.min(n, (cx + 1) * CH), z0 = Math.max(0, cz * CH), z1 = Math.min(n, (cz + 1) * CH);
-    const lists: Record<string, { x: number; y: number }[]> = { tree: [], bush: [], rock: [], crate: [], container: [], car: [] };
+    const lists: Record<string, { x: number; y: number }[]> = { tree: [], bush: [], rock: [], crate: [], container: [], car: [], oak: [], dead: [] };
     let sig = 0;
     for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) {
       if (s.cover[y][x] === 'none') continue;
       const l = s.look[y][x];
-      if (lists[l]) { lists[l].push({ x, y }); sig++; }
+      if (lists[l]) { const sp = l === 'tree' ? (nhash(x * 3 + 1, y * 5 + 2) < 0.5 ? 'tree' : nhash(x * 3 + 1, y * 5 + 2) < 0.9 ? 'oak' : 'dead') : l; lists[sp].push({ x, y }); sig++; }
     }
     const objs: THREE.Object3D[] = [];
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
@@ -692,12 +721,16 @@ export class GameView {
       im.computeBoundingSphere();
       this.scene.add(im); objs.push(im);
     };
-    const greens = [0xb8c8b0, 0xffffff, 0xd8e8c8, 0xa8d090];
-    make(this.treeGeo, this.treeMat, lists.tree, t => { const k = 0.85 + nhash(t.x, t.y * 3) * 0.5; return { sx: k, sy: k * (0.9 + nhash(t.y, t.x) * 0.3), color: greens[(t.x + t.y) % 4] }; }, true);
-    make(this.bushGeo, this.bushMat, lists.bush, t => ({ sx: 0.9 + nhash(t.x, t.y) * 0.4, sy: 1 }));
+    const greens = [0xe0f0d8, 0xffffff, 0xeaf4dc, 0xd0e4c0];
+    const treeF = (t: { x: number; y: number }) => { const k = 0.85 + nhash(t.x, t.y * 3) * 0.5; return { sx: k, sy: k * (0.9 + nhash(t.y, t.x) * 0.3), color: greens[(t.x + t.y) % 4] }; };
+    make(this.treeGeo, this.treeMat, lists.tree, treeF, true);
+    make(this.oakGeo, this.treeMat, lists.oak, t => { const r = treeF(t); return { ...r, sx: r.sx * 0.95, sy: r.sy * 0.9 }; }, true);
+    make(this.deadGeo, this.treeMat, lists.dead, t => ({ sx: 0.9 + nhash(t.x, t.y) * 0.4, sy: 0.9 + nhash(t.y, t.x) * 0.4 }), true);
+    make(this.bushGeo, this.bushMat, lists.bush, t => ({ sx: 1.25 + nhash(t.x, t.y) * 0.5, sy: 1.1 + nhash(t.y, t.x) * 0.3 }));
     make(this.rockGeo, this.rockMat, lists.rock, (t) => { const full = s.cover[t.y][t.x] === 'full'; return { sx: full ? 1.1 : 0.85, sy: full ? 1.9 : 1 }; }, true);
-    make(this.boxGeo, this.boxMat, lists.crate, () => ({ sx: 0.85, sy: 0.7, color: 0xb0743a }), true);
-    make(this.boxGeo, this.boxMat, lists.container, () => ({ sx: 1, sy: 1.5, color: 0x4a5a78 }), true);
+    make(this.crateGeo, this.crateMat, lists.crate, t => { const k = 0.9 + nhash(t.x, t.y) * 0.15; return { sx: k, sy: k }; }, true);
+    const contCols = [0x4a5a78, 0x8a3a30, 0x3a6a4a, 0x8a7a3a, 0x5a5a62];
+    make(this.containerGeo, this.contMat, lists.container, t => ({ sx: 1, sy: 1, color: contCols[(t.x * 5 + t.y * 3) % 5] }), true);
     const carCols = [0xa83232, 0x2f5f9a, 0x6a6e72, 0xd8d4c8, 0x3a6a3a, 0x8a6a2a];
     make(this.carGeo, this.boxMat, lists.car, t => ({ sx: 1, sy: 1, color: carCols[(t.x * 7 + t.y * 3) % 6], yaw: (nhash(t.x, t.y) - 0.5) * 0.5 + ((t.x + t.y) % 2) * Math.PI }), true);
     return { objs, sig };
@@ -714,16 +747,23 @@ export class GameView {
     if (!spots.length) return null;
     const im = new THREE.InstancedMesh(this.grassGeo, this.grassMat, spots.length);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
-    const cols = [0x4a7a2c, 0x588632, 0x3c6a24, 0x6a9638];
+    const cols = [0xffffff, 0xe6f0d4, 0xf0f4c8, 0xd4e4b8];
     spots.forEach(([px, pz], i) => {
       const k = 0.7 + nhash(i, x0 + z0) * 0.9;
-      q.setFromEuler(e.set((nhash(i, 3) - 0.5) * 0.3, nhash(i, 9) * 6, (nhash(i, 5) - 0.5) * 0.3)); v.set(px, 0.13 * k + this.hs(px, pz), pz); sc.set(1, k, 1);
+      q.setFromEuler(e.set((nhash(i, 3) - 0.5) * 0.3, nhash(i, 9) * 6, (nhash(i, 5) - 0.5) * 0.3)); v.set(px, this.hs(px, pz), pz); sc.set(k, 0.9 * k, k);
       im.setMatrixAt(i, m4.compose(v, q, sc)); im.setColorAt(i, c.set(cols[i % 4]));
     });
     im.receiveShadow = true;
     im.computeBoundingSphere();
-    this.scene.add(im);
-    return im;
+    const grp = new THREE.Group(); grp.add(im);
+    const fl = spots.filter((_, i) => nhash(i * 7 + 3, x0 + z0 * 3) < 0.05); // полевые цветы
+    if (fl.length) {
+      const fm = new THREE.InstancedMesh(this.flowerGeo, new THREE.MeshStandardMaterial({ roughness: 0.8, vertexColors: true }), fl.length), fc = [0xf6f6ee, 0xf2d44a, 0xc686e6, 0xe86a6a, 0x8ab6f0];
+      fl.forEach(([px, pz], i) => { fm.setMatrixAt(i, m4.compose(v.set(px, this.hs(px, pz), pz), q.identity(), sc.set(1, 0.8 + nhash(i, 5) * 0.6, 1))); fm.setColorAt(i, c.set(fc[i % 5])); });
+      fm.computeBoundingSphere(); grp.add(fm);
+    }
+    this.scene.add(grp);
+    return grp;
   }
 
   private disposeChunk(k: string) {
@@ -731,7 +771,8 @@ export class GameView {
     if (!ch) return;
     this.groundGroup.remove(ch.terrain); ch.terrain.geometry.dispose();
     for (const o of ch.objs) { this.scene.remove(o); (o as THREE.InstancedMesh).dispose?.(); }
-    if (ch.grass) { this.scene.remove(ch.grass); (ch.grass as THREE.InstancedMesh).dispose?.(); }
+    if (ch.grass) { this.scene.remove(ch.grass); ch.grass.traverse(o => (o as THREE.InstancedMesh).dispose?.()); }
+    this.lampPos.delete(k);
     for (const m of ch.roads) { this.scene.remove(m); if (!(m as THREE.InstancedMesh).isInstancedMesh) m.geometry.dispose(); }
     for (const { b } of ch.blds) { this.scene.remove(b); b.traverse(o => (o as THREE.Mesh).geometry?.dispose()); }
     this.chunks.delete(k);
@@ -793,12 +834,13 @@ export class GameView {
           const lp = lampParts(), mp = new THREE.InstancedMesh(lp.pole, lp.poleMat, lamps.length), mh = new THREE.InstancedMesh(lp.head, lp.headMat, lamps.length), m4 = new THREE.Matrix4();
           lamps.forEach(([lx, lz], i) => { m4.makeTranslation(lx, this.hs(lx, lz), lz); mp.setMatrixAt(i, m4); mh.setMatrixAt(i, m4); });
           mp.castShadow = true; mp.frustumCulled = mh.frustumCulled = false; this.scene.add(mp, mh); roads.push(mp, mh);
+          this.lampPos.set(k, lamps.map(([lx, lz]) => [lx, this.hs(lx, lz), lz]));
         }
         ch = { terrain: mesh, objs: ob?.objs ?? [], grass: null, sig: ob?.sig ?? 0, roads, blds };
         this.chunks.set(k, ch);
       }
       if (d2 <= RG * RG * 2 && !ch.grass && cx >= 0 && cz >= 0 && budget >= 0) { ch.grass = this.buildGrass(cx, cz); budget--; }
-      else if (d2 > RG * RG * 2 + 4 && ch.grass) { this.scene.remove(ch.grass); (ch.grass as THREE.InstancedMesh).dispose?.(); ch.grass = null; }
+      else if (d2 > RG * RG * 2 + 4 && ch.grass) { this.scene.remove(ch.grass); ch.grass.traverse(o => (o as THREE.InstancedMesh).dispose?.()); ch.grass = null; }
     }
     for (const k of [...this.chunks.keys()]) if (!keep.has(k)) this.disposeChunk(k);
     // разрушенное укрытие: перестраиваем объекты куска
@@ -1494,7 +1536,7 @@ void main(){
   private decals: THREE.Mesh[] = [];
   private pathLine: THREE.Line | null = null;
   hover: { sx: number; sy: number; text: string } | null = null;
-  getWeather(): Weather { return (this.state.weather as Weather | undefined) ?? weatherOf(this.state.missionNo, this.state.biome); }
+  getWeather(): Weather { if (this.state.todOn) return 'clear'; return (this.state.weather as Weather | undefined) ?? weatherOf(this.state.missionNo, this.state.biome); }
   private viewSq = (() => { try { return localStorage.getItem('alien-pressure:viewsq') === 'on'; } catch { return false; } })();
   isViewSq() { return this.viewSq; }
   setViewSq(on: boolean) {
@@ -1509,21 +1551,50 @@ void main(){
     this.applyWeather();
   }
   private baseFog: { color: number; near: number; far: number } | null = null;
+  private nightAmt = 0; private todT = 0;
+  private lampPos = new Map<string, number[][]>();
+  private lampLights: THREE.PointLight[] = [];
+  /** Плавная смена дня и ночи: интерполяция ключевых кадров освещения и неба. */
+  private applyTod(tod: number) {
+    if (!this.baseFog) return;
+    let i = 0; while (i < TOD_KEYS.length - 2 && tod >= TOD_KEYS[i + 1][0]) i++;
+    const [t0, k0] = TOD_KEYS[i], [t1, k1] = TOD_KEYS[i + 1], f0 = Math.min(1, Math.max(0, (tod - t0) / (t1 - t0 || 1))), f = f0 * f0 * (3 - 2 * f0);
+    const A = LIGHT[k0], B = LIGHT[k1], fog = this.scene.fog as THREE.Fog, mix = (a: number, b: number) => a + (b - a) * f;
+    this.renderer.toneMappingExposure = mix(A.exp, B.exp);
+    this.sun.color.copy(new THREE.Color(A.sun).lerp(new THREE.Color(B.sun), f)); this.sun.intensity = mix(A.sunI, B.sunI); this.hemi.intensity = mix(A.hemi, B.hemi);
+    this.sunOff.set(mix(A.off[0], B.off[0]), mix(A.off[1], B.off[1]), mix(A.off[2], B.off[2]));
+    const base = new THREE.Color(this.baseFog.color), fc = (L: typeof A) => L.fogTo === null ? base.clone() : base.clone().lerp(new THREE.Color(L.fogTo), L.fogAmt);
+    const sa = SKY[k0] ?? SKY.clear, sb = SKY[k1] ?? SKY.clear, hor = new THREE.Color(sa.hor).lerp(new THREE.Color(sb.hor), f);
+    fog.color.copy(fc(A).lerp(fc(B), f)).lerp(hor, 0.55 * (1 - mix(A.night, B.night))); // дымка в цвет горизонта днём
+    fog.near = mix(A.near ?? this.baseFog.near, B.near ?? this.baseFog.near); fog.far = mix(A.far ?? this.baseFog.far, B.far ?? this.baseFog.far);
+    const u = this.skyU;
+    if (u) {
+      u.top.value.copy(new THREE.Color(sa.top).lerp(new THREE.Color(sb.top), f)); u.mid.value.copy(new THREE.Color(sa.mid).lerp(new THREE.Color(sb.mid), f)); u.hor.value.copy(hor);
+      u.sunCol.value.copy(new THREE.Color(sa.sun).lerp(new THREE.Color(sb.sun), f)); u.cloudCol.value.copy(new THREE.Color(sa.cc).lerp(new THREE.Color(sb.cc), f));
+      u.cloud.value = mix(sa.cloud, sb.cloud); u.stars.value = mix(sa.stars, sb.stars);
+      u.sunDir.value.set(mix(sa.dir[0], sb.dir[0]), mix(sa.dir[1], sb.dir[1]), mix(sa.dir[2], sb.dir[2]));
+    }
+    this.nightAmt = mix(A.night, B.night);
+    this.sun.shadow.intensity = 1 - 0.3 * this.nightAmt;
+    setWeatherVisuals(this.nightAmt, false);
+    if (this.torch) this.torch.intensity = 75 * Math.min(1, this.nightAmt * 1.3);
+  }
+  /** Реальный свет фонарей: несколько ближайших к камере зажигаются по ночам, у ближайшего — тень. */
+  private updateLampLights() {
+    const all: number[][] = []; for (const l of this.lampPos.values()) for (const p of l) all.push(p);
+    const t = this.controls.target, n = this.lampLights.length;
+    all.sort((a, b) => ((a[0] - t.x) ** 2 + (a[2] - t.z) ** 2) - ((b[0] - t.x) ** 2 + (b[2] - t.z) ** 2));
+    for (let i = 0; i < n; i++) { const p = all[i], L = this.lampLights[i]; if (p) { L.position.set(p[0] + 0.36, p[1] + 1.78, p[2]); L.intensity = 20 * this.nightAmt; } else L.intensity = 0; }
+  }
+
   private applyWeather() {
     const fog = this.scene.fog as THREE.Fog;
     if (!this.baseFog) this.baseFog = { color: fog.color.getHex(), near: fog.near, far: fog.far };
     const w = this.weatherOn ? this.getWeather() : 'clear';
-    setWeatherVisuals(w === 'night' || w === 'dusk', w === 'rain');
+    this.nightAmt = w === 'night' ? 1 : w === 'dusk' ? 0.3 : 0;
+    setWeatherVisuals(this.nightAmt, w === 'rain');
     if (this.skyU) { // небо по погоде: цвета, облака, звёзды, солнце или луна
-      const P: Record<string, { top: number; mid: number; hor: number; sun: number; cc: number; cloud: number; stars: number; dir: [number, number, number] }> = {
-        clear: { top: 0x2f6fc4, mid: 0x6fa8e0, hor: 0xbcd8ee, sun: 0xfff0c0, cc: 0xffffff, cloud: 0.55, stars: 0, dir: [0.5, 0.55, 0.3] },
-        dawn: { top: 0x3c5a98, mid: 0xd89a9a, hor: 0xffc08a, sun: 0xffa060, cc: 0xffd0b0, cloud: 0.5, stars: 0, dir: [0.9, 0.12, 0.1] },
-        dusk: { top: 0x24244e, mid: 0xa85c70, hor: 0xf08c50, sun: 0xff7040, cc: 0xe0a090, cloud: 0.5, stars: 0, dir: [-0.9, 0.1, 0.2] },
-        night: { top: 0x040818, mid: 0x0a1430, hor: 0x16223a, sun: 0x8aa6ff, cc: 0x1a2540, cloud: 0.25, stars: 1, dir: [-0.4, 0.55, -0.3] },
-        rain: { top: 0x545d69, mid: 0x76808a, hor: 0x939ca5, sun: 0x000000, cc: 0x6a727c, cloud: 1, stars: 0, dir: [0.5, 0.55, 0.3] },
-        fog: { top: 0xa0aaa7, mid: 0xa5afac, hor: 0xaab4b1, sun: 0x000000, cc: 0xb4bcb9, cloud: 0.1, stars: 0, dir: [0.5, 0.55, 0.3] },
-      };
-      const k = P[w] ?? P.clear, u = this.skyU;
+      const k = SKY[w] ?? SKY.clear, u = this.skyU;
       u.top.value.set(k.top); u.mid.value.set(k.mid); u.hor.value.set(k.hor); u.sunCol.value.set(k.sun); u.cloudCol.value.set(k.cc);
       u.cloud.value = k.cloud; u.stars.value = k.stars; u.sunDir.value.set(...k.dir);
     }
@@ -1534,6 +1605,12 @@ void main(){
     this.sun.position.set(this.state.size, 20, this.state.size * 0.2);
     this.sunOff.set(14, 30, 8); this.sun.shadow.intensity = 1;
     setAmbient(this.weatherOn ? (w === 'rain' ? 'rain' : this.state.biome === 'forest' ? 'wind' : this.state.biome === 'lake' ? 'water' : 'drone') : null);
+    if (this.state.todOn) { // смена суток: фонарик есть всегда, яркость задаёт applyTod
+      this.torch = new THREE.SpotLight(0xffe2b0, 0, 22, 0.55, 0.6, 1.2);
+      if (this.quality === 'high') { this.torch.castShadow = true; this.torch.shadow.mapSize.set(1024, 1024); this.torch.shadow.bias = -0.0006; this.torch.shadow.normalBias = 0.03; this.torch.shadow.radius = 4; }
+      this.scene.add(this.torch, this.torch.target);
+      this.applyTod(this.state.tod ?? 0.5);
+    }
     if (w === 'dawn') { this.sunOff.set(34, 11, 6); this.renderer.toneMappingExposure = 3.0; this.sun.color.set(0xffb070); this.sun.intensity = 1.8; this.sun.position.set(this.state.size, 6, this.state.size * 0.1); this.hemi.intensity = 1.0; fog.color.lerp(new THREE.Color(0xd9a07a), 0.45); }
     if (w === 'night') {
       this.sunOff.set(-12, 26, -10); this.sun.shadow.intensity = 0.7;
@@ -1699,6 +1776,7 @@ void main(){
 
   setQuality(q: 'high' | 'low', save = true) {
     this.quality = q;
+    this.lampLights.forEach((L, i) => { L.castShadow = q === 'high' && i === 0; }); if (this.torch) this.torch.castShadow = q === 'high'; // дорогие тени от света — только на высоком
     this.sun.shadow.mapSize.set(q === 'high' ? 2048 : 1024, q === 'high' ? 2048 : 1024);
     this.sun.shadow.map?.dispose();
     (this.sun.shadow as THREE.DirectionalLightShadow).map = null;

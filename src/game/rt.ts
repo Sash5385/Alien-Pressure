@@ -2,6 +2,7 @@ import { alienIter, planGroups, type AiHooks, type AiSt, type Grp } from './ai';
 import { bldgAt, climb, flOf, stairPos } from './floors';
 import { checkEnd, hitChance, humanPulse, isVisible, living, log, peekShot, peekTile, reload, shoot, type ShotResult, updateVision } from './combat';
 import { reinforce } from './mission';
+import { DAY_SECONDS } from './tod';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 import { WEAPONS } from './weapons';
@@ -151,6 +152,7 @@ export function rtTick(s: GameState, dt: number, hooks: RtHooks) {
   if (!rt || s.status !== 'playing') return;
   const d = rt.paused ? 0 : dt * rt.speed;
   rt.clock += d;
+  if (s.todOn) s.tod = (((s.tod0 ?? 0.45) + rt.clock / DAY_SECONDS) % 1 + 1) % 1; // время суток идёт вместе с миссией
   for (const u of living(s)) settle(u, d);
   if (d > 0) {
     // «ход»: волны, кровь, огонь, паника

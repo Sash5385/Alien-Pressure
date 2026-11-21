@@ -117,6 +117,7 @@ export interface GameState {
   raidUntil?: number; // время, к которому надо вынести добычу («Наліт») // сценарий «квартал»: штурм, удержание здания, заложник
   target?: number; // номер здания-цели
   captives?: { x: number; y: number; fl?: number; saved: boolean }[]; // полонённые (задание «Порятунок»)
+  todOn?: boolean; tod?: number; tod0?: number; // смена дня и ночи: время суток 0..1 (0 — полночь, 0.5 — полдень)
   upKills?: number; breaches?: number; // статистика для достижений
   locId?: number; // номер локации каталога
   roads?: { x: number; y: number; w: number; h: number }[]; // улицы населённых пунктов

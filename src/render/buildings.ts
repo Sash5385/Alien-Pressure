@@ -279,9 +279,10 @@ export function wallKey(sp: BuildingSpec, dx: number, dy: number): { side: Side;
 
 
 /** Ночью окна и фонари светятся; в дождь асфальт и стены мокрые и блестят. */
-export function setWeatherVisuals(night: boolean, wet: boolean) {
+export function setWeatherVisuals(nightIn: boolean | number, wet: boolean) {
+  const night = typeof nightIn === 'number' ? nightIn : nightIn ? 1 : 0;
   const m = materials() as Record<string, THREE.MeshStandardMaterial>;
-  m.lit.emissiveIntensity = night ? 2.2 : 0.0; m.lampHead.emissiveIntensity = night ? 3.0 : 0.15;
+  m.lit.emissiveIntensity = 2.2 * night; m.lampHead.emissiveIntensity = 0.15 + 2.85 * night;
   m.asphalt.roughness = wet ? 0.3 : 0.92; m.asphalt.color.set(wet ? 0x8a8a90 : 0xb8b8b8);
   for (const k of ['brick', 'plaster', 'concrete']) m[k].roughness = wet ? 0.62 : 0.92;
 }

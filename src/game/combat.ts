@@ -1,4 +1,5 @@
 import { bldgAt, coverAt, flOf } from './floors';
+import { nightAmount } from './tod';
 import { wallKey } from '../render/buildings';
 import type { GameState, LaunchKind, Stance, Unit } from './types';
 import { WEAPONS } from './weapons';
@@ -429,7 +430,9 @@ export function psiAttack(s: GameState, a: Unit, t: Unit): ShotResult {
 
 export const SIGHT = 12;
 /** Дальность зрения бойца: уночі 7 клеток, с ночным прицелом — 12. */
-export const sightOf = (s: GameState, u: Unit) => (s.weather === 'night' && !u.nvg ? 7 : SIGHT);
+/** Ночь сейчас: явная погода или тёмное время суток при смене дня и ночи. */
+export const isNight = (s: GameState) => s.todOn ? nightAmount(s.tod ?? 0.5) > 0.6 : s.weather === 'night';
+export const sightOf = (s: GameState, u: Unit) => (isNight(s) && !u.nvg ? 7 : SIGHT);
 
 /** Пересчёт зоны видимости бойцов (радиус + линия видимости) и карты исследованного. */
 const visMarks = new WeakMap<GameState, number[]>();
@@ -676,7 +679,7 @@ export const ALERT_SIGHT = 12;
 
 /** Пришелец видит бойца (радиус + линия видимости). */
 export const alienSees = (s: GameState, u: Unit) =>
-  living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= (s.weather === 'night' ? 8 : ALERT_SIGHT) && los(s, u, h));
+  living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= (isNight(s) ? 8 : ALERT_SIGHT) && los(s, u, h));
 
 /** Тревога: все непредупреждённые пришельцы в радиусе узнают о бойцах. Возвращает их id. */
 export function raiseAlert(s: GameState, x: number, y: number, radius: number): number[] {
