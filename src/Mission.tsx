@@ -13,8 +13,9 @@ import { clearBuilding, focusFire, holdAll, regroup } from './game/orders';
 import { maxLevel } from './render/buildings';
 import { todLabel } from './game/tod';
 import { weaponIcon } from './render/models';
+import { kickDoor, nearDoor, openQuiet } from './game/doors';
 import { setTension, startMusic, stopMusic } from './audio';
-import { BAG, bagUsed, canSwap, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
+import { BAG, bagUsed, canSwap, capOf, encumbrance, loadOf, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
@@ -418,6 +419,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const bi = sel && s.bldgs ? bldgAt(s, sel.x, sel.y) : -1, sf = sel ? flOf(sel) : 0, nfl = bi >= 0 ? maxLevel(s.bldgs![bi]) + 1 : 1;
   const goFloor = (dir: 1 | -1) => { if (!sel || bi < 0 || sel.down) return; const p = stairPos(s, bi, dir > 0 ? 'top' : 'bottom'); orderMove(sel, p.x, p.y, sf + dir); s.targetId = null; view.current?.syncUnits(); rerender(); };
   const act2 = (f: () => boolean) => { if (!sel || sel.down) return; if (f()) { sfx('select'); view.current?.syncUnits(); rerender(); } };
+  const doorNear = sel && s.bldgs ? nearDoor(s, sel) : undefined;
   const nearStash = sel && s.stash ? stashNear(s, sel) : undefined, wpnHere = sel ? weaponHere(s, sel) : undefined;
   const toggleLook = () => { s.lookMode = !s.lookMode; view.current?.syncUnits(); rerender(); };
   const bigL = it('◉', 'Засідка', '', false, !canOw, overwatch, 'Засідка (overwatch): боєць стоїть і стріляє по ворогу, що потрапив у поле зору');
@@ -428,6 +430,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     it('▤', 'Мішки', `${s.mats ?? 0}`, s.aiming === 'bags', !canBags, toggleBags, 'Мішки з піском: 1 AP і 1 матеріал, півукриття на клітинці до 2 кроків від бійця. Окіп теж коштує 1 матеріал'),
     it('✚', 'Бинт', `${s.medkits}`, false, !canBandage, heal, 'Перев’язка'),
     sel ? it('★', { assault: 'Придуш.', sniper: 'Снайп.', medic: 'Лікувати', engineer: 'Міна' }[sel.cls], abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, `${abilityLabel}: ${CLASSES[sel.cls].desc}`) : it('★', 'Вміння', '', false, true, () => {}),
+    ...(doorNear && sel ? [it('🚪', 'Відкрити', '', true, sel.ap <= 0, () => act2(() => openQuiet(s, sel)), 'Тихо відчинити двері (1 дія)'), it('🦶', 'Виламати', '70%', true, sel.ap <= 0, () => act2(() => { const r = kickDoor(s, sel); if (r) sfx('kick'); return r; }), 'Вибити двері: швидко, але гучно (чутно за 12 клітинок), 70% успіху')] : []),
     ...(nearStash && sel ? [it('📦', 'Обшук', '', true, sel.ap <= 0, () => act2(() => searchStash(s, sel)), 'Обшукати ящик поруч (1 дія)')] : []),
     ...(wpnHere && sel ? [it('🔫', 'Взяти', WEAPONS[wpnHere.w!].name.slice(0, 7), true, sel.ap <= 0, () => act2(() => takeWeapon(s, sel)), `Підняти: ${WEAPONS[wpnHere.w!].name}`)] : []),
     ...(sel?.sec ? [it('⇄', 'Зброя', WEAPONS[sel.sec].name.slice(0, 7), false, !canSwap(sel), () => act2(() => swapWeapons(s, sel)), 'Змінити зброю на запасну (1 дія)')] : []),
@@ -493,6 +496,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
             {sel.sec && <button style={{ ...nb(false, !canSwap(sel)), minHeight: 30 }} disabled={!canSwap(sel)} onClick={() => act2(() => swapWeapons(s, sel))}>⇄ Змінити зброю (1 дія)</button>}
           </div>
           <div>Рюкзак {bagUsed(sel)}/{BAG} · аптечок {s.medkits} · матеріалів {s.mats ?? 0}</div>
+          <div title="Перегруз сповільнює біг, швидше втомлює і псує влучність">Вага {loadOf(sel).toFixed(1)} / {capOf(sel)} кг{encumbrance(sel) > 0.05 ? ` · ${encumbrance(sel) > 0.6 ? 'ВАЖКО' : 'навантаження'}` : ''}
+            <div style={{ height: 6, borderRadius: 4, background: 'rgba(255,255,255,.15)', overflow: 'hidden', marginTop: 3 }}><div style={{ width: `${Math.min(100, loadOf(sel) / (capOf(sel) * 1.4) * 100)}%`, height: '100%', background: encumbrance(sel) > 0.6 ? '#ff5a4a' : encumbrance(sel) > 0.05 ? '#ffd34d' : '#6fe39a' }} /></div></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
             {Array.from({ length: BAG }, (_, i) => { const kind = i < sel.mags ? 'mag' : i < sel.mags + sel.grenades ? 'gren' : null; return (
               <button key={i} disabled={!kind} title={kind ? 'Передати сусідньому бійцю або викласти на землю' : 'Порожньо'} style={{ ...nb(false, !kind), minHeight: 40, minWidth: 0, padding: 0, fontSize: 18, borderStyle: kind ? 'solid' : 'dashed' }} onClick={() => kind && act2(() => giveItem(s, sel, kind))}>{kind === 'mag' ? '▮' : kind === 'gren' ? '✹' : ''}</button>); })}

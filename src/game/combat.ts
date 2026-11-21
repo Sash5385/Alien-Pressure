@@ -1,6 +1,7 @@
 import { bldgAt, coverAt, flOf } from './floors';
 import { nightAmount } from './tod';
-import { autoPickup, randomWeapon } from './inventory';
+import { openDoorAt } from './doors';
+import { autoPickup, encumbrance, randomWeapon } from './inventory';
 import { wallKey } from '../render/buildings';
 import type { GameState, LaunchKind, Stance, Unit, WeaponId } from './types';
 import { WEAPONS } from './weapons';
@@ -96,7 +97,7 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonu
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
-    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
+    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - Math.round(encumbrance(a) * 8) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
   return Math.round(Math.min(95, Math.max(5, c + (a.team === 'human' && isFlanked(s, a, t) ? 10 : 0))));
 }
 
@@ -576,6 +577,7 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
   // взрыв пробивает окна и стены первого этажа (кроме углов)
   if (fl === 0 && s.bldgs) for (let cy = Math.max(0, Math.floor(y - R)); cy <= Math.min(s.size - 1, Math.ceil(y + R)); cy++) for (let cx = Math.max(0, Math.floor(x - R)); cx <= Math.min(s.size - 1, Math.ceil(x + R)); cx++) {
     const lk = s.look[cy][cx], d = Math.hypot(cx - x, cy - y);
+    if (lk === 'door' && d <= Math.min(R, 1.9)) { if (openDoorAt(s, cx, cy, true)) broken.push({ x: cx, y: cy }); continue; } // взрыв выносит дверь
     if ((lk !== 'wall' && lk !== 'window') || d > Math.min(R, lk === 'window' ? 1.9 : 1.3)) continue;
     const bi = bldgAt(s, cx, cy); if (bi < 0) continue;
     const sp = s.bldgs[bi], k = wallKey(sp, cx - sp.x!, cy - sp.y!); if (!k) continue;

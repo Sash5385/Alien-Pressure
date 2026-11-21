@@ -543,7 +543,7 @@ function createHugeForest(o: MissionOpts): GameState {
           for (let yy = y - 1; yy <= y + dd && ok; yy++) for (let xx = x - 1; xx <= x + w && ok; xx++) if (bmask[yy][xx] || terrain[yy][xx] === 'water' || clear(xx, yy)) ok = false;
           if (ok) {
             const style = loc.styles[Math.floor(rand(rng) * loc.styles.length)];
-            const sp: BuildingSpec = { w, d: dd, floors: ri(loc.floors), style, roof: rand(rng) < loc.gable ? 'gable' : 'flat', damage: Math.min(1, Math.max(0, loc.damage + (rand(rng) - 0.5) * 0.4)), seed: Math.floor(rand(rng) * 1e6), id: bldgs.length, x, y };
+            const sp: BuildingSpec = { w, d: dd, floors: ri(loc.floors), style, door: rand(rng) < 0.6 ? 'closed' : 'open', roof: rand(rng) < loc.gable ? 'gable' : 'flat', damage: Math.min(1, Math.max(0, loc.damage + (rand(rng) - 0.5) * 0.4)), seed: Math.floor(rand(rng) * 1e6), id: bldgs.length, x, y };
             for (const f of footprint(sp)) { cover[y + f.dy][x + f.dx] = f.cover; look[y + f.dy][x + f.dx] = f.look as Look; height[y + f.dy][x + f.dx] = lo; }
             for (let yy = y - 1; yy <= y + dd; yy++) for (let xx = x - 1; xx <= x + w; xx++) bmask[yy][xx] = true;
             bldgs.push(sp);
@@ -680,7 +680,7 @@ function createHugeForest(o: MissionOpts): GameState {
     const cand = bldgs.map((b, i) => ({ b, i })).filter(e => e.b.floors >= 2).sort((a, c) => c.b.floors * c.b.w * c.b.d - a.b.floors * a.b.w * a.b.d)[0] ?? bldgs.map((b, i) => ({ b, i })).sort((a, c) => c.b.w * c.b.d - a.b.w * a.b.d)[0];
     if (cand) {
       targetIdx = cand.i; const tb = cand.b;
-      tb.damage = Math.min(tb.damage ?? 0, 0.12); tb.roof = 'flat';
+      tb.damage = Math.min(tb.damage ?? 0, 0.12); tb.roof = 'flat'; tb.door = scn === 'ambush' ? 'open' : 'closed';
       for (const f of footprint(tb)) { cover[tb.y! + f.dy][tb.x! + f.dx] = f.cover; look[tb.y! + f.dy][tb.x! + f.dx] = f.look as Look; }
       const taken = (x: number, y: number) => aliens.some(a => a.x === x && a.y === y && (a.fl ?? 0) === curF) || humans.some(h => h.x === x && h.y === y);
       let curF = 0;

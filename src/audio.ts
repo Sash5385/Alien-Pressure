@@ -2,7 +2,7 @@
 export type Sfx =
   | 'alert' | 'throw' | 'pin' | 'grenade' | 'shot' | 'alienShot' | 'hit' | 'miss' | 'psi' | 'death' | 'panic'
   | 'reload' | 'click' | 'select' | 'step' | 'dig' | 'heal' | 'bandage' | 'stance' | 'stanceProne' | 'roll' | 'emerge' | 'mine' | 'charge'
-  | 'radio' | 'launcher' | 'mortar' | 'overwatch' | 'fire' | 'collapse' | 'splash' | 'crumble' | 'wound' | 'turnPlayer' | 'turnEnemy' | 'win' | 'lose';
+  | 'kick' | 'radio' | 'launcher' | 'mortar' | 'overwatch' | 'fire' | 'collapse' | 'splash' | 'crumble' | 'wound' | 'turnPlayer' | 'turnEnemy' | 'win' | 'lose';
 
 export interface SfxOpts { vol?: number; pitch?: number; variant?: string }
 
@@ -137,6 +137,7 @@ export function sfx(kind: Sfx, o: SfxOpts = {}) {
       else if (o.variant === 'grass') { noise(c, t, 0.09, 0.14, 'bandpass', 2400 + Math.random() * 800); noise(c, t, 0.05, 0.12, 'lowpass', 350); }
       else { noise(c, t, 0.07, 0.22, 'lowpass', 450 + Math.random() * 300); tone(c, t, 0.07, 120, 62, 0.16); }
       break;
+    case 'kick': tone(c, t, 0.12, 140, 50, 0.5); noise(c, t, 0.1, 0.5, 'lowpass', 900); noise(c, t + 0.03, 0.22, 0.3, 'bandpass', 1200); pops(c, t + 0.05, 4, 0.2, 0.2, 600, 1600); break; // удар по двери, треск
     case 'radio': noise(c, t, 0.05, 0.16, 'highpass', 3000); tone(c, t + 0.05, 0.07, 1300, 1300, 0.06, 'square'); noise(c, t + 0.16, 0.3, 0.05, 'bandpass', 1800); tone(c, t + 0.5, 0.05, 900, 700, 0.05, 'square'); break; // треск рации
     // окапывание: три взмаха лопаты по земле и глухой удар
     case 'dig':

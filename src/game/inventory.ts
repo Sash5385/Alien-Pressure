@@ -1,6 +1,6 @@
 // Инвентарь бойца: оружие на ремне, рюкзак на BAG слотов (магазины и гранаты), лут, ящики.
 import { living, log } from './combat';
-import { WEAPONS } from './weapons';
+import { ARMORS, WEAPONS } from './weapons';
 import type { GameState, Loot, LootKind, Stash, Unit, WeaponId } from './types';
 
 export const BAG = 10;
@@ -9,6 +9,13 @@ export const bagFree = (u: Unit) => Math.max(0, BAG - bagUsed(u));
 export const WEAPON_ICON: Record<LootKind, string> = { mag: '▮', gren: '✹', mat: '▤', kit: '✚', wpn: '🔫' };
 export const LOOT_NAME: Record<LootKind, string> = { mag: 'магазин', gren: 'граната', mat: 'матеріали', kit: 'аптечка', wpn: 'зброя' };
 const rnd = (s: { rng: number }) => { s.rng = (Math.imul(s.rng ^ (s.rng >>> 15), 2246822507) + 0x9e3779b9) >>> 0; return (s.rng >>> 8) / 16777216; };
+
+/** Вес снаряжения, кг: оружие, броня, магазины, гранаты, рюкзак. */
+export const loadOf = (u: Unit) => WEAPONS[u.weapon].kg + (u.sec ? WEAPONS[u.sec].kg : 0) + ARMORS[u.armor].kg + u.mags * 0.7 + u.grenades * 0.5 + 1.5;
+/** Сколько можно нести без перегруза. */
+export const capOf = (u: Unit) => 16 + (u.cls === 'engineer' ? 2 : 0) + ((u.traits as string[]).includes('tough') ? 2 : 0);
+/** Перегруз 0..1: 0 — налегке, 1 — тяжело (скорость и выносливость падают, меткость хуже). */
+export const encumbrance = (u: Unit) => u.team === 'human' ? Math.min(1, Math.max(0, (loadOf(u) - capOf(u) * 0.8) / (capOf(u) * 0.6))) : 0;
 
 /** Переключить основное оружие на указанное (поправки к характеристикам, магазин сохраняется у оружия). */
 function setPrimary(u: Unit, id: WeaponId, ammo: number) {
@@ -40,8 +47,8 @@ export function autoPickup(s: GameState, u: Unit) {
     if (l.kind === 'wpn') continue;
     if (l.kind === 'mat') { s.mats = (s.mats ?? 0) + 2 * l.n; log(s, `${u.name} находит материалы (+${2 * l.n}).`); remove(s, l); continue; }
     if (l.kind === 'kit') { s.medkits += l.n; log(s, `${u.name} находит аптечку.`); remove(s, l); continue; }
-    const take = Math.min(l.n, bagFree(u));
-    if (take <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: рюкзак полон (${BAG}/${BAG}).`); } continue; }
+    const take = Math.min(l.n, bagFree(u), Math.floor(Math.max(0, capOf(u) * 1.4 - loadOf(u)) / (l.kind === 'mag' ? 0.7 : 0.5)));
+    if (take <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: не унести — ${bagFree(u) <= 0 ? `рюкзак полон (${BAG}/${BAG})` : 'слишком тяжело'}.`); } continue; }
     if (l.kind === 'mag') u.mags += take; else u.grenades += take;
     log(s, `${u.name} берёт: ${LOOT_NAME[l.kind]}${take > 1 ? ` ×${take}` : ''}.`);
     l.n -= take; if (l.n <= 0) remove(s, l);

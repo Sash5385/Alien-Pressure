@@ -1,4 +1,5 @@
 import { bldgAt, flOf } from './floors';
+import { openDoorAt } from './doors';
 import { alienSees, blast, canPsi, faceToward, GRENADE_RANGE, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
@@ -23,7 +24,7 @@ async function patrol(s: GameState, u: Unit, h: AiHooks) {
   if (!cands.length) return;
   const [tx, ty] = cands[Math.floor(rand(s) * cands.length)];
   for (const [x, y] of findPath(s, u.x, u.y, tx, ty, u.move)) {
-    u.x = x; u.y = y;
+    u.x = x; u.y = y; openDoorAt(s, x, y);
     await h.moved(u);
     const mr = triggerMine(s, u);
     if (mr) await h.blast?.(mr);
@@ -118,7 +119,7 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
   const walk = async (spot: [number, number]) => {
     if ((u.fl ?? 0) > 0 || u.static) return; // на верхних этажах и турели пришельцы не ходят: держат позицию
     for (const [x, y] of findPath(s, u.x, u.y, spot[0], spot[1], u.move)) {
-      u.x = x; u.y = y;
+      u.x = x; u.y = y; openDoorAt(s, x, y);
       await h.moved(u);
       const mr = triggerMine(s, u);
       if (mr) await h.blast?.(mr);

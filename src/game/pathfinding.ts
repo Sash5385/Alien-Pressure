@@ -26,7 +26,7 @@ function bfs(s: GameState, sx: number, sy: number, range: number, fl = 0) {
       if (li < 0 || li >= W * W || nx < ox || nx >= ox + W || dist[li] >= 0) continue;
       if (fl > 0) { if (bldgAt(s, nx, ny) !== bi || coverAt(s, nx, ny, fl) !== 'none') continue; } // этаж: только внутри здания
       else { if (Math.abs(s.height[ny][nx] - h0) > 1) continue; // обрыв
-        if (s.cover[ny][nx] !== 'none' || s.terrain[ny][nx] === 'water') continue; }
+        if ((s.cover[ny][nx] !== 'none' && s.look[ny][nx] !== 'door') || s.terrain[ny][nx] === 'water') continue; } // закрытую дверь можно пройти — она откроется
       const key = ny * n + nx;
       if (fire.has(key) || occ.has(key)) continue;
       dist[li] = d + 1; prev[li] = i; q[tail++] = li;

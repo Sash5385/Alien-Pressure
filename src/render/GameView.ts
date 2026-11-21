@@ -18,6 +18,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { reachable, findPath } from '../game/pathfinding';
 import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
 import { bldgAt, coverAt, flOf } from '../game/floors';
+import { encumbrance } from '../game/inventory';
 
 let TS = 1; // масштаб времени (реальный режим: ×0.5 / ×1)
 export const setTimeScale = (x: number) => { TS = x; };
@@ -35,7 +36,7 @@ const vnoise = (x: number, y: number) => {
 };
 const CRAWL = 1.1; // ползком лёжа
 const ROLLING = new Set<number>(); // бойцы в перекате: движутся быстро
-const speedOf = (u?: Unit) => (u && ROLLING.has(u.id) ? 7.5 : u?.team === 'alien' ? ALIEN_SPEED : u?.stance === 'prone' ? CRAWL : u?.stance === 'kneel' ? 1.9 : SPEED);
+const speedOf = (u?: Unit) => (u && ROLLING.has(u.id) ? 7.5 : u?.team === 'alien' ? ALIEN_SPEED : u?.stance === 'prone' ? CRAWL : u?.stance === 'kneel' ? 1.9 : SPEED * (1 - 0.3 * (u ? encumbrance(u) : 0)));
 
 interface Float { sprite: THREE.Sprite; t: number }
 export type Weather = 'clear' | 'rain' | 'fog' | 'dusk' | 'dawn' | 'night';

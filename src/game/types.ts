@@ -6,7 +6,7 @@ export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'launcher' | 'mo
 export type LaunchKind = 'ugl' | 'launcher' | 'mortar' | 'ags';
 export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
-export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container' | 'bags' | 'wall' | 'window' | 'car';
+export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container' | 'bags' | 'wall' | 'window' | 'car' | 'door';
 export type LootKind = 'mag' | 'gren' | 'mat' | 'kit' | 'wpn';
 export interface Loot { x: number; y: number; kind: LootKind; n: number; raid?: boolean; w?: WeaponId; ammo?: number; warn?: boolean }
 export interface Stash { x: number; y: number; opened: boolean; items: { kind: LootKind; n: number; w?: WeaponId; ammo?: number }[]; big?: boolean }

@@ -8,6 +8,7 @@ export type BuildingSpec = {
   roof?: 'flat' | 'gable';
   damage?: number; // 0..1 — доля выбитых стен/окон наверху
   seed?: number;
+  door?: 'closed' | 'open' | 'broken'; // состояние входной двери
   broken?: string[]; rev?: number; // пробитые стены ('этаж+сторона+номер') и счётчик перестройки
   id?: number; x?: number; y?: number; // положение на карте (клетки)
 };
@@ -115,7 +116,7 @@ const kindCover = (k: CellKind) => (k === 'solid' ? 'full' : k === 'window' ? 'h
 export function tileCover(sp: BuildingSpec, dx: number, dy: number, f: number): 'none' | 'half' | 'full' {
   const { w, d } = sp;
   if (f >= sp.floors) return f === sp.floors && roofAccess(sp) && (dx === 0 || dy === 0 || dx === w - 1 || dy === d - 1) ? 'half' : 'none';
-  if (dy === d - 1) return kindCover(cellKind(sp, 'F', dx, f));
+  if (dy === d - 1) { const k = cellKind(sp, 'F', dx, f); return k === 'door' && f === 0 && sp.door === 'closed' ? 'full' : kindCover(k); }
   if (dy === 0) return kindCover(cellKind(sp, 'B', dx, f));
   if (dx === 0) return kindCover(cellKind(sp, 'L', dy, f));
   if (dx === w - 1) return kindCover(cellKind(sp, 'R', dy, f));
@@ -129,11 +130,11 @@ export function stairTiles(sp: BuildingSpec) {
 }
 
 /** Клетки основания (этаж 0): укрытия и вид. dx,dy — от угла здания. */
-export function footprint(sp: BuildingSpec): { dx: number; dy: number; cover: 'none' | 'half' | 'full'; look: 'wall' | 'window' | '' }[] {
-  const out: { dx: number; dy: number; cover: 'none' | 'half' | 'full'; look: 'wall' | 'window' | '' }[] = [];
+export function footprint(sp: BuildingSpec): { dx: number; dy: number; cover: 'none' | 'half' | 'full'; look: 'wall' | 'window' | 'door' | '' }[] {
+  const out: { dx: number; dy: number; cover: 'none' | 'half' | 'full'; look: 'wall' | 'window' | 'door' | '' }[] = [];
   for (let dy = 0; dy < sp.d; dy++) for (let dx = 0; dx < sp.w; dx++) {
-    const c = tileCover(sp, dx, dy, 0);
-    out.push({ dx, dy, cover: c, look: c === 'full' ? 'wall' : c === 'half' ? 'window' : '' });
+    const c = tileCover(sp, dx, dy, 0), isDoor = dy === sp.d - 1 && cellKind(sp, 'F', dx, 0) === 'door';
+    out.push({ dx, dy, cover: c, look: c === 'full' ? (isDoor ? 'door' : 'wall') : c === 'half' ? 'window' : '' });
   }
   return out;
 }
@@ -183,7 +184,13 @@ export function buildBuilding(spec: BuildingSpec): BuildingObj {
           P.frame.box(cc - 0.45, y0 + 0.07, d, cc - 0.4, y0 + 0.4, d + 0.4); P.frame.box(cc + 0.4, y0 + 0.07, d, cc + 0.45, y0 + 0.4, d + 0.4);
         }
       }
-      if (isDoor) { B(P.frame, ox0 - fr, oy0, ox0, oy1); B(P.frame, ox1, oy0, ox1 + fr, oy1); B(P.frame, ox0 - fr, oy1, ox1 + fr, oy1 + fr); }
+      if (isDoor) {
+        B(P.frame, ox0 - fr, oy0, ox0, oy1); B(P.frame, ox1, oy0, ox1 + fr, oy1); B(P.frame, ox0 - fr, oy1, ox1 + fr, oy1 + fr);
+        const dw = ox1 - ox0, st = spec.door ?? 'open';
+        if (st === 'closed') { B(P.frame, ox0, oy0, ox1, oy1); P.trim.box(cc + dw * 0.28, oy0 + (oy1 - oy0) * 0.45, d + 0.02, cc + dw * 0.38, oy0 + (oy1 - oy0) * 0.5, d + 0.07); } // полотно и ручка
+        else if (st === 'open') P.frame.box(ox0 - 0.02, oy0, d, ox0 + 0.03, oy1, d + dw); // створка распахнута наружу
+        else { P.frame.box(ox0, oy0, d + 0.05, ox1, oy0 + 0.05, d + dw * 0.9); P.frame.box(ox0, oy0, t0, ox0 + 0.07, oy0 + (oy1 - oy0) * 0.6, t1 - 0.12); } // выбитая дверь лежит, на петле остаток
+      }
       else {
         B(P.frame, ox0, oy0, ox1, oy0 + fr); B(P.frame, ox0, oy1 - fr, ox1, oy1); B(P.frame, ox0, oy0, ox0 + fr, oy1); B(P.frame, ox1 - fr, oy0, ox1, oy1);
         const cx = cc, cy = (oy0 + oy1) / 2;
