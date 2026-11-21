@@ -44,6 +44,9 @@ export const OBJECTIVE_NAME: Record<Objective, string> = {
   assassinate: 'Ліквідація',
   sabotage: 'Диверсія',
   rescue: 'Порятунок',
+  storm: 'Штурм будівлі',
+  holdbld: 'Утримання будівлі',
+  hostage: 'Заручник',
 };
 
 export const MAX_ROSTER = 6;
@@ -149,7 +152,7 @@ export function buy(c: Campaign, key: keyof Tech): string | null {
 }
 
 /** Итоги миссии: раны остаются, павшие уходят в мемориал, победа даёт трофеи. */
-const OBJS = ['clear', 'extract', 'hold', 'assassinate', 'sabotage', 'defend'] as const;
+const OBJS = ['clear', 'extract', 'hold', 'assassinate', 'sabotage', 'defend', 'storm', 'holdbld', 'hostage'] as const;
 
 /** Карта операций: 3 разных задания; каждая 5-я миссия — босс (единственный вариант). */
 export function pickOptions(c: Campaign): MissionOption[] {

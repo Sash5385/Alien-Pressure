@@ -358,7 +358,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     ? `${sel.name} · HP ${sel.hp}/${sel.maxHp} · ${s.rt ? ((sel.cd ?? 0) > 0 ? `чекає ${(sel.cd ?? 0).toFixed(1)} с` : 'готовий') : `AP ${sel.ap}/${sel.maxAp}`} · мораль ${sel.morale}${sel.overwatch ? ' · засідка' : ''}${sel.bleeding ? ' · кровотеча' : ''}${sel.fracture ? ' · перелом' : ''}${sel.panic ? ' · ПАНІКА' : ''}${sel.down ? ` · ВАЖКО ПОРАНЕНИЙ (${sel.bleedOut ?? 3} ходи)` : ''}`
     : 'Обери бійця';
   const cmd = s.units.find(u => u.kind === 'commander' && u.hp > 0);
-  const goal = {
+  const goal = s.scn === 'storm' ? `штурм: ворогів ${living(s, 'alien').filter(a => (a.grp ?? 0) < 500).length}` : {
     clear: 'зачистка',
     extract: 'евакуація: усі в зелену зону',
     hold: `утримання ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`,
@@ -366,10 +366,11 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     assassinate: cmd ? `вбити командира (HP ${cmd.hp}/${cmd.maxHp})` : 'командира вбито',
     sabotage: `маяки ${s.beacons.filter(b => b.done).length}/${s.beacons.length}`,
     rescue: `полонені ${s.captives?.filter(c => c.saved).length ?? 0}/${s.captives?.length ?? 0}`,
-  }[s.objective];
+    storm: '', holdbld: '', hostage: '',
+  }[s.objective] || (s.scn === 'storm' ? `штурм: ворогів ${living(s, 'alien').filter(a => (a.grp ?? 0) < 500).length}` : s.scn === 'hostage' ? `заручник ${s.captives?.filter(c => c.saved).length ?? 0}/1` : s.scn === 'holdbld' ? `утримання будівлі ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}` : '');
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
   const campHint = (() => {
-    if (!s.huge) return '';
+    if (!s.huge || s.scn) return '';
     const hs = living(s, 'human');
     if (!hs.length) return '';
     const cx = hs.reduce((a, h) => a + h.x, 0) / hs.length, cy = hs.reduce((a, h) => a + h.y, 0) / hs.length;

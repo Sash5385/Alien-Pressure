@@ -11,7 +11,7 @@ export interface House { x: number; y: number; w: number; h: number; id: number;
 export type Stance = 'stand' | 'kneel' | 'prone';
 export type Biome = 'ruins' | 'forest' | 'lake';
 export type Terrain = 'ground' | 'water';
-export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage' | 'defend' | 'rescue';
+export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage' | 'defend' | 'rescue' | 'storm' | 'holdbld' | 'hostage';
 export type PerkId = 'aim' | 'hp' | 'nerve';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface Tech { armor: boolean; optics: boolean; kits: boolean; grenades: boolean }
@@ -109,7 +109,9 @@ export interface GameState {
   height: number[][]; // уровень рельефа 0–3: подъём на 1 проходим, обрыв (2+) — нет
   look: Look[][]; // вид укрытия (дерево, камень, дом…)
   houses: House[];
-  captives?: { x: number; y: number; saved: boolean }[]; // полонённые (задание «Порятунок»)
+  scn?: 'storm' | 'holdbld' | 'hostage'; // сценарий «квартал»: штурм, удержание здания, заложник
+  target?: number; // номер здания-цели
+  captives?: { x: number; y: number; fl?: number; saved: boolean }[]; // полонённые (задание «Порятунок»)
   upKills?: number; breaches?: number; // статистика для достижений
   locId?: number; // номер локации каталога
   roads?: { x: number; y: number; w: number; h: number }[]; // улицы населённых пунктов

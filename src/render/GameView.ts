@@ -133,6 +133,7 @@ export class GameView {
     this.camera.position.set(n / 2, 16, n - 1); // сначала смотрим на точку высадки (юг карты)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.set(n / 2, 0, n - 13);
+    if (state.scn) { const hs = state.units.filter(u => u.team === 'human'), cx = hs.reduce((a, u) => a + u.x, 0) / (hs.length || 1) + 0.5, cz = hs.reduce((a, u) => a + u.y, 0) / (hs.length || 1) + 0.5; this.controls.target.set(cx, 0, cz); this.camera.position.set(cx, 15, cz + 12); } // квартал: смотрим на отряд
     this.controls.maxPolarAngle = Math.PI / 2.2;
     this.controls.minDistance = 6;
     this.controls.maxDistance = 64;
@@ -493,7 +494,7 @@ export class GameView {
       const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.5, 4, 8), mat); body.position.y = 0.5;
       const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd9b48f })); head.position.y = 1.05;
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.5, 20), new THREE.MeshBasicMaterial({ color: 0xffd34d, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
-      g.add(body, head, ring); g.position.set(c.x + 0.5, this.hy(c.x, c.y), c.y + 0.5); this.scene.add(g); this.capMeshes.set(k, g);
+      g.add(body, head, ring); g.position.set(c.x + 0.5, this.hy(c.x, c.y) + (c.fl ? c.fl * STOREY + 0.1 : 0), c.y + 0.5); this.scene.add(g); this.capMeshes.set(k, g);
     }
   }
 
