@@ -107,7 +107,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             const on = c.objective === o.objective && c.biome === o.biome && c.boss === o.boss && c.risky === o.risky && (c.variant ?? 0) === (o.variant ?? 0);
             return (
               <button key={i} onClick={() => act(x => chooseOption(x, i))} style={{ ...btn(on), padding: '10px 8px', display: 'grid', gap: 3, justifyItems: 'center', textAlign: 'center', fontSize: 12 }}>
-                <span style={{ fontSize: 22 }}>{o.boss ? '☠' : { clear: '⚔', extract: '🚁', hold: '🛡', defend: '🏠', assassinate: '🎯', sabotage: '💣', rescue: '🆘', storm: '🏢', holdbld: '🏚', hostage: '🔑' }[o.objective]}</span>
+                <span style={{ fontSize: 22 }}>{o.boss ? '☠' : { clear: '⚔', extract: '🚁', hold: '🛡', defend: '🏠', assassinate: '🎯', sabotage: '💣', rescue: '🆘', storm: '🏢', holdbld: '🏚', hostage: '🔑', bomb: '🧨', counter: '🔭', escort: '🚁', ambush: '🚛', raid: '📦' }[o.objective]}</span>
                 <b style={{ fontSize: 13 }}>{o.boss ? 'Бос: Тиран' : o.objective === 'defend' ? `Оборона: ${DEFEND_KINDS[o.variant ?? 0].name}` : OBJECTIVE_NAME[o.objective]}</b>
                 <span style={{ opacity: 0.75 }}>{BIOME_NAME[o.biome]}</span>
                 <span style={{ color: NM.accent }}>{o.boss ? 'нагорода +4' : o.risky ? 'ризик: +2 вороги, нагорода +3' : 'стандарт'}</span>

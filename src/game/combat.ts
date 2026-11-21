@@ -212,11 +212,39 @@ export function checkEnd(s: GameState) {
   const humans = living(s, 'human');
   if (humans.length === 0) { s.status = 'lost'; return; }
   const z = s.zone;
+  const clock = s.rt?.clock ?? 0;
+  if (s.scn === 'bomb') { // заряд: после закладки — запал; кто в радиусе 6 при взрыве, гибнет
+    if (!s.fuse) return;
+    if (clock < s.fuse.at) return;
+    const f = s.fuse; s.fuse = undefined;
+    for (const h of humans) if (Math.hypot(h.x - f.x, h.y - f.y) <= 6) { h.hp = 0; log(s, `${h.name} загинув у вибуху.`); }
+    for (const a of living(s, 'alien')) if (Math.hypot(a.x - f.x, a.y - f.y) <= 6) a.hp = 0;
+    log(s, 'Будівля підірвана!'); (s.noise ??= []).push({ x: f.x, y: f.y, r: 30 });
+    s.status = living(s, 'human').length ? 'won' : 'lost'; return;
+  }
+  if (s.scn === 'raid') {
+    if (!(s.loot ?? []).some(l => l.raid)) { s.status = 'won'; return; }
+    if (s.raidUntil !== undefined && clock >= s.raidUntil) { log(s, 'Час вийшов — склад не винесено!'); s.status = 'lost'; }
+    return;
+  }
+  if (s.scn === 'ambush') {
+    const ex = s.exitPt;
+    if (ex && living(s, 'alien').some(a => Math.hypot(a.x - ex.x, a.y - ex.y) <= 2.5)) { log(s, 'Колона прорвалася!'); s.status = 'lost'; return; }
+    if (!living(s, 'alien').length) s.status = 'won';
+    return;
+  }
+  if (s.objective === 'extract' && z && s.scn === 'escort') { if (humans.every(h => h.x >= z.x && h.x < z.x + z.w && h.y >= z.y && h.y < z.y + z.h)) s.status = 'won'; return; }
   if (s.objective === 'hold' || s.objective === 'defend') { if (s.turnNo > s.holdTurns) s.status = 'won'; return; }
   if (s.objective === 'assassinate') { if (!living(s, 'alien').some(a => a.kind === 'commander')) s.status = 'won'; return; }
   if (s.objective === 'rescue' && s.captives) {
     for (const c of s.captives) if (!c.saved && humans.some(h => Math.hypot(h.x - c.x, h.y - c.y) <= 1.6 && flOf(h) === (c.fl ?? 0))) { c.saved = true; s.mats = (s.mats ?? 0) + 2; log(s, `Полоненого звільнено! (${s.captives.filter(q => q.saved).length}/${s.captives.length})`); }
-    if (s.captives.every(c => c.saved)) s.status = 'won';
+    if (s.captives.every(c => c.saved)) {
+      if (s.scn === 'escort') { // бранця звільнено: тривога, і всім до точки евакуації
+        s.objective = 'extract'; s.zone = { x: (s.size >> 1) - 5, y: s.size - 9, w: 10, h: 6 };
+        for (const a of living(s, 'alien')) { a.alert = true; a.dormant = false; }
+        log(s, 'Бранця звільнено! Тривога! Усім до точки евакуації (зелена зона на півдні).');
+      } else s.status = 'won';
+    }
     return;
   }
   if (s.objective === 'sabotage') { if (s.beacons.length > 0 && s.beacons.every(b => b.done)) s.status = 'won'; return; }
@@ -625,7 +653,7 @@ export function launch(s: GameState, u: Unit, x: number, y: number, kind: Launch
 }
 
 export const nearBeacon = (s: GameState, u: Unit) =>
-  s.beacons.find(b => !b.done && Math.max(Math.abs(b.x - u.x), Math.abs(b.y - u.y)) <= 1);
+  s.beacons.find(b => !b.done && Math.max(Math.abs(b.x - u.x), Math.abs(b.y - u.y)) <= 1 && (b.fl ?? 0) === flOf(u));
 
 /** Заряд на маяк: 1 AP и 1 граната; маяк разрушается. */
 export function placeCharge(s: GameState, u: Unit): { x: number; y: number } | null {
@@ -635,9 +663,10 @@ export function placeCharge(s: GameState, u: Unit): { x: number; y: number } | n
   u.grenades -= 1;
   u.overwatch = false;
   b.done = true;
-  s.cover[b.y][b.x] = 'none';
+  if (!b.fl) s.cover[b.y][b.x] = 'none';
   faceToward(u, b.x, b.y);
-  log(s, `${u.name} підриває маяк (${s.beacons.filter(x => x.done).length}/${s.beacons.length}).`);
+  if (s.scn === 'bomb') { s.fuse = { x: b.x, y: b.y, fl: b.fl ?? 0, at: (s.rt?.clock ?? 0) + 25 }; log(s, `${u.name} закладає заряд! Вибух через 25 с — усі геть із будівлі (6+ клітинок)!`); }
+  else log(s, `${u.name} підриває маяк (${s.beacons.filter(x => x.done).length}/${s.beacons.length}).`);
   raiseAlert(s, b.x, b.y, 12);
   checkEnd(s);
   return { x: b.x, y: b.y };

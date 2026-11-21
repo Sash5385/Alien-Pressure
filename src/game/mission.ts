@@ -3,10 +3,11 @@ import { BIOME_NAME, DIFF } from './difficulty';
 import { applyTraits, shuffle } from './traits';
 import { ARMORS, WEAPONS } from './weapons';
 import { LOCATIONS } from './locations';
-import { footprint, stairTiles, tileCover, type BuildingSpec } from '../render/buildings';
+import { footprint, roofAccess, stairTiles, tileCover, type BuildingSpec } from '../render/buildings';
 import type { Biome, Cover, Difficulty, GameState, House, Look, Objective, Soldier, Tech, Terrain, Unit } from './types';
 
 export const MAP_SIZE = 44;
+const SCN: string[] = ['storm', 'holdbld', 'hostage', 'bomb', 'counter', 'escort', 'ambush', 'raid'];
 export const HOLD_TURNS = 6;
 export const DEFEND_TURNS = 10;
 export const HUMAN_AP = 3;
@@ -286,7 +287,7 @@ function fortify(g: Grids, n: number, kind: typeof DEFEND_KINDS[number]['geo'], 
 
 export function createMission(o: MissionOpts): GameState {
   if (o.objective === 'rescue') o = { ...o, objective: 'clear' }; // «Порятунок» — лише локації великих карт
-  if (o.objective === 'storm' || o.objective === 'holdbld' || o.objective === 'hostage') return createHugeForest({ ...o, size: 96 }); // сценарий «квартал»
+  if (SCN.includes(o.objective)) return createHugeForest({ ...o, size: 96 }); // сценарий «квартал»
   if ((o.size ?? 0) >= 256) return createHugeForest(o);
   const rng = { rng: o.rng };
   const n = o.size ?? MAP_SIZE, cx = n >> 1;
@@ -389,7 +390,7 @@ export function createMission(o: MissionOpts): GameState {
   const brief = {
     clear: 'Ціль: знищити всіх прибульців.',
     rescue: 'Ціль: звільнити полонених.',
-    storm: '', holdbld: '', hostage: '',
+    storm: '', holdbld: '', hostage: '', bomb: '', counter: '', escort: '', ambush: '', raid: '',
     extract: 'Ціль: евакуація — усі вцілілі бійці мають дійти до зеленої зони.',
     hold: `Ціль: протриматися ${HOLD_TURNS} ходів. Прибульці отримують підкріплення.`,
     assassinate: o.boss ? 'БОС: убий Тирана (багато HP, броня −1 шкоди, свита з важким). Його позначено червоним кільцем.' : 'Ціль: вбити командира прибульців (його позначено червоним кільцем, і він видимий завжди).',
@@ -488,7 +489,7 @@ function innerSpot(b: BuildingSpec, f: number, taken: (x: number, y: number) => 
 
 function createHugeForest(o: MissionOpts): GameState {
   const n = o.size!, seed = o.rng & 0xffff, rng = { rng: o.rng };
-  const scn = o.objective === 'storm' || o.objective === 'holdbld' || o.objective === 'hostage' ? o.objective : undefined;
+  const scn = SCN.includes(o.objective) ? o.objective as NonNullable<GameState['scn']> : undefined;
   let loc = LOCATIONS[((o.loc ?? 0) % LOCATIONS.length + LOCATIONS.length) % LOCATIONS.length];
   if (scn) { const L = LOCATIONS[[5, 6, 7, 8, 10, 11, 15, 16, 17, 45, 46, 47][(o.rng >>> 3) % 12]]; loc = { ...L, radius: 17, fill: 0.88, floors: [2, 3], towns: 1, forest: Math.min(L.forest, 0.4), water: 0.02, weather: L.weather ?? (o.missionNo % 3 === 0 ? 'dusk' : undefined) }; }
   const cover: Cover[][] = grid(n, 'none' as Cover), terrain: Terrain[][] = grid(n, 'ground' as Terrain), look: Look[][] = grid(n, '' as Look), height: number[][] = grid(n, 0);
@@ -666,11 +667,12 @@ function createHugeForest(o: MissionOpts): GameState {
     return [c.x, c.y];
   };
   const captives: { x: number; y: number; fl?: number; saved: boolean }[] = [];
-  const hugeBeacons: { x: number; y: number; done: boolean }[] = [];
+  const hugeBeacons: { x: number; y: number; done: boolean; fl?: number }[] = [];
   if (loc.obj === 'rescue') camps.slice(1, 4).forEach(c => { const [x, y] = campSpot(c); captives.push({ x, y, saved: false }); });
   if (loc.obj === 'sabotage') camps.slice(1, 4).forEach(c => { const [x, y] = campSpot(c); hugeBeacons.push({ x, y, done: false }); });
   // ——— сценарий «квартал»: одно здание-цель, всё остальное — вокруг ———
   let objectiveOut: Objective = loc.obj === 'clear' ? 'clear' : loc.obj, holdTurnsOut = HOLD_TURNS, targetIdx: number | undefined;
+  let exitOut: { x: number; y: number } | undefined, raidOut: number | undefined;
   if (scn) {
     aliens.length = 0; captives.length = 0; hugeBeacons.length = 0; loot.length = 0;
     const cand = bldgs.map((b, i) => ({ b, i })).filter(e => e.b.floors >= 2).sort((a, c) => c.b.floors * c.b.w * c.b.d - a.b.floors * a.b.w * a.b.d)[0] ?? bldgs.map((b, i) => ({ b, i })).sort((a, c) => c.b.w * c.b.d - a.b.w * a.b.d)[0];
@@ -690,12 +692,48 @@ function createHugeForest(o: MissionOpts): GameState {
         for (let f = 0; f < tb.floors; f++) { put('trooper', f); put(f === 0 ? 'heavy' : 'trooper', f); }
         put('sniper', tb.floors - 1); put('commander', tb.floors - 1, 'Командир гарнізону'); ring(5);
         objectiveOut = 'clear';
-      } else if (scn === 'hostage') {
+      } else if (scn === 'hostage' || scn === 'escort') {
         const f = tb.floors - 1, sp = innerSpot(tb, f, () => false);
         if (sp) captives.push({ x: sp[0], y: sp[1], fl: f, saved: false });
         for (let k2 = 0; k2 < tb.floors; k2++) { put('trooper', k2); put(k2 === tb.floors - 1 ? 'heavy' : 'trooper', k2); }
         put('sniper', tb.floors - 1); ring(4);
         objectiveOut = 'rescue';
+      } else if (scn === 'bomb') { // заряд на верхнем этаже
+        const f = tb.floors - 1, sp = innerSpot(tb, f, () => false);
+        if (sp) hugeBeacons.push({ x: sp[0], y: sp[1], done: false, fl: f });
+        for (let k2 = 0; k2 < tb.floors; k2++) put('trooper', k2);
+        put('heavy', 0); put('sniper', tb.floors - 1); ring(4);
+        objectiveOut = 'sabotage';
+      } else if (scn === 'counter') { // снайперы на крышах вокруг, бодрствуют
+        const roofs = bldgs.filter(b => b !== tb && b.floors >= 2).sort((a, c) => Math.hypot(a.x! - n / 2, a.y! - n / 2) - Math.hypot(c.x! - n / 2, c.y! - n / 2)).slice(0, 3);
+        roofs.forEach((b, i) => {
+          const f = roofAccess(b) ? b.floors : b.floors - 1, sp = innerSpot(b, f, occ);
+          if (!sp) return;
+          const a = alien(id++, 'sniper', 0, sp[0], sp[1], o.difficulty);
+          a.fl = f; a.grp = 10 + i; a.alert = true; a.dormant = false; a.name = 'Снайпер на даху'; aliens.push(a);
+        });
+        ring(5); objectiveOut = 'clear';
+      } else if (scn === 'ambush') { // колонна идёт по самой длинной улице; отряд ждёт в доме у дороги
+        const r = [...roads].sort((a, c) => c.w - a.w)[0];
+        if (r) {
+          exitOut = { x: r.x, y: r.y };
+          const kinds: AlienKind[] = ['trooper', 'trooper', 'heavy', 'trooper', 'commander', 'trooper', 'heavy', 'trooper'];
+          kinds.forEach((kd, k2) => {
+            const x = r.x + r.w - 2 - k2 * 2, y = r.y + (k2 % 2);
+            const a = alien(id++, kd, kd === 'trooper' ? ++tn : 0, x, y, o.difficulty);
+            a.grp = 0; a.alert = false; a.dormant = false; a.march = { x: r.x - 1, y: r.y }; if (kd === 'commander') a.name = 'Командир колони'; aliens.push(a);
+          });
+          const mid = r.x + r.w / 2;
+          const hb = bldgs.filter(b => b.y! + b.d <= r.y && r.y - (b.y! + b.d) <= 2).sort((a, c) => Math.abs(a.x! + a.w / 2 - mid) - Math.abs(c.x! + c.w / 2 - mid))[0];
+          if (hb) { const taken2 = (x: number, y: number) => humans.some(h => h.x === x && h.y === y); humans.forEach(h => { const sp = innerSpot(hb, 0, taken2); if (sp) { h.x = sp[0]; h.y = sp[1]; h.homeX = sp[0]; h.homeY = sp[1]; } }); }
+        }
+        objectiveOut = 'clear';
+      } else if (scn === 'raid') { // добыча на складе, время ограничено, волны с краёв
+        const f0: [number, number][] = [];
+        for (let dy = 1; dy < tb.d - 1; dy++) for (let dx = 1; dx < tb.w - 1; dx++) if (tileCover(tb, dx, dy, 0) === 'none') f0.push([tb.x! + dx, tb.y! + dy]);
+        f0.slice(0, 6).forEach(([x, y], k2) => loot.push({ x, y, kind: (['mat', 'mag', 'gren', 'mat', 'mag', 'mat'] as const)[k2], n: 1, raid: true }));
+        put('trooper', 0); put('heavy', 0); ring(3);
+        objectiveOut = 'defend'; holdTurnsOut = 99; raidOut = 150;
       } else { // holdbld: бойцы внутри здания, волны снаружи
         humans.forEach(h => { curF = 0; const sp = innerSpot(tb, 0, taken); if (sp) { h.x = sp[0]; h.y = sp[1]; h.homeX = sp[0]; h.homeY = sp[1]; } });
         objectiveOut = 'defend'; holdTurnsOut = 12;
@@ -704,11 +742,12 @@ function createHugeForest(o: MissionOpts): GameState {
   }
   const seen = grid(n, false);
   const st: GameState = {
+    exitPt: exitOut, raidUntil: raidOut,
     size: n, cover, terrain, height, look, houses, bldgs, bidx, roads, roadm, locName: loc.name, trenches: [], biome: 'forest', locId: scn ? undefined : loc.id, scn, target: targetIdx, captives, units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels: [], fires: [], scorched: grid(n, false), bridges: [], targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: objectiveOut, markId: null, beacons: hugeBeacons, holdTurns: holdTurnsOut, zone: null, weather: loc.weather ?? (o.missionNo % 2 === 0 ? 'night' : undefined), sides: 'all', waveBoost: 0,
-    log: scn ? [`Місія ${o.missionNo} · Квартал «${loc.name}» (${loc.arch}). ${({ storm: 'ШТУРМ БУДІВЛІ: ворог засів у найбільшому будинку — на всіх поверхах і на даху. Заходьте через двері чи вікна, зачищайте поверх за поверхом (⬆/⬇ біля сходів). Ціль: знищити гарнізон.', hostage: 'ЗАРУЧНИК: бранця утримують на верхньому поверсі будинку. Прорвіться нагору й дійдіть до нього живим. Ціль: звільнити бранця.', holdbld: 'УТРИМАННЯ БУДІВЛІ: загін усередині. Хвилі прибульців підуть з усіх боків — тримайте вікна, двері й дах 12 ходів. Матеріали: мішки й окопи.' } as Record<string, string>)[scn]}`, `Прибульців на старті: ${aliens.length}. Рекомендується реальний час.`] : [`Місія ${o.missionNo} · ${loc.arch} «${loc.name}» ${n}×${n}. ${loc.blurb} ${({ clear: 'Ціль: прочесати локацію.', sabotage: 'Ціль: підірвати склади-маяки (3).', assassinate: 'Ціль: ліквідувати командира — він на верхньому поверсі штабу.', rescue: 'Ціль: звільнити полонених (3).' } as Record<string, string>)[loc.obj]} Прибульці чекають у будівлях і сидять у ямах (${pits.length}), доки не підійдеш близько. Рекомендується реальний час.`, `Пунктів: ${camps.length}, будівель: ${bldgs.length} (у першому штаб із командиром, у кожному третьому склад). Прибульців: ${aliens.length}. Рація (📡) викликає скид постачання раз на 90 секунд.`],
+    log: scn ? [`Місія ${o.missionNo} · Квартал «${loc.name}» (${loc.arch}). ${({ storm: 'ШТУРМ БУДІВЛІ: ворог засів у найбільшому будинку — на всіх поверхах і на даху. Заходьте через двері чи вікна, зачищайте поверх за поверхом (⬆/⬇ біля сходів). Ціль: знищити гарнізон.', hostage: 'ЗАРУЧНИК: бранця утримують на верхньому поверсі будинку. Прорвіться нагору й дійдіть до нього живим. Ціль: звільнити бранця.', bomb: 'ПІДРИВ БУДІВЛІ: на верхньому поверсі стоїть маяк. Прорвіться нагору, закладіть заряд (⚡ Підірвати біля маяка, потрібна граната) і біжіть геть: вибух через 25 с, радіус 6.', counter: 'КОНТРСНАЙПЕР: на дахах навколо засіли три снайпери й уже чекають. Підходьте крізь укриття, зайдіть у будинки й заберіть їх. Ціль: прибрати снайперів і весь гарнізон.', escort: 'ЕВАКУАЦІЯ ЗАРУЧНИКА: бранця тримають нагорі. Після звільнення піднімуть тривогу — усім бігти до зеленої зони на півдні.', ambush: 'ЗАСІДКА: колона прибульців іде вулицею на захід. Загін сидить у будинку біля дороги. Знищте колону, поки вона не пройшла (вихід — західний край вулиці).', raid: 'НАЛІТ НА СКЛАД: у складі 6 ящиків — підбирайте їх, ставши на клітинку. На все 150 секунд, а прибульці вже йдуть із країв карти.', holdbld: 'УТРИМАННЯ БУДІВЛІ: загін усередині. Хвилі прибульців підуть з усіх боків — тримайте вікна, двері й дах 12 ходів. Матеріали: мішки й окопи.' } as Record<string, string>)[scn]}`, `Прибульців на старті: ${aliens.length}. Рекомендується реальний час.`] : [`Місія ${o.missionNo} · ${loc.arch} «${loc.name}» ${n}×${n}. ${loc.blurb} ${({ clear: 'Ціль: прочесати локацію.', sabotage: 'Ціль: підірвати склади-маяки (3).', assassinate: 'Ціль: ліквідувати командира — він на верхньому поверсі штабу.', rescue: 'Ціль: звільнити полонених (3).' } as Record<string, string>)[loc.obj]} Прибульці чекають у будівлях і сидять у ямах (${pits.length}), доки не підійдеш близько. Рекомендується реальний час.`, `Пунктів: ${camps.length}, будівель: ${bldgs.length} (у першому штаб із командиром, у кожному третьому склад). Прибульців: ${aliens.length}. Рація (📡) викликає скид постачання раз на 90 секунд.`],
     rng: rng.rng, boss: false, pits, huge: true, mats: 8, loot,
   };
   return st;

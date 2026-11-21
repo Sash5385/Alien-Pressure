@@ -11,7 +11,7 @@ export interface House { x: number; y: number; w: number; h: number; id: number;
 export type Stance = 'stand' | 'kneel' | 'prone';
 export type Biome = 'ruins' | 'forest' | 'lake';
 export type Terrain = 'ground' | 'water';
-export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage' | 'defend' | 'rescue' | 'storm' | 'holdbld' | 'hostage';
+export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage' | 'defend' | 'rescue' | 'storm' | 'holdbld' | 'hostage' | 'bomb' | 'counter' | 'escort' | 'ambush' | 'raid';
 export type PerkId = 'aim' | 'hp' | 'nerve';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface Tech { armor: boolean; optics: boolean; kits: boolean; grenades: boolean }
@@ -85,6 +85,7 @@ export interface Unit {
   retreatUntil?: number; // до какого хода держит оборону после отхода
   ugl?: number; // выстрелов подствольника
   cd?: number; // реальное время: секунд до следующего действия
+  march?: { x: number; y: number }; // колонна идёт к этой точке, пока не заметит бойцов
   static?: boolean; // турель: не ходит
   stuck?: number; // сколько раз подряд путь был перекрыт (союзники в проходе)
   nvg?: boolean; // ночное видение
@@ -109,7 +110,10 @@ export interface GameState {
   height: number[][]; // уровень рельефа 0–3: подъём на 1 проходим, обрыв (2+) — нет
   look: Look[][]; // вид укрытия (дерево, камень, дом…)
   houses: House[];
-  scn?: 'storm' | 'holdbld' | 'hostage'; // сценарий «квартал»: штурм, удержание здания, заложник
+  scn?: 'storm' | 'holdbld' | 'hostage' | 'bomb' | 'counter' | 'escort' | 'ambush' | 'raid';
+  fuse?: { x: number; y: number; fl: number; at: number }; // запал заряда («Підрив»)
+  exitPt?: { x: number; y: number }; // точка выхода колонны («Засідка»)
+  raidUntil?: number; // время, к которому надо вынести добычу («Наліт») // сценарий «квартал»: штурм, удержание здания, заложник
   target?: number; // номер здания-цели
   captives?: { x: number; y: number; fl?: number; saved: boolean }[]; // полонённые (задание «Порятунок»)
   upKills?: number; breaches?: number; // статистика для достижений
@@ -136,7 +140,7 @@ export interface GameState {
   difficulty: Difficulty;
   objective: Objective;
   markId: number | null; // помеченная цель (командир) видна всегда
-  beacons: { x: number; y: number; done: boolean }[];
+  beacons: { x: number; y: number; done: boolean; fl?: number }[];
   holdTurns: number;
   zone: { x: number; y: number; w: number; h: number } | null;
   aiming: 'grenade' | 'roll' | 'bags' | 'drone' | null; // режим прицеливания гранаты или выбора клетки для переката
@@ -160,7 +164,7 @@ export interface GameState {
   pits?: { x: number; y: number }[]; // ямы, в которых прячутся пришельцы (огромная карта)
   huge?: boolean; // огромная карта (лес): кусочная отрисовка, засады
   mats?: number; // стройматериалы: окоп и мешки с песком стоят по 1; пополняются за волны и трофеи
-  loot?: { x: number; y: number; kind: 'mag' | 'gren' | 'mat'; n: number }[]; // трофеи с убитых пришельцев
+  loot?: { x: number; y: number; kind: 'mag' | 'gren' | 'mat'; n: number; raid?: boolean }[]; // трофеи с убитых пришельцев
   wavePlan?: { x: number; y: number; kind: UnitKind }[]; // следующая волна: откуда и кто придёт (видно заранее)
   smokeMode?: boolean; // прицел дымовой гранаты
   lookMode?: boolean; // режим «Осмотр»: подсветка зоны обзора выбранного бойца

@@ -366,8 +366,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     assassinate: cmd ? `вбити командира (HP ${cmd.hp}/${cmd.maxHp})` : 'командира вбито',
     sabotage: `маяки ${s.beacons.filter(b => b.done).length}/${s.beacons.length}`,
     rescue: `полонені ${s.captives?.filter(c => c.saved).length ?? 0}/${s.captives?.length ?? 0}`,
-    storm: '', holdbld: '', hostage: '',
-  }[s.objective] || (s.scn === 'hostage' ? `заручник ${s.captives?.filter(c => c.saved).length ?? 0}/1` : s.scn === 'holdbld' ? `утримання будівлі ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}` : '');
+    storm: '', holdbld: '', hostage: '', bomb: '', counter: '', escort: '', ambush: '', raid: '',
+  }[s.objective] || (s.scn === 'bomb' ? (s.fuse ? `ВИБУХ ЧЕРЕЗ ${Math.max(0, Math.ceil(s.fuse.at - (s.rt?.clock ?? 0)))} с — геть!` : 'закласти заряд нагорі (⚡ Підірвати біля маяка)') : s.scn === 'counter' ? `снайперів: ${living(s, 'alien').filter(a => a.kind === 'sniper').length}` : s.scn === 'ambush' ? `колона: ${living(s, 'alien').length}` : s.scn === 'raid' ? `ящиків: ${(s.loot ?? []).filter(l => l.raid).length} · ${Math.max(0, Math.ceil((s.raidUntil ?? 0) - (s.rt?.clock ?? 0)))} с` : s.scn === 'escort' ? (s.captives?.every(c => c.saved) ? 'до зеленої зони евакуації!' : 'знайти й звільнити бранця') : s.scn === 'hostage' ? `заручник ${s.captives?.filter(c => c.saved).length ?? 0}/1` : s.scn === 'holdbld' ? `утримання будівлі ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}` : '');
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
   const campHint = (() => {
     if (!s.huge || s.scn) return '';

@@ -92,6 +92,14 @@ export interface AiSt { shots: number; retreated: boolean }
 export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | undefined, st: AiSt): Promise<'next' | 'stop'> {
   const idx = g ? g.members.indexOf(u) : 0;
   if (!u.alert && alienSees(s, u)) h.alerted?.(raiseAlert(s, u.x, u.y, 8));
+  if (!u.alert && u.march) { // колонна идёт по улице к выходу
+    const m = u.march;
+    for (let d = 4; d >= 1; d--) for (const dy of [0, 1, -1]) {
+      const tx = Math.max(m.x, u.x - d), path = findPath(s, u.x, u.y, tx, u.y + dy, 6);
+      if (path.length) { const [x, y] = path[0]; u.x = x; u.y = y; u.facing = Math.atan2(-1, 0) + Math.PI / 2; await h.moved(u); return 'stop'; }
+    }
+    return 'stop';
+  }
   if (!u.alert) { if ((u.fl ?? 0) > 0 || u.static) return 'stop'; await patrol(s, u, h); return u.alert ? 'next' : 'stop'; }
   const humans = living(s, 'human');
   if (u.maxAmmo > 0 && u.ammo <= 0) { reload(s, u); return 'next'; }

@@ -1084,7 +1084,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
   private buildBeacons() {
     for (const b of this.state.beacons) {
       const g = new THREE.Group();
-      g.position.set(b.x + 0.5, this.hy(b.x, b.y), b.y + 0.5);
+      g.position.set(b.x + 0.5, this.hy(b.x, b.y) + (b.fl ? b.fl * STOREY + 0.1 : 0), b.y + 0.5);
       const base = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.45, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x3a3f46 }));
       base.position.y = 0.25; base.castShadow = true;
       const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3.4, 8), new THREE.MeshBasicMaterial({ color: 0xff3347, transparent: true, opacity: 0.85 }));
@@ -1098,9 +1098,11 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
   }
 
   /** Зона эвакуации. */
+  private zoneBuilt = false;
   private buildZone() {
     const z = this.state.zone;
-    if (!z) return;
+    if (!z || this.zoneBuilt) return;
+    this.zoneBuilt = true;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(z.w, z.h), new THREE.MeshBasicMaterial({ color: 0x35e07a, transparent: true, opacity: 0.3 }));
     m.rotation.x = -Math.PI / 2;
     m.position.set(z.x + z.w / 2, 0.015, z.y + z.h / 2);
@@ -1273,6 +1275,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     for (const m of this.corpses.values()) { const cx = Math.floor(m.position.x), cy = Math.floor(m.position.z); m.visible = !!this.state.seen[cy]?.[cx]; }
     this.syncSmoke();
     this.syncCaptives();
+    if (this.state.zone && !this.zoneBuilt) this.buildZone();
     for (const [k, m] of this.coverMeshes) {
       const [cx, cy] = k.split(',').map(Number);
       if (this.state.cover[cy][cx] === 'none') {
