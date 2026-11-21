@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CLASS_IDS, CLASSES } from './game/classes';
 import { LOCATIONS } from './game/locations';
 import { ACH, emptyStats } from './game/achievements';
+import { weaponIcon } from './render/models';
 import { ATT, setSec, toggleAtt, type AttId } from './game/campaign';
 import { chooseOption, sandboxMission, setMapSize, setLoc, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
@@ -189,7 +190,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
           <div style={{ display: 'flex', flexDirection: narrow ? 'column' : side === 'l' ? 'row' : 'row-reverse', alignItems: 'center', gap: narrow ? 4 : 10, transform: narrow ? undefined : `translateX(${side === 'l' ? dx : -dx}px)`, cursor: k ? 'pointer' : 'default' }}
             role={k ? 'button' : undefined} tabIndex={k ? 0 : undefined} onClick={() => k && setOpen(open === k ? null : k)} onKeyDown={e => { if (k && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(open === k ? null : k); } }}>
             <div style={{ width: 62, height: 70, flex: 'none', clipPath: HEX, background: open === k && k ? NM.accent : NM.line, display: 'grid', placeItems: 'center' }}>
-              <div style={{ width: 58, height: 66, clipPath: HEX, background: NM.solid, display: 'grid', placeItems: 'center', fontSize: 22 }}>{icon}</div>
+              <div style={{ width: 58, height: 66, clipPath: HEX, background: NM.solid, display: 'grid', placeItems: 'center', fontSize: 22 }}>{icon.startsWith('data:') ? <img src={icon} alt="" style={{ width: 54, height: 27, objectFit: 'contain', filter: 'brightness(2.2) drop-shadow(0 0 2px rgba(255,255,255,.7))' }} /> : icon}</div>
             </div>
             <div style={{ textAlign: narrow ? 'center' : side === 'l' ? 'left' : 'right', minWidth: 0, fontSize: narrow ? 11 : undefined }}>
               <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: NM.dim }}>{lab}</div>
@@ -209,10 +210,10 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', alignItems: 'center', gap: narrow ? 2 : 8 }}>
               <div style={{ display: 'grid', gap: narrow ? 10 : 26 }}>
-                {hex('weapon', '🔫', 'Зброя', w.name, 'l', 0)}
+                {hex('weapon', weaponIcon(s.weapon) ?? '🔫', 'Зброя', w.name, 'l', 0)}
                 {hex('armor', '🛡', 'Броня', ar.name, 'l', 14)}
                 {hex('cls', '⚔', 'Клас', CLASSES[s.cls].name, 'l', 0)}
-                {hex('sec', '🎽', 'Запасна', s.sec ? WEAPONS[s.sec].name : 'немає', 'l', 0)}
+                {hex('sec', (s.sec && weaponIcon(s.sec)) || '🎽', 'Запасна', s.sec ? WEAPONS[s.sec].name : 'немає', 'l', 0)}
                 {hex('att', '🔧', 'Обвіс', (s.att?.length ?? 0) ? s.att!.map(a => ATT[a].name).join(', ') : 'немає', 'l', 14)}
               </div>
               <div style={{ position: 'relative', display: 'grid', justifyItems: 'center' }}>

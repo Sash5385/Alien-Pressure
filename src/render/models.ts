@@ -16,6 +16,25 @@ export function gunModel(name: string): THREE.Object3D | null {
   const c = g.clone(true); c.userData = { ...g.userData }; return c;
 }
 export const GUN_OF_WEAPON: Record<string, string> = { rifle: 'Rifle', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper' };
+const iconCache = new Map<string, string>();
+/** Картинка оружия для интерфейса (рендер модели в маленький холст), null — нет модели. */
+export function weaponIcon(weaponId: string): string | null { return iconCache.get(weaponId) ?? null; }
+function renderIcons() {
+  try {
+    const cv = document.createElement('canvas'); cv.width = 192; cv.height = 96;
+    const r = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, preserveDrawingBuffer: true });
+    r.setSize(192, 96, false); r.setClearColor(0x000000, 0);
+    const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.6)); const dl = new THREE.DirectionalLight(0xffffff, 2.4); dl.position.set(2, 4, 5); sc.add(dl);
+    for (const [wid, gname] of Object.entries(GUN_OF_WEAPON)) {
+      const g = gunModel(gname); if (!g) continue;
+      const size = g.userData.size as number[], k = 2.6 / size[0]; g.scale.setScalar(k); g.rotation.y = -0.35; sc.add(g);
+      const cam = new THREE.PerspectiveCamera(22, 2, 0.1, 50); cam.position.set(0, 0.1, 9); cam.lookAt(0, 0, 0);
+      g.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) { const mats = Array.isArray(m.material) ? m.material : [m.material]; mats.forEach(mm => { const std = mm as THREE.MeshStandardMaterial; if (std.color) std.color.multiplyScalar(1.7); }); } });
+      r.render(sc, cam); iconCache.set(wid, cv.toDataURL('image/png')); sc.remove(g);
+    }
+    r.dispose();
+  } catch { /* без иконок */ }
+}
 async function loadGuns() {
   if (gunCache.size) return;
   try {
@@ -23,6 +42,7 @@ async function loadGuns() {
     const root = g.scene.children.length === 1 && !g.scene.children[0].name ? g.scene.children[0] : g.scene;
     [...root.children].forEach(ch => { ch.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = false; const mats = Array.isArray(m.material) ? m.material : [m.material]; for (const mm of mats as THREE.MeshStandardMaterial[]) { mm.metalness = 0.3; mm.roughness = 0.5; mm.color.multiplyScalar(0.75); } } }); ch.removeFromParent(); gunCache.set(ch.name, ch); });
     gunCache.forEach(ch => { const b = new THREE.Box3().setFromObject(ch); ch.userData.size = b.getSize(new THREE.Vector3()).toArray(); });
+    renderIcons();
   } catch { /* без моделей оружия — прежние детали */ }
 }
 
@@ -240,8 +260,8 @@ function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<Retur
 }
 
 /** Ставит модель оружия из пакета вместо родной: по длинной оси, направлению ствола и «верху» исходного узла. */
-function mountGun(node: THREE.Object3D, weapon: string, f: NonNullable<ReturnType<typeof weaponFrame>>, att?: Att): boolean {
-  const key = { AK: 'Rifle', SMG: 'SMG', Shotgun: 'Shotgun', Sniper: 'Sniper' }[weapon];
+function mountGun(node: THREE.Object3D, weapon: string, f: NonNullable<ReturnType<typeof weaponFrame>>, att?: Att, enemy = false): boolean {
+  const key = (enemy ? { AK: 'Rifle2', Sniper_2: 'Sniper', Revolver: 'Revolver', Revolver_Small: 'Pistol' } : { AK: 'Rifle', SMG: 'SMG', Shotgun: 'Shotgun', Sniper: 'Sniper' } as Record<string, string>)[weapon];
   const gun = key ? gunModel(key) : null;
   if (!gun) return false;
   const size = gun.userData.size as number[];
@@ -362,6 +382,14 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   if (name === 'Soldier' && (weapon === 'AGS' || weapon === 'MORTAR')) {
     const a = weapon === 'AGS' ? makeAgs() : makeMortar(); a.g.scale.setScalar(height / 1.8); a.g.position.z = (weapon === 'AGS' ? 0.35 : 0.2) * height / 1.8; obj.add(a.g);
     agsRig = { hl: a.hl, hr: a.hr };
+  } else if (name === 'Enemy' && weapon && rigR) { // у пришельцев — тоже настоящие модели оружия
+    const node = inner.getObjectByName(weapon);
+    if (node) {
+      const act = actions.get('Idle'); if (act) { act.play(); mixer.update(0); }
+      inner.updateMatrixWorld(true);
+      const f = weaponFrame(node, rigR.wrist.getWorldPosition(new THREE.Vector3()));
+      if (f) mountGun(node, weapon, f, undefined, true);
+    }
   } else if (name === 'Soldier' && weapon && rigR) {
     const node = inner.getObjectByName(weapon);
     if (node) {

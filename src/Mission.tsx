@@ -12,6 +12,7 @@ import { bldgAt, flOf, stairPos } from './game/floors';
 import { clearBuilding, focusFire, holdAll, regroup } from './game/orders';
 import { maxLevel } from './render/buildings';
 import { todLabel } from './game/tod';
+import { weaponIcon } from './render/models';
 import { BAG, bagUsed, canSwap, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
@@ -476,8 +477,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         <div style={{ position: 'absolute', top: narrow ? 92 : 64, left: narrow ? 8 : 'calc(50% - 560px)', width: narrow ? vw(94) : 280, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, pointerEvents: 'auto', fontSize: 12, zIndex: 5 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b style={{ fontSize: 14 }}>🎒 {sel.name}</b><button style={{ ...nb(false), minWidth: 0, minHeight: 26, padding: '0 10px' }} onClick={() => setInvOpen(false)}>✕</button></div>
           <div style={{ display: 'grid', gap: 4, padding: 6, borderRadius: 10, background: 'rgba(255,255,255,.07)' }}>
-            <span>🔫 <b>{WEAPONS[sel.weapon].name}</b> · {sel.ammo}/{sel.maxAmmo}</span>
-            <span style={{ opacity: sel.sec ? 1 : 0.55 }}>🎽 {sel.sec ? <><b>{WEAPONS[sel.sec].name}</b> · {sel.secAmmo ?? WEAPONS[sel.sec].ammo}</> : 'запасної зброї немає'}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{weaponIcon(sel.weapon) ? <img src={weaponIcon(sel.weapon)!} alt="" style={{ width: 76, height: 38, objectFit: 'contain', filter: 'brightness(2.2) drop-shadow(0 0 2px rgba(255,255,255,.7))' }} /> : '🔫'}<span><b>{WEAPONS[sel.weapon].name}</b><br />{sel.ammo}/{sel.maxAmmo}</span></span>
+            <span style={{ opacity: sel.sec ? 1 : 0.55, display: 'flex', alignItems: 'center', gap: 6 }}>{sel.sec && weaponIcon(sel.sec) ? <img src={weaponIcon(sel.sec)!} alt="" style={{ width: 76, height: 38, objectFit: 'contain', filter: 'brightness(2.2) drop-shadow(0 0 2px rgba(255,255,255,.7))' }} /> : '🎽'}{sel.sec ? <span><b>{WEAPONS[sel.sec].name}</b><br />{sel.secAmmo ?? WEAPONS[sel.sec].ammo}</span> : 'запасної зброї немає'}</span>
             {sel.sec && <button style={{ ...nb(false, !canSwap(sel)), minHeight: 30 }} disabled={!canSwap(sel)} onClick={() => act2(() => swapWeapons(s, sel))}>⇄ Змінити зброю (1 дія)</button>}
           </div>
           <div>Рюкзак {bagUsed(sel)}/{BAG} · аптечок {s.medkits} · матеріалів {s.mats ?? 0}</div>
