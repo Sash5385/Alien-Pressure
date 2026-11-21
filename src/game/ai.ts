@@ -1,6 +1,6 @@
 import { bldgAt, flOf } from './floors';
 import { openDoorAt } from './doors';
-import { alienSees, blast, BLAST, canFire, hurtN, canPsi, faceToward, GRENADE_RANGE, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
+import { alienSees, blast, BLAST, los, canFire, hurtN, canPsi, faceToward, GRENADE_RANGE, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 import type { GrenadeResult } from './combat';
@@ -100,6 +100,19 @@ export function planGroups(s: GameState): Map<number, Grp> {
   return out;
 }
 
+/** Память пришельцев: боец, замеченный кем-то из группы, запоминается; у старых записей позиция устаревает. */
+const MEM_TURNS = 14;
+function learn(s: GameState, u: Unit, g: Grp | undefined, humans: Unit[]) {
+  const mem = (s.aiMem ??= {});
+  for (const m of g?.members ?? [u]) for (const h of humans) if (Math.hypot(h.x - m.x, h.y - m.y) <= m.range + 6 && los(s, m, h)) mem[h.id] = { x: h.x, y: h.y, t: s.turnNo };
+  for (const [id, m] of Object.entries(mem)) { // дошли до места и никого нет — запись снимается
+    const h = humans.find(v => v.id === Number(id));
+    if (!h || s.turnNo - m.t > MEM_TURNS || (Math.hypot(u.x - m.x, u.y - m.y) <= 2.2 && !(los(s, u, h) && Math.hypot(h.x - u.x, h.y - u.y) <= u.range + 6))) delete mem[Number(id)];
+  }
+}
+/** Где пришелец считает бойцов: по памяти (позиции могли измениться). */
+const believed = (s: GameState, humans: Unit[]) => humans.filter(h => s.aiMem?.[h.id]).map(h => ({ ...h, x: s.aiMem![h.id].x, y: s.aiMem![h.id].y }));
+
 /** Состояние решений одного пришельца в рамках хода (в реальном времени хранится между вызовами). */
 export interface AiSt { shots: number; retreated: boolean }
 
@@ -122,6 +135,7 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
   }
   if (!u.alert) { if ((u.fl ?? 0) > 0 || u.static) return 'stop'; await patrol(s, u, h); return u.alert ? 'next' : 'stop'; }
   const humans = living(s, 'human');
+  learn(s, u, g, humans);
   if (u.maxAmmo > 0 && u.ammo <= 0) { reload(s, u); return 'next'; }
   const options = humans
     .map(t => ({ t, c: score(s, u, t) }))
@@ -213,10 +227,12 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
     await h.moved(u);
     return 'stop';
   }
+  const bel = believed(s, humans);
+  const H = bel.length ? bel : humans; // куда идти: к запомненным позициям, а без памяти — на шум и тревогу
   let best: [number, number] | null = null;
   let bestScore = Infinity;
   const cands: { p: [number, number]; sc: number }[] = [];
-  const foc = g?.focus !== undefined ? humans.find(h2 => h2.id === g.focus) : undefined; // окружение: каждый член группы выходит на свой сектор вокруг цели
+  const foc = g?.focus !== undefined ? H.find(h2 => h2.id === g.focus) : undefined; // окружение: каждый член группы выходит на свой сектор вокруг цели
   const cx = g && g.members.length ? g.members.reduce((a, m) => a + m.x, 0) / g.members.length : u.x, cy = g && g.members.length ? g.members.reduce((a, m) => a + m.y, 0) / g.members.length : u.y;
   const n = g?.members.length ?? 1, R = u.kind === 'sniper' ? 10 : 6;
   let px = 0, py = 0;
@@ -225,9 +241,9 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
     const [x, y] = k.split(',').map(Number);
     if (x === u.x && y === u.y) continue;
     const ghost = { ...u, x, y };
-    const nearT = Math.min(...humans.map(t => Math.hypot(t.x - x, t.y - y)));
-    const seen = humans.some(t => score(s, ghost, t) !== null);
-    const flank = humans.some(t => hitChance(s, ghost, t) !== null && isFlanked(s, ghost, t));
+    const nearT = Math.min(...H.map(t => Math.hypot(t.x - x, t.y - y)));
+    const seen = H.some(t => score(s, ghost, t) !== null);
+    const flank = H.some(t => hitChance(s, ghost, t) !== null && isFlanked(s, ghost, t));
     const cov = hasCover(s, x, y);
     const sc = ideal(u, nearT) - (seen ? 3 : 0) - (cov ? (bound ? 3.5 : 1.5) : 0) - (flank && idx % 2 === 1 ? 2.5 : 0) - s.height[y][x] * (u.kind === 'sniper' ? 1.5 : 0.7) - (trenchAt(s, x, y) ? 2 : 0) - (near < 16 && (u.kind === 'trooper' || u.kind === 'heavy') && bldgAt(s, x, y) >= 0 ? 2 : 0); // здания — укрытие и позиция у окон
     const sc2 = sc + (foc && n >= 2 ? 0.25 * Math.hypot(x - px, y - py) : 0);
@@ -236,7 +252,7 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
   cands.sort((a, b) => a.sc - b.sc);
   for (const c of cands.slice(0, 6)) { // из лучших — та клетка, где под огнём меньше бойцов (засады overwatch весят втрое)
     const gh = { ...u, x: c.p[0], y: c.p[1] };
-    const expo = humans.reduce((a, t) => a + (!t.down && hitChance(s, t, gh) !== null ? (t.overwatch ? 3 : 1) : 0), 0);
+    const expo = H.reduce((a, t) => a + (!t.down && hitChance(s, t, gh) !== null ? (t.overwatch ? 3 : 1) : 0), 0);
     const fin = c.sc + 0.7 * expo;
     if (fin < bestScore) { bestScore = fin; best = c.p; }
   }

@@ -182,6 +182,7 @@ export interface GameState {
   drone?: { x: number; y: number; until: number }; // разведдрон: видит всё вокруг точки, пока не истечёт время
   droneAt?: number; // дрон снова готов
   radioAt?: number; // реальное время, с которого рация снова готова
+  aiMem?: Record<number, { x: number; y: number; t: number }>; // что пришельцы знают о бойцах: последняя замеченная позиция
   noise?: { x: number; y: number; r?: number }[]; // выстрелы бойцов с последней проверки (будят спящих)
   pits?: { x: number; y: number }[]; // ямы, в которых прячутся пришельцы (огромная карта)
   huge?: boolean; // огромная карта (лес): кусочная отрисовка, засады

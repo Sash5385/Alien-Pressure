@@ -137,6 +137,7 @@ export function faceToward(u: Unit, x: number, y: number) {
 
 export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 0): ShotResult {
   faceToward(a, t.x, t.y);
+  if (a.team === 'human' && t.team === 'alien') (s.aiMem ??= {})[a.id] = { x: a.x, y: a.y, t: s.turnNo }; // вспышка выстрела выдаёт позицию
   if (a.team === 'human') (s.noise ??= []).push({ x: a.x, y: a.y, r: noiseOf(a) }); // выстрел слышно (глушитель и оружие меняют радиус): ближайшие лагеря просыпаются
   const chance = hitChance(s, a, t, reaction, bonus) ?? 0;
   a.ammo -= 1;
