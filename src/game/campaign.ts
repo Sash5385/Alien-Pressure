@@ -45,6 +45,24 @@ export const OBJECTIVE_NAME: Record<Objective, string> = {
 export const MAX_ROSTER = 6;
 export const DEPLOY = 4;
 export const COST = { heal: 1, recruit: 3, armor: 6, optics: 6, kits: 4, grenades: 4 } as const;
+export const ATT = {
+  optic: { name: 'Приціл', icon: '◎', cost: 4, desc: '+8 до влучності, +3 до дальності' },
+  supp: { name: 'Глушник', icon: '▥', cost: 4, desc: 'Постріли чутно лише за 5 клітинок: табори не прокидаються' },
+  mag: { name: 'Місткий магазин', icon: '▮', cost: 3, desc: '+50% набоїв у магазині' },
+} as const;
+export type AttId = keyof typeof ATT;
+/** Поставить/снять обвес: установка стоит трофеев, снятие бесплатно. */
+export function toggleAtt(c: Campaign, soldierId: number, a: AttId): string | null {
+  const s = c.roster.find(x => x.id === soldierId);
+  if (!s) return 'Недоступно.';
+  const att = (s.att ??= []);
+  const i = att.indexOf(a);
+  if (i >= 0) { att.splice(i, 1); return null; }
+  if (c.scrap < ATT[a].cost) return 'Не вистачає трофеїв.';
+  c.scrap -= ATT[a].cost; att.push(a);
+  return null;
+}
+
 export const TECH_INFO: Record<keyof Tech, string> = {
   armor: 'Бронепластини: +2 HP всім',
   optics: 'Оптика: +5 до влучності всім',

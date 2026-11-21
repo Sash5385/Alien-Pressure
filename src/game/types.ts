@@ -33,6 +33,7 @@ export interface Soldier {
   weapon: WeaponId;
   armor: ArmorId;
   cls: ClassId;
+  att?: ('optic' | 'supp' | 'mag')[]; // обвес оружия
 }
 
 export type Team = 'human' | 'alien';
@@ -84,6 +85,7 @@ export interface Unit {
   retreatUntil?: number; // до какого хода держит оборону после отхода
   ugl?: number; // выстрелов подствольника
   cd?: number; // реальное время: секунд до следующего действия
+  supp?: boolean; // глушитель: выстрелы почти не слышны
   fl?: number; // этаж здания (0 — земля)
   dest?: { x: number; y: number; fl?: number }; // приказ «идти» (реальное время)
   atk?: number; // приказ «атаковать» (id цели)

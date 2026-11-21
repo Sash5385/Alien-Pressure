@@ -589,7 +589,7 @@ export class GameView {
   // ---------- огромная карта: земля, лес и трава кусками вокруг камеры ----------
   private static readonly CH = 32;
   private groundGroup = new THREE.Group();
-  private chunks = new Map<string, { terrain: THREE.Mesh; objs: THREE.Object3D[]; grass: THREE.Object3D | null; sig: number; roads: THREE.Mesh[]; blds: { b: BuildingObj; x: number; y: number; w: number; d: number }[] }>();
+  private chunks = new Map<string, { terrain: THREE.Mesh; objs: THREE.Object3D[]; grass: THREE.Object3D | null; sig: number; roads: THREE.Mesh[]; blds: { b: BuildingObj; x: number; y: number; w: number; d: number; sp: NonNullable<GameState['bldgs']>[number]; rev: number }[] }>();
   private bldgByChunk = new Map<string, NonNullable<GameState['bldgs']>>();
   private roadByChunk = new Map<string, { x: number; y: number; w: number; h: number }[]>();
   private carGeo!: THREE.BufferGeometry;
@@ -715,6 +715,10 @@ export class GameView {
     const s = this.state, who = s.units.filter(u => u.hp > 0 && (u.team === 'human' || isVisible(s, u)));
     const sel = s.units.find(u => u.id === s.selectedId && u.hp > 0);
     for (const ch of this.chunks.values()) for (const e of ch.blds) {
+      if ((e.sp.rev ?? 0) !== e.rev) { // стену пробили: перестраиваем модель
+        this.scene.remove(e.b); e.b.traverse(o => (o as THREE.Mesh).geometry?.dispose());
+        const nb = buildBuilding(e.sp); nb.position.copy(e.b.position); this.scene.add(nb); e.b = nb; e.rev = e.sp.rev ?? 0;
+      }
       const inb = (u: Unit) => u.x >= e.x && u.x < e.x + e.w && u.y >= e.y && u.y < e.y + e.d;
       const occ = who.filter(inb);
       if (!occ.length) { showFloors(e.b, 99, true); continue; }
@@ -748,7 +752,7 @@ export class GameView {
         const ob = this.buildChunkObjects(cx, cz);
         const blds = (this.bldgByChunk.get(k) ?? []).map(sp => {
           const b = buildBuilding(sp); b.position.set(sp.x!, this.hy(sp.x! + (sp.w >> 1), sp.y! + (sp.d >> 1)), sp.y!); this.scene.add(b);
-          return { b, x: sp.x!, y: sp.y!, w: sp.w, d: sp.d };
+          return { b, x: sp.x!, y: sp.y!, w: sp.w, d: sp.d, sp, rev: sp.rev ?? 0 };
         });
         const roads = (this.roadByChunk.get(k) ?? []).map(r => {
           const g = new THREE.PlaneGeometry(r.w, r.h).rotateX(-Math.PI / 2), uv = g.attributes.uv as THREE.BufferAttribute;

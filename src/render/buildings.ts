@@ -7,6 +7,7 @@ export type BuildingSpec = {
   roof?: 'flat' | 'gable';
   damage?: number; // 0..1 — доля выбитых стен/окон наверху
   seed?: number;
+  broken?: string[]; rev?: number; // пробитые стены ('этаж+сторона+номер') и счётчик перестройки
   id?: number; x?: number; y?: number; // положение на карте (клетки)
 };
 export type BuildingObj = THREE.Group & { userData: { floors: THREE.Group[]; roof: THREE.Group | null; storey: number } };
@@ -88,6 +89,7 @@ export function cellKind(sp: BuildingSpec, side: Side, idx: number, f: number): 
   const dmg = sp.damage ?? 0, seed = sp.seed ?? 7;
   const corner = (side === 'F' || side === 'B') && (idx === 0 || idx === w - 1);
   if (corner) return 'solid';
+  if (sp.broken?.includes(`${f}${side}${idx}`)) return 'breach';
   const r = hh(seed, f * 31 + idx, side.charCodeAt(0));
   if (dmg > 0 && f === sp.floors - 1 && r < dmg * 0.55) return 'breach';
   if (dmg > 0 && f < sp.floors - 1 && r < dmg * 0.22) return 'breach';
@@ -241,3 +243,12 @@ export function showFloors(b: BuildingObj, lvl: number, roof = true) {
 
 /** Асфальт для улиц (общий материал). */
 export const roadMaterial = () => materials().asphalt;
+
+/** Сторона и номер клетки стены по смещению от угла здания (углы — null). */
+export function wallKey(sp: BuildingSpec, dx: number, dy: number): { side: Side; idx: number } | null {
+  const { w, d } = sp;
+  if (dy === d - 1 || dy === 0) return dx > 0 && dx < w - 1 ? { side: dy === 0 ? 'B' : 'F', idx: dx } : null;
+  if (dx === 0) return { side: 'L', idx: dy };
+  if (dx === w - 1) return { side: 'R', idx: dy };
+  return null;
+}

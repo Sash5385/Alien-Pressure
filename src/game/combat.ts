@@ -1,4 +1,5 @@
-import { coverAt, flOf } from './floors';
+import { bldgAt, coverAt, flOf } from './floors';
+import { wallKey } from '../render/buildings';
 import type { GameState, LaunchKind, Stance, Unit } from './types';
 import { WEAPONS } from './weapons';
 
@@ -113,7 +114,7 @@ export function faceToward(u: Unit, x: number, y: number) {
 
 export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 0): ShotResult {
   faceToward(a, t.x, t.y);
-  if (a.team === 'human') (s.noise ??= []).push({ x: a.x, y: a.y, r: 22 }); // выстрел слышно: ближайшие лагеря просыпаются
+  if (a.team === 'human') (s.noise ??= []).push({ x: a.x, y: a.y, r: a.supp ? 5 : 22 }); // выстрел слышно (глушитель: тише): ближайшие лагеря просыпаются
   const chance = hitChance(s, a, t, reaction, bonus) ?? 0;
   a.ammo -= 1;
   if (!reaction) a.ap -= 1;
@@ -498,15 +499,16 @@ export function throwGrenade(s: GameState, u: Unit, x: number, y: number): Grena
   u.ap -= 1;
   u.overwatch = false;
   s.aiming = null;
-  return blast(s, u, x, y, `${u.name} кидає гранату`);
+  const same = bldgAt(s, x, y) >= 0 && bldgAt(s, x, y) === bldgAt(s, u.x, u.y);
+  return blast(s, u, x, y, `${u.name} кидає гранату`, false, undefined, same ? flOf(u) : 0); // из окна верхнего этажа — на тот же этаж, иначе на землю
 }
 
 /** Взрыв (граната/мина): центр 5, край 3 (−броня); бьёт и по своим, срывает половинные укрытия. Убийства засчитываются owner. */
-export function blast(s: GameState, owner: Unit | null, x: number, y: number, label: string, oil = false, opts?: { r: number; center: number; edge: number }): GrenadeResult {
+export function blast(s: GameState, owner: Unit | null, x: number, y: number, label: string, oil = false, opts?: { r: number; center: number; edge: number }, fl = 0): GrenadeResult {
   const R = opts?.r ?? BLAST, hits: GrenadeResult['hits'] = [];
   for (const t of living(s)) {
     const d = Math.hypot(t.x - x, t.y - y);
-    if (d > R) continue;
+    if (d > R || flOf(t) !== fl) continue; // взрыв поражает только свой этаж
     const dmg = Math.max(1, (d <= (opts ? Math.min(1, R * 0.6) : 1.0) ? (opts?.center ?? 5) : (opts?.edge ?? 3)) - t.cut - (s.trenches.some(tr => tr.x === t.x && tr.y === t.y) ? 1 : 0) - (t.stance === 'prone' ? 1 : 0));
     t.hp = Math.max(0, t.hp - dmg);
     const killed = t.hp <= 0;
@@ -525,6 +527,15 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
     for (let cx = Math.max(0, Math.floor(x - 1.5)); cx <= Math.min(s.size - 1, Math.ceil(x + 1.5)); cx++) {
       if (s.cover[cy][cx] === 'half' && s.look[cy][cx] !== 'rock' && Math.hypot(cx - x, cy - y) <= Math.min(1.5, R)) { s.cover[cy][cx] = 'none'; broken.push({ x: cx, y: cy }); }
     }
+  }
+  // взрыв пробивает окна и стены первого этажа (кроме углов)
+  if (fl === 0 && s.bldgs) for (let cy = Math.max(0, Math.floor(y - R)); cy <= Math.min(s.size - 1, Math.ceil(y + R)); cy++) for (let cx = Math.max(0, Math.floor(x - R)); cx <= Math.min(s.size - 1, Math.ceil(x + R)); cx++) {
+    const lk = s.look[cy][cx], d = Math.hypot(cx - x, cy - y);
+    if ((lk !== 'wall' && lk !== 'window') || d > Math.min(R, lk === 'window' ? 1.9 : 1.3)) continue;
+    const bi = bldgAt(s, cx, cy); if (bi < 0) continue;
+    const sp = s.bldgs[bi], k = wallKey(sp, cx - sp.x!, cy - sp.y!); if (!k) continue;
+    (sp.broken ??= []).push(`0${k.side}${k.idx}`); sp.rev = (sp.rev ?? 0) + 1;
+    s.cover[cy][cx] = 'none'; s.look[cy][cx] = ''; broken.push({ x: cx, y: cy });
   }
   // дома рядом со взрывом получают урон и обрушиваются; мосты рушатся
   for (const hs of [...s.houses]) {
