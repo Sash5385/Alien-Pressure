@@ -30,7 +30,7 @@ function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick:
         const x = Math.floor(pxx * k), y = Math.floor(py * k), o = (py * MS + pxx) * 4;
         let r = 40 + s.height[y][x] * 14, gg = 70 + s.height[y][x] * 14, b = 34;
         const l = s.look[y][x];
-        if (s.cover[y][x] !== 'none') { if (l === 'tree') { r = 26; gg = 70; b = 28; } else if (l === 'house') { r = 200; gg = 180; b = 140; } else if (l === 'bush') { r = 50; gg = 96; b = 40; } else { r = 120; gg = 118; b = 108; } }
+        if (s.cover[y][x] !== 'none') { if (l === 'tree') { r = 26; gg = 70; b = 28; } else if (l === 'house' || l === 'wall') { r = 200; gg = 180; b = 140; } else if (l === 'window') { r = 150; gg = 140; b = 110; } else if (l === 'bush') { r = 50; gg = 96; b = 40; } else { r = 120; gg = 118; b = 108; } }
         const f = s.vis[y][x] ? 1 : s.seen[y][x] ? 0.62 : 0.22;
         d[o] = r * f; d[o + 1] = gg * f; d[o + 2] = b * f; d[o + 3] = 255;
       }

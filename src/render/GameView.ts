@@ -12,6 +12,7 @@ import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
+import { buildBuilding, showFloors, type BuildingObj } from './buildings';
 import { reachable, findPath } from '../game/pathfinding';
 import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
 
@@ -587,7 +588,8 @@ export class GameView {
   // ---------- огромная карта: земля, лес и трава кусками вокруг камеры ----------
   private static readonly CH = 32;
   private groundGroup = new THREE.Group();
-  private chunks = new Map<string, { terrain: THREE.Mesh; objs: THREE.Object3D[]; grass: THREE.Object3D | null; sig: number }>();
+  private chunks = new Map<string, { terrain: THREE.Mesh; objs: THREE.Object3D[]; grass: THREE.Object3D | null; sig: number; blds: { b: BuildingObj; x: number; y: number; w: number; d: number }[] }>();
+  private bldgByChunk = new Map<string, NonNullable<GameState['bldgs']>>();
   private hugeT = 0; private hugeSigT = 0;
   private treeGeo!: THREE.BufferGeometry; private treeMat!: THREE.Material;
   private bushGeo!: THREE.BufferGeometry; private rockGeo!: THREE.BufferGeometry; private boxGeo!: THREE.BufferGeometry;
@@ -622,6 +624,7 @@ export class GameView {
       disc.frustumCulled = ring.frustumCulled = false;
       this.scene.add(disc, ring);
     }
+    for (const b of this.state.bldgs ?? []) { const k = this.chunkKey(Math.floor(b.x! / GameView.CH), Math.floor(b.y! / GameView.CH)); (this.bldgByChunk.get(k) ?? this.bldgByChunk.set(k, []).get(k)!).push(b); }
     this.updateHuge(true);
   }
 
@@ -690,7 +693,17 @@ export class GameView {
     this.groundGroup.remove(ch.terrain); ch.terrain.geometry.dispose();
     for (const o of ch.objs) { this.scene.remove(o); (o as THREE.InstancedMesh).dispose?.(); }
     if (ch.grass) { this.scene.remove(ch.grass); (ch.grass as THREE.InstancedMesh).dispose?.(); }
+    for (const { b } of ch.blds) { this.scene.remove(b); b.traverse(o => (o as THREE.Mesh).geometry?.dispose()); }
     this.chunks.delete(k);
+  }
+
+  /** Крыша и верхние этажи скрываются, когда внутри есть бойцы или видимые пришельцы. */
+  private updateBuildingVis() {
+    const s = this.state, who = s.units.filter(u => u.hp > 0 && (u.team === 'human' || isVisible(s, u)));
+    for (const ch of this.chunks.values()) for (const e of ch.blds) {
+      const inside = who.some(u => u.x >= e.x && u.x < e.x + e.w && u.y >= e.y && u.y < e.y + e.d);
+      showFloors(e.b, inside ? 0 : 99, !inside);
+    }
   }
 
   /** Подгрузка и выгрузка кусков вокруг камеры; перестройка кусков, где разрушили укрытия. */
@@ -716,7 +729,11 @@ export class GameView {
         const mesh = new THREE.Mesh(this.groundGeo(x0, z0, x1, z1, 2), this.ground.material);
         mesh.receiveShadow = true; this.groundGroup.add(mesh);
         const ob = this.buildChunkObjects(cx, cz);
-        ch = { terrain: mesh, objs: ob?.objs ?? [], grass: null, sig: ob?.sig ?? 0 };
+        const blds = (this.bldgByChunk.get(k) ?? []).map(sp => {
+          const b = buildBuilding(sp); b.position.set(sp.x!, this.hy(sp.x! + (sp.w >> 1), sp.y! + (sp.d >> 1)), sp.y!); this.scene.add(b);
+          return { b, x: sp.x!, y: sp.y!, w: sp.w, d: sp.d };
+        });
+        ch = { terrain: mesh, objs: ob?.objs ?? [], grass: null, sig: ob?.sig ?? 0, blds };
         this.chunks.set(k, ch);
       }
       if (d2 <= RG * RG * 2 && !ch.grass && cx >= 0 && cz >= 0 && budget >= 0) { ch.grass = this.buildGrass(cx, cz); budget--; }
@@ -1279,6 +1296,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     for (const [k, o] of this.mineMeshes) if (!live.has(k)) { this.scene.remove(o); this.mineMeshes.delete(k); }
     this.sndReady = true;
     this.updateFog();
+    if (this.state.huge) this.updateBuildingVis();
     this.drawHighlight();
   }
 

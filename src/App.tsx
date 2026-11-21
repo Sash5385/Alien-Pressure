@@ -24,7 +24,7 @@ export function App() {
   const launch = (c0: Campaign, deployed: number[]) => {
     clearMission();
     const st = createMission({
-        rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, objective: c0.objective, biome: c0.biome, size: c0.mapSize, boss: c0.boss, risky: c0.risky, variant: c0.variant, tech: c0.tech,
+        rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, objective: c0.objective, biome: c0.biome, size: c0.mapSize, loc: c0.loc !== undefined && c0.loc >= 0 ? c0.loc : c0.missionNo - 1, boss: c0.boss, risky: c0.risky, variant: c0.variant, tech: c0.tech,
         soldiers: c0.roster.filter(s => deployed.includes(s.id)),
     });
     if (c0.rt) rtInit(st);

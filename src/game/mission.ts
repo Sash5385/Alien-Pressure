@@ -2,6 +2,8 @@ import { log, rand } from './combat';
 import { BIOME_NAME, DIFF } from './difficulty';
 import { applyTraits, shuffle } from './traits';
 import { ARMORS, WEAPONS } from './weapons';
+import { LOCATIONS } from './locations';
+import { footprint, type BuildingSpec } from '../render/buildings';
 import type { Biome, Cover, Difficulty, GameState, House, Look, Objective, Soldier, Tech, Terrain, Unit } from './types';
 
 export const MAP_SIZE = 44;
@@ -58,6 +60,7 @@ export interface MissionOpts {
   objective: Objective;
   biome: Biome;
   size?: number;
+  loc?: number; // номер локації каталогу (великі карти)
   variant?: number;
   boss?: boolean;
   risky?: boolean;
@@ -465,57 +468,81 @@ const hnoise = (x: number, y: number, seed: number) => {
 /** Огромная карта (до 1024): лес, холмы и поляны; развалины-лагеря и ямы, где пришельцы ждут засады. Линейная по размеру генерация. */
 function createHugeForest(o: MissionOpts): GameState {
   const n = o.size!, seed = o.rng & 0xffff, rng = { rng: o.rng };
+  const loc = LOCATIONS[((o.loc ?? 0) % LOCATIONS.length + LOCATIONS.length) % LOCATIONS.length];
   const cover: Cover[][] = grid(n, 'none' as Cover), terrain: Terrain[][] = grid(n, 'ground' as Terrain), look: Look[][] = grid(n, '' as Look), height: number[][] = grid(n, 0);
-  const houses: House[] = [];
-  // холмы: крупный и средний шум
+  const houses: House[] = [], bldgs: BuildingSpec[] = [];
+  const bmask = grid(n, false); // забудова и отступ вокруг
+  // холмы: крупный и средний шум; масштаб зависит от локации
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const v = hnoise(x / 70, y / 70, seed) * 0.65 + hnoise(x / 24, y / 24, seed + 3) * 0.35;
+    const v0 = hnoise(x / 70, y / 70, seed) * 0.65 + hnoise(x / 24, y / 24, seed + 3) * 0.35;
+    const v = (v0 - 0.5) * loc.hill + 0.5;
     height[y][x] = v < 0.42 ? 0 : v < 0.55 ? 1 : v < 0.66 ? 2 : 3;
   }
   const startX = n >> 1, startY = n - 6;
   const clear = (x: number, y: number) => Math.hypot(x - startX, y - startY) < 16; // посадочная поляна
-  // лес: густота по шуму, поляны и чащи
+  // озёра: порог — квантиль шума, чтобы доля воды = loc.water
+  const wnoise = (x: number, y: number) => hnoise(x / 80, y / 80, seed + 29) * 0.6 + hnoise(x / 30, y / 30, seed + 31) * 0.4;
+  const samp: number[] = []; for (let y = 0; y < n; y += 8) for (let x = 0; x < n; x += 8) samp.push(wnoise(x, y));
+  samp.sort((a, b) => a - b);
+  const wth = samp[Math.floor(samp.length * loc.water)] ?? -1;
+  for (let y = 1; y < n - 1; y++) for (let x = 1; x < n - 1; x++) if (!clear(x, y) && Math.hypot(x - startX, y - startY) > 26 && wnoise(x, y) < wth) { terrain[y][x] = 'water'; height[y][x] = 0; }
+  // лес: густота по шуму и локации
+  const k = loc.forest, off = 0.62 - 0.3 * k, mul = 0.3 + 0.35 * k;
   for (let y = 2; y < n - 2; y++) for (let x = 1; x < n - 1; x++) {
-    if (clear(x, y)) continue;
+    if (clear(x, y) || terrain[y][x] === 'water') continue;
     const d = hnoise(x / 40, y / 40, seed + 11) * 0.7 + hnoise(x / 9, y / 9, seed + 17) * 0.3;
     const r = hhash(x, y, seed + 5);
-    if (r < Math.max(0, d - 0.38) * 0.55) { const tree = hhash(x, y, seed + 9) < 0.72; cover[y][x] = tree ? 'full' : 'half'; look[y][x] = tree ? 'tree' : 'bush'; }
+    if (r < Math.max(0, d - off) * mul) { const tree = hhash(x, y, seed + 9) < 0.72; cover[y][x] = tree ? 'full' : 'half'; look[y][x] = tree ? 'tree' : 'bush'; }
     else if (r > 0.9985) { const full = hhash(x, y, seed + 13) < 0.4; cover[y][x] = full ? 'full' : 'half'; look[y][x] = 'rock'; }
   }
-  // лагеря в развалинах: 3–4 дома, ящики и бочки вокруг; пришельцы внутри ждут
+  // населённые пункты: кварталы зданий с этажами, улицы 1–2 клетки; пришельцы ждут внутри и вокруг
   const camps: { x: number; y: number }[] = [];
-  const nCamps = Math.max(6, Math.round(n / 40));
+  const nCamps = Math.max(6, Math.round(n / 40 * loc.towns));
   for (let t = 0; camps.length < nCamps && t < nCamps * 40; t++) {
     const cx = 30 + Math.floor(rand(rng) * (n - 60)), cy = 20 + Math.floor(rand(rng) * (n - 90));
-    if (Math.hypot(cx - startX, cy - startY) < 80 || camps.some(c => Math.hypot(c.x - cx, c.y - cy) < 60)) continue;
+    if (Math.hypot(cx - startX, cy - startY) < 80 || camps.some(c => Math.hypot(c.x - cx, c.y - cy) < loc.radius * 2 + 24)) continue;
     camps.push({ x: cx, y: cy });
-    for (let yy = cy - 9; yy <= cy + 9; yy++) for (let xx = cx - 9; xx <= cx + 9; xx++) { // расчистка под лагерь
-      if (Math.hypot(xx - cx, yy - cy) < 9.5 && cover[yy]?.[xx] !== undefined) { cover[yy][xx] = 'none'; look[yy][xx] = ''; height[yy][xx] = height[cy][cx]; }
+    const R = loc.radius, lo = height[cy][cx];
+    for (let yy = cy - R - 2; yy <= cy + R + 2; yy++) for (let xx = cx - R - 2; xx <= cx + R + 2; xx++) { // расчистка и выравнивание
+      if (Math.hypot(xx - cx, yy - cy) < R + 2.5 && cover[yy]?.[xx] !== undefined) { cover[yy][xx] = 'none'; look[yy][xx] = ''; height[yy][xx] = lo; if (terrain[yy][xx] === 'water' && Math.hypot(xx - cx, yy - cy) < R * 0.7) terrain[yy][xx] = 'ground'; }
     }
-    const lo = height[cy][cx];
-    for (let i = 0; i < 3 + Math.floor(rand(rng) * 2); i++) {
-      const w = 3, h = rand(rng) < 0.5 ? 3 : 2, a = rand(rng) * 6.28, r = 2 + rand(rng) * 5, hx = Math.round(cx + Math.cos(a) * r) - 1, hy = Math.round(cy + Math.sin(a) * r) - 1;
-      let ok = true;
-      for (let yy = hy - 1; yy <= hy + h && ok; yy++) for (let xx = hx - 1; xx <= hx + w && ok; xx++) if (cover[yy]?.[xx] === 'full' && look[yy][xx] === 'house') ok = false;
-      if (!ok) continue;
-      for (let yy = hy; yy < hy + h; yy++) for (let xx = hx; xx < hx + w; xx++) { cover[yy][xx] = 'full'; look[yy][xx] = 'house'; height[yy][xx] = lo; }
-      houses.push({ x: hx, y: hy, w, h, id: houses.length, hp: 6 });
+    const ri = (a: [number, number]) => a[0] + Math.floor(rand(rng) * (a[1] - a[0] + 1));
+    for (let y = cy - R; y < cy + R;) {
+      let rowD = 3, x = cx - R;
+      while (x < cx + R) {
+        const w = ri(loc.w), dd = ri(loc.d);
+        rowD = Math.max(rowD, dd);
+        const mx = x + w / 2, my = y + dd / 2;
+        if (Math.hypot(mx - cx, my - cy) < R && rand(rng) < loc.fill && x > 1 && y > 1 && x + w < n - 1 && y + dd < n - 2) {
+          let ok = true;
+          for (let yy = y - 1; yy <= y + dd && ok; yy++) for (let xx = x - 1; xx <= x + w && ok; xx++) if (bmask[yy][xx] || terrain[yy][xx] === 'water' || clear(xx, yy)) ok = false;
+          if (ok) {
+            const style = loc.styles[Math.floor(rand(rng) * loc.styles.length)];
+            const sp: BuildingSpec = { w, d: dd, floors: ri(loc.floors), style, roof: rand(rng) < loc.gable ? 'gable' : 'flat', damage: Math.min(1, Math.max(0, loc.damage + (rand(rng) - 0.5) * 0.4)), seed: Math.floor(rand(rng) * 1e6), id: bldgs.length, x, y };
+            for (const f of footprint(sp)) { cover[y + f.dy][x + f.dx] = f.cover; look[y + f.dy][x + f.dx] = f.look as Look; height[y + f.dy][x + f.dx] = lo; }
+            for (let yy = y - 1; yy <= y + dd; yy++) for (let xx = x - 1; xx <= x + w; xx++) bmask[yy][xx] = true;
+            bldgs.push(sp);
+          }
+        }
+        x += w + 1 + (rand(rng) < 0.3 ? 1 : 0);
+      }
+      y += rowD + 2;
     }
-    for (let i = 0; i < 8; i++) { const xx = cx - 8 + Math.floor(rand(rng) * 17), yy = cy - 8 + Math.floor(rand(rng) * 17); if (cover[yy][xx] === 'none') { const half = rand(rng) < 0.6; cover[yy][xx] = half ? 'half' : 'full'; look[yy][xx] = half ? 'crate' : 'container'; } }
+    for (let i = 0; i < loc.crates; i++) { const xx = cx - R + Math.floor(rand(rng) * (2 * R + 1)), yy = cy - R + Math.floor(rand(rng) * (2 * R + 1)); if (cover[yy]?.[xx] === 'none' && !bmask[yy][xx] && terrain[yy][xx] === 'ground') { const half = rand(rng) < 0.6; cover[yy][xx] = half ? 'half' : 'full'; look[yy][xx] = half ? 'crate' : 'container'; } }
   }
   // ямы: по одной, по лесу; в яме сидит пришелец
   const pits: { x: number; y: number }[] = [];
   const nPits = Math.round(n / 14);
   for (let t = 0; pits.length < nPits && t < nPits * 30; t++) {
     const x = 6 + Math.floor(rand(rng) * (n - 12)), y = 6 + Math.floor(rand(rng) * (n - 40));
-    if (cover[y][x] !== 'none' || Math.hypot(x - startX, y - startY) < 60 || pits.some(p => Math.hypot(p.x - x, p.y - y) < 18) || camps.some(c => Math.hypot(c.x - x, c.y - y) < 14)) continue;
+    if (cover[y][x] !== 'none' || Math.hypot(x - startX, y - startY) < 60 || pits.some(p => Math.hypot(p.x - x, p.y - y) < 18) || camps.some(c => Math.hypot(c.x - x, c.y - y) < loc.radius + 4) || terrain[y][x] === 'water') continue;
     pits.push({ x, y });
   }
   // тайники снабжения по всей карте: магазины, гранаты и материалы вдали от базы
   const loot: NonNullable<GameState['loot']> = [];
   for (let t = 0, want = Math.round(n / 16); loot.length < want && t < want * 30; t++) {
     const x = 5 + Math.floor(rand(rng) * (n - 10)), y = 5 + Math.floor(rand(rng) * (n - 30));
-    if (cover[y][x] !== 'none' || loot.some(l => Math.hypot(l.x - x, l.y - y) < 12)) continue;
+    if (cover[y][x] !== 'none' || terrain[y][x] === 'water' || loot.some(l => Math.hypot(l.x - x, l.y - y) < 12)) continue;
     const r = rand(rng);
     loot.push({ x, y, kind: r < 0.4 ? 'mag' : r < 0.7 ? 'gren' : 'mat', n: 1 });
   }
@@ -524,10 +551,10 @@ function createHugeForest(o: MissionOpts): GameState {
   let id = 1000, tn = 0;
   const campKinds: AlienKind[] = ['trooper', 'trooper', 'heavy', 'sniper', 'trooper'];
   camps.forEach((c, ci) => {
-    const cnt = 3 + (ci % 2);
+    const cnt = Math.max(2, Math.round((3 + (ci % 2)) * loc.aliens));
     for (let k = 0; k < cnt; k++) {
       let x = c.x, y = c.y;
-      for (let tries = 0; tries < 30; tries++) { x = c.x - 5 + Math.floor(rand(rng) * 11); y = c.y - 5 + Math.floor(rand(rng) * 11); if (cover[y][x] === 'none' && !aliens.some(a => a.x === x && a.y === y)) break; }
+      for (let tries = 0; tries < 30; tries++) { x = c.x - 5 + Math.floor(rand(rng) * 11); y = c.y - 5 + Math.floor(rand(rng) * 11); if (cover[y][x] === 'none' && terrain[y][x] === 'ground' && !aliens.some(a => a.x === x && a.y === y)) break; }
       const hq = ci === 0 && k === 0; // лагерь 0 — штаб с командиром
       const kind: AlienKind = hq ? 'commander' : campKinds[(ci + k) % campKinds.length];
       const a = alien(id++, kind, kind === 'trooper' ? ++tn : 0, x, y, o.difficulty);
@@ -555,11 +582,11 @@ function createHugeForest(o: MissionOpts): GameState {
   }
   const seen = grid(n, false);
   const st: GameState = {
-    size: n, cover, terrain, height, look, houses, trenches: [], biome: 'forest', units: [...humans, ...aliens], selectedId: null, targetId: null,
+    size: n, cover, terrain, height, look, houses, bldgs, locName: loc.name, trenches: [], biome: 'forest', units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels: [], fires: [], scorched: grid(n, false), bridges: [], targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
-    objective: 'clear', markId: null, beacons: [], holdTurns: HOLD_TURNS, zone: null, weather: o.missionNo % 2 === 0 ? 'night' : undefined, sides: 'all', waveBoost: 0,
-    log: [`Місія ${o.missionNo} · Величезний ліс ${n}×${n}. Ціль: прочесати ліс. Прибульці чекають у таборах-руїнах і сидять у ямах (${pits.length}), доки не підійдеш близько. Рекомендується реальний час.`, `Таборів: ${camps.length} (у першому штаб із командиром, у кожному третьому склад). Прибульців: ${aliens.length}. Рація (📡) викликає скид постачання раз на 90 секунд.`],
+    objective: 'clear', markId: null, beacons: [], holdTurns: HOLD_TURNS, zone: null, weather: loc.weather ?? (o.missionNo % 2 === 0 ? 'night' : undefined), sides: 'all', waveBoost: 0,
+    log: [`Місія ${o.missionNo} · ${loc.arch} «${loc.name}» ${n}×${n}. ${loc.blurb} Ціль: прочесати локацію. Прибульці чекають у будівлях і сидять у ямах (${pits.length}), доки не підійдеш близько. Рекомендується реальний час.`, `Пунктів: ${camps.length}, будівель: ${bldgs.length} (у першому штаб із командиром, у кожному третьому склад). Прибульців: ${aliens.length}. Рація (📡) викликає скид постачання раз на 90 секунд.`],
     rng: rng.rng, boss: false, pits, huge: true, mats: 8, loot,
   };
   return st;

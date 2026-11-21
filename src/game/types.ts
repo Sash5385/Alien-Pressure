@@ -6,7 +6,7 @@ export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'launcher' | 'mo
 export type LaunchKind = 'ugl' | 'launcher' | 'mortar' | 'ags';
 export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
-export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container' | 'bags';
+export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container' | 'bags' | 'wall' | 'window';
 export interface House { x: number; y: number; w: number; h: number; id: number; hp: number }
 export type Stance = 'stand' | 'kneel' | 'prone';
 export type Biome = 'ruins' | 'forest' | 'lake';
@@ -102,6 +102,8 @@ export interface GameState {
   height: number[][]; // уровень рельефа 0–3: подъём на 1 проходим, обрыв (2+) — нет
   look: Look[][]; // вид укрытия (дерево, камень, дом…)
   houses: House[];
+  bldgs?: import('../render/buildings').BuildingSpec[]; // будівлі з поверхами (великі карти)
+  locName?: string;
   trenches: { x: number; y: number }[]; // окопы
   terrain: Terrain[][]; // вода непроходима, но не мешает видеть и стрелять
   biome: Biome;

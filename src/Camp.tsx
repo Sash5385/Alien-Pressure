@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CLASS_IDS, CLASSES } from './game/classes';
-import { chooseOption, sandboxMission, setMapSize, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
+import { LOCATIONS } from './game/locations';
+import { chooseOption, sandboxMission, setMapSize, setLoc, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
 import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech, WeaponId } from './game/types';
@@ -120,6 +121,12 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         {([44, 64, 640, 1024] as const).map(n => (
           <button key={n} style={{ ...btn(c.mapSize === n), padding: '4px 10px', fontSize: 12 }} title={n >= 640 ? 'Величезний ліс: прибульці чекають у таборах-руїнах і сидять у ямах, доки не підійдеш. Лише реальний час, без збереження посеред місії' : undefined} onClick={() => act(x => setMapSize(x, n))}>{n === 44 ? 'Середня 44×44' : n === 64 ? 'Велика 64×64' : n === 640 ? 'Величезний ліс 640×640' : 'Гігант 1024×1024'}</button>
         ))}
+        {c.mapSize >= 640 && (
+          <select value={c.loc ?? -1} onChange={e => act(x => setLoc(x, Number(e.target.value)))} style={{ ...btn(false), padding: '4px 8px', fontSize: 12, maxWidth: 230 }} title="Локація великої карти: тип місцевості, забудова, погода">
+            <option value={-1}>🎲 Локація за місією</option>
+            {Array.from(new Set(LOCATIONS.map(l => l.arch))).map(a => <optgroup key={a} label={a}>{LOCATIONS.filter(l => l.arch === a).map(l => <option key={l.id} value={l.id}>{l.name}{l.weather ? ' · ' + ({ night: 'ніч', rain: 'дощ', fog: 'туман' } as Record<string, string>)[l.weather] : ''}</option>)}</optgroup>)}
+          </select>
+        )}
       </div>
 
       {(() => {

@@ -15,6 +15,7 @@ export interface Campaign {
   missionNo: number;
   objective: Objective;
   biome: Biome;
+  loc?: number; // локація великих карт (-1/пусто — за номером місії)
   mapSize: 44 | 64 | 640 | 1024; // размер карты миссий (640 и 1024 — огромный лес с засадами)
   roster: Soldier[];
   fallen: { name: string; mission: number }[];
@@ -253,6 +254,8 @@ export function setClass(c: Campaign, soldierId: number, cls: ClassId): string |
   s.cls = cls;
   return null;
 }
+
+export function setLoc(c: Campaign, i: number): string | null { c.loc = i; return null; }
 
 export function setRt(c: Campaign, on: boolean): string | null { c.rt = on; return null; }
 
