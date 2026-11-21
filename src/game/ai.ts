@@ -1,6 +1,6 @@
 import { bldgAt, flOf } from './floors';
 import { openDoorAt } from './doors';
-import { alienSees, blast, canPsi, faceToward, GRENADE_RANGE, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
+import { alienSees, blast, BLAST, canFire, hurtN, canPsi, faceToward, GRENADE_RANGE, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 import type { GrenadeResult } from './combat';
@@ -40,6 +40,19 @@ function score(s: GameState, u: Unit, t: Unit): number | null {
   const c = hitChance(s, u, t);
   if (c !== null) return c;
   return peekTile(s, u, t)?.chance ?? null;
+}
+
+/** Ценность цели сверх шанса попасть: добить слабого, выбить опасного (медик, снайпер), не тратить огонь на лежащих и безоружных. */
+function prio(u: Unit, t: Unit): number {
+  const avg = (u.dmg[0] + u.dmg[1]) / 2;
+  let p = (t.hp <= avg ? 25 : t.hp <= avg * 2 ? 10 : 0) + (t.maxHp - t.hp) * 1.2;
+  if (t.down) p -= 35;
+  p += ({ medic: 8, sniper: 8, heavy: 5, engineer: 3 } as Record<string, number>)[t.cls] ?? 0;
+  if (t.overwatch) p += 6;
+  if (hurtN(t, 'leg') >= 2) p += 8; // обездвижен — лёгкая добыча
+  if (!canFire(t)) p -= 12; // безоружный не опасен
+  if (t.suppressed) p -= 4;
+  return p;
 }
 
 /** Желаемая дистанция до ближайшего бойца: снайпер и псионик держатся на расстоянии. */
@@ -113,7 +126,7 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
   const options = humans
     .map(t => ({ t, c: score(s, u, t) }))
     .filter((e): e is { t: Unit; c: number } => e.c !== null)
-    .sort((a, b) => (b.c + (b.t.id === g?.focus ? 20 : 0)) - (a.c + (a.t.id === g?.focus ? 20 : 0)));
+    .sort((a, b) => (b.c + prio(u, b.t) + (b.t.id === g?.focus ? 20 : 0)) - (a.c + prio(u, a.t) + (a.t.id === g?.focus ? 20 : 0)));
   const near = humans.length ? Math.min(...humans.map(t => Math.hypot(t.x - u.x, t.y - u.y))) : 99;
   const mode = u.kind === 'commander' ? 'assault' : g?.mode ?? 'assault';
   const walk = async (spot: [number, number]) => {
@@ -147,11 +160,17 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
     return 'stop';
   }
 
+  // тяжело раненый не лезет под огонь: отходит к укрытию и ждёт в засаде
+  if (u.kind !== 'commander' && !u.static && (u.fl ?? 0) === 0 && u.hp <= Math.ceil(u.maxHp * 0.3) && !st.retreated && near <= 12 && u.ap >= 1 && rand(s) < 0.6) {
+    const spot = retreatSpot(s, u, humans);
+    if (spot) { st.retreated = true; u.ap -= 1; u.stance = 'stand'; await walk(spot); if (u.hp > 0 && u.ap > 0 && u.ammo > 0 && hasCover(s, u.x, u.y)) { u.overwatch = true; u.ap = 0; await h.moved(u); return 'stop'; } return 'next'; }
+  }
   // гранаты: по скоплению бойцов или по тем, кто сидит за укрытием/в здании
   if (u.grenades > 0 && u.ap >= 1 && humans.length && near <= GRENADE_RANGE + 1 && mode !== 'hold') {
     let pick: Unit | null = null, bestV = 0;
     for (const t of humans) {
       const d = Math.hypot(t.x - u.x, t.y - u.y); if (d > GRENADE_RANGE || d < 3) continue;
+      if (s.units.some(a => a.team === 'alien' && a.hp > 0 && flOf(a) === flOf(t) && Math.hypot(a.x - t.x, a.y - t.y) <= BLAST + 0.2)) continue; // не бить по своим
       const cl = humans.filter(o => Math.hypot(o.x - t.x, o.y - t.y) <= 1.6).length, hc = hitChance(s, u, t), sheltered = hc === null || hc < 40;
       const v = cl * 2 + (sheltered ? 1.5 : 0) + (t.id === g?.focus ? 1 : 0);
       if ((cl >= 2 || sheltered) && v > bestV) { bestV = v; pick = t; }
@@ -168,6 +187,9 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
     // тяжёлые и снайперы прижимают огнём, когда попасть трудно
     const sup = ['heavy', 'sniper', 'commander'].includes(u.kind) && u.ammo >= 2 && options[0].c < 35 && !t.suppressed ? suppress(s, u, t) : null;
     if (sup) { await h.shot(sup); return 'next'; }
+    // «якорь» группы прижимает фокус-цель, пока остальные заходят с флангов
+    const pin = g && g.members.length >= 3 && idx === 0 && mode === 'assault' && !t.suppressed && u.ammo >= 3 && ['trooper', 'heavy', 'sniper', 'commander'].includes(u.kind) && rand(s) < 0.5 ? suppress(s, u, t) : null;
+    if (pin) { await h.shot(pin); return 'next'; }
     await h.shot(shoot2(s, u, t));
     if (u.kind === 'sniper' && !u.static && flOf(u) === 0 && u.hp > 0 && u.ap > 0 && !st.retreated && rand(s) < 0.45) { // снайпер меняет позицию после выстрела
       const spot = retreatSpot(s, u, humans);
@@ -193,6 +215,12 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
   }
   let best: [number, number] | null = null;
   let bestScore = Infinity;
+  const cands: { p: [number, number]; sc: number }[] = [];
+  const foc = g?.focus !== undefined ? humans.find(h2 => h2.id === g.focus) : undefined; // окружение: каждый член группы выходит на свой сектор вокруг цели
+  const cx = g && g.members.length ? g.members.reduce((a, m) => a + m.x, 0) / g.members.length : u.x, cy = g && g.members.length ? g.members.reduce((a, m) => a + m.y, 0) / g.members.length : u.y;
+  const n = g?.members.length ?? 1, R = u.kind === 'sniper' ? 10 : 6;
+  let px = 0, py = 0;
+  if (foc && n >= 2) { const th = Math.atan2(cy - foc.y, cx - foc.x) + ((idx / (n - 1)) - 0.5) * Math.PI * 0.9; px = foc.x + Math.cos(th) * R; py = foc.y + Math.sin(th) * R; }
   for (const k of reachable(s, u.x, u.y, u.move).keys()) {
     const [x, y] = k.split(',').map(Number);
     if (x === u.x && y === u.y) continue;
@@ -202,7 +230,15 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
     const flank = humans.some(t => hitChance(s, ghost, t) !== null && isFlanked(s, ghost, t));
     const cov = hasCover(s, x, y);
     const sc = ideal(u, nearT) - (seen ? 3 : 0) - (cov ? (bound ? 3.5 : 1.5) : 0) - (flank && idx % 2 === 1 ? 2.5 : 0) - s.height[y][x] * (u.kind === 'sniper' ? 1.5 : 0.7) - (trenchAt(s, x, y) ? 2 : 0) - (near < 16 && (u.kind === 'trooper' || u.kind === 'heavy') && bldgAt(s, x, y) >= 0 ? 2 : 0); // здания — укрытие и позиция у окон
-    if (sc < bestScore) { bestScore = sc; best = [x, y]; }
+    const sc2 = sc + (foc && n >= 2 ? 0.25 * Math.hypot(x - px, y - py) : 0);
+    cands.push({ p: [x, y], sc: sc2 });
+  }
+  cands.sort((a, b) => a.sc - b.sc);
+  for (const c of cands.slice(0, 6)) { // из лучших — та клетка, где под огнём меньше бойцов (засады overwatch весят втрое)
+    const gh = { ...u, x: c.p[0], y: c.p[1] };
+    const expo = humans.reduce((a, t) => a + (!t.down && hitChance(s, t, gh) !== null ? (t.overwatch ? 3 : 1) : 0), 0);
+    const fin = c.sc + 0.7 * expo;
+    if (fin < bestScore) { bestScore = fin; best = c.p; }
   }
   if (!best) return 'stop';
   u.ap -= 1;
@@ -217,7 +253,8 @@ export async function runAlienTurn(s: GameState, h: AiHooks) {
   for (const hu of living(s, 'human')) hu.suppressed = false;
   for (const a of living(s, 'alien')) a.overwatch = false;
   const groups = planGroups(s);
-  for (const u of living(s, 'alien')) {
+  const role = (a: Unit) => (['heavy', 'sniper', 'commander'].includes(a.kind) ? 0 : 1); // прижимающие ходят первыми — остальные идут уже под подавлением
+  for (const u of living(s, 'alien').sort((a, b) => role(a) - role(b))) {
     if (u.dormant) continue;
     u.ap = Math.max(1, u.maxAp - (u.suppressed ? 1 : 0));
     const g = u.grp !== undefined ? groups.get(u.grp) : undefined;
