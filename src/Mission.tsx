@@ -12,6 +12,7 @@ import { bldgAt, flOf, stairPos } from './game/floors';
 import { clearBuilding, focusFire, holdAll, regroup } from './game/orders';
 import { maxLevel } from './render/buildings';
 import { todLabel } from './game/tod';
+import { BAG, bagUsed, canSwap, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
@@ -106,6 +107,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const [showMap, setShowMap] = useState(true);
   const [uiIdx, setUiIdx] = useState(loadUi);
   const [ordersOpen, setOrdersOpen] = useState(false);
+  const [invOpen, setInvOpen] = useState(false);
   const z = UI_SCALES[uiIdx];
   const vwE = (typeof window !== 'undefined' ? window.innerWidth : 1280) / z; // ширина интерфейса с учётом размера
   const vw = (n: number) => `calc(${n} * 1vw / ${z})`;
@@ -403,6 +405,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const it = (icon: string, label: string, sub: string, on: boolean, off: boolean, click: () => void, title?: string): Item => ({ icon, label, sub, on, off, click, title });
   const bi = sel && s.bldgs ? bldgAt(s, sel.x, sel.y) : -1, sf = sel ? flOf(sel) : 0, nfl = bi >= 0 ? maxLevel(s.bldgs![bi]) + 1 : 1;
   const goFloor = (dir: 1 | -1) => { if (!sel || bi < 0 || sel.down) return; const p = stairPos(s, bi, dir > 0 ? 'top' : 'bottom'); orderMove(sel, p.x, p.y, sf + dir); s.targetId = null; view.current?.syncUnits(); rerender(); };
+  const act2 = (f: () => boolean) => { if (!sel || sel.down) return; if (f()) { sfx('select'); view.current?.syncUnits(); rerender(); } };
+  const nearStash = sel && s.stash ? stashNear(s, sel) : undefined, wpnHere = sel ? weaponHere(s, sel) : undefined;
   const toggleLook = () => { s.lookMode = !s.lookMode; view.current?.syncUnits(); rerender(); };
   const bigL = it('◉', 'Засідка', '', false, !canOw, overwatch, 'Засідка (overwatch): боєць стоїть і стріляє по ворогу, що потрапив у поле зору');
   const itemsL: Item[] = [
@@ -412,6 +416,9 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     it('▤', 'Мішки', `${s.mats ?? 0}`, s.aiming === 'bags', !canBags, toggleBags, 'Мішки з піском: 1 AP і 1 матеріал, півукриття на клітинці до 2 кроків від бійця. Окіп теж коштує 1 матеріал'),
     it('✚', 'Бинт', `${s.medkits}`, false, !canBandage, heal, 'Перев’язка'),
     sel ? it('★', { assault: 'Придуш.', sniper: 'Снайп.', medic: 'Лікувати', engineer: 'Міна' }[sel.cls], abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, `${abilityLabel}: ${CLASSES[sel.cls].desc}`) : it('★', 'Вміння', '', false, true, () => {}),
+    ...(nearStash && sel ? [it('📦', 'Обшук', '', true, sel.ap <= 0, () => act2(() => searchStash(s, sel)), 'Обшукати ящик поруч (1 дія)')] : []),
+    ...(wpnHere && sel ? [it('🔫', 'Взяти', WEAPONS[wpnHere.w!].name.slice(0, 7), true, sel.ap <= 0, () => act2(() => takeWeapon(s, sel)), `Підняти: ${WEAPONS[wpnHere.w!].name}`)] : []),
+    ...(sel?.sec ? [it('⇄', 'Зброя', WEAPONS[sel.sec].name.slice(0, 7), false, !canSwap(sel), () => act2(() => swapWeapons(s, sel)), 'Змінити зброю на запасну (1 дія)')] : []),
     ...(downedAlly ? [it('⇪', 'Підняти', '', true, !canAct, doRevive, `Підняти: ${downedAlly.name}`)] : []),
     ...(s.objective === 'sabotage' ? [it('⚡', 'Підірвати', '', true, !canCharge, doCharge, 'Підірвати маяк')] : []),
   ];
@@ -449,6 +456,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const rtOrEnd = s.rt ? (
     <div style={{ display: 'flex', gap: 6 }}>
       <button style={{ ...nb(s.rt.paused), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Пауза (Пробіл)" onClick={() => { s.rt!.paused = !s.rt!.paused; sfx('click'); rerender(); }}>{s.rt.paused ? '▶' : 'II'}</button>
+      <button style={{ ...nb(invOpen), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Інвентар бійця: зброя, рюкзак, обшук" onClick={() => { setInvOpen(o => !o); sfx('click'); }}>🎒</button>
       <button style={{ ...nb(ordersOpen), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Накази загону: збір, атака, зачистка будівлі, стояти" onClick={() => { setOrdersOpen(o => !o); sfx('click'); }}>📣</button>
       {([0.5, 1] as const).map(v => <button key={v} style={{ ...nb(s.rt!.speed === v), minWidth: 0, padding: narrow ? '6px 7px' : '6px 10px' }} title={`Швидкість ×${v}`} onClick={() => { s.rt!.speed = v; sfx('click'); rerender(); }}>×{v}</button>)}
     </div>
@@ -462,6 +470,26 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         <div style={{ position: 'absolute', left: '50%', top: narrow ? '34%' : '30%', transform: 'translate(-50%,-50%)', pointerEvents: 'none', textAlign: 'center', animation: 'apPulse 1.6s ease-in-out infinite' }}>
           <div style={{ ...nbBase, borderRadius: 999, padding: narrow ? '8px 18px' : '12px 30px', fontSize: narrow ? 20 : 30, fontWeight: 800, letterSpacing: '.18em' }}>II ПАУЗА</div>
           <div style={{ marginTop: 6, fontSize: 12, textShadow: '0 1px 2px #000' }}>Режим планування: віддавай накази (Shift+клік — додати точку маршруту), потім Пробіл або ▶.</div>
+        </div>
+      )}
+      {invOpen && sel && (
+        <div style={{ position: 'absolute', top: narrow ? 92 : 64, left: narrow ? 8 : 'calc(50% - 560px)', width: narrow ? vw(94) : 280, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, pointerEvents: 'auto', fontSize: 12, zIndex: 5 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b style={{ fontSize: 14 }}>🎒 {sel.name}</b><button style={{ ...nb(false), minWidth: 0, minHeight: 26, padding: '0 10px' }} onClick={() => setInvOpen(false)}>✕</button></div>
+          <div style={{ display: 'grid', gap: 4, padding: 6, borderRadius: 10, background: 'rgba(255,255,255,.07)' }}>
+            <span>🔫 <b>{WEAPONS[sel.weapon].name}</b> · {sel.ammo}/{sel.maxAmmo}</span>
+            <span style={{ opacity: sel.sec ? 1 : 0.55 }}>🎽 {sel.sec ? <><b>{WEAPONS[sel.sec].name}</b> · {sel.secAmmo ?? WEAPONS[sel.sec].ammo}</> : 'запасної зброї немає'}</span>
+            {sel.sec && <button style={{ ...nb(false, !canSwap(sel)), minHeight: 30 }} disabled={!canSwap(sel)} onClick={() => act2(() => swapWeapons(s, sel))}>⇄ Змінити зброю (1 дія)</button>}
+          </div>
+          <div>Рюкзак {bagUsed(sel)}/{BAG} · аптечок {s.medkits} · матеріалів {s.mats ?? 0}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
+            {Array.from({ length: BAG }, (_, i) => { const kind = i < sel.mags ? 'mag' : i < sel.mags + sel.grenades ? 'gren' : null; return (
+              <button key={i} disabled={!kind} title={kind ? 'Передати сусідньому бійцю або викласти на землю' : 'Порожньо'} style={{ ...nb(false, !kind), minHeight: 40, minWidth: 0, padding: 0, fontSize: 18, borderStyle: kind ? 'solid' : 'dashed' }} onClick={() => kind && act2(() => giveItem(s, sel, kind))}>{kind === 'mag' ? '▮' : kind === 'gren' ? '✹' : ''}</button>); })}
+          </div>
+          <div style={{ opacity: 0.7, fontSize: 11 }}>▮ магазин · ✹ граната. Натисни предмет — передати сусіду або викласти.</div>
+          {(nearStash || wpnHere) && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {nearStash && <button style={nb(true, sel.ap <= 0)} disabled={sel.ap <= 0} onClick={() => act2(() => searchStash(s, sel))}>📦 Обшукати</button>}
+            {wpnHere && <button style={nb(true, sel.ap <= 0)} disabled={sel.ap <= 0} onClick={() => act2(() => takeWeapon(s, sel))}>🔫 Взяти: {WEAPONS[wpnHere.w!].name}</button>}
+          </div>}
         </div>
       )}
       {ordersOpen && s.rt && s.status === 'playing' && (

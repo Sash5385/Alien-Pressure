@@ -1,7 +1,8 @@
 import { bldgAt, coverAt, flOf } from './floors';
 import { nightAmount } from './tod';
+import { autoPickup, randomWeapon } from './inventory';
 import { wallKey } from '../render/buildings';
-import type { GameState, LaunchKind, Stance, Unit } from './types';
+import type { GameState, LaunchKind, Stance, Unit, WeaponId } from './types';
 import { WEAPONS } from './weapons';
 
 export interface ShotResult {
@@ -190,22 +191,26 @@ export function buildBags(s: GameState, u: Unit, x: number, y: number): boolean 
 function lootTick(s: GameState) {
   s.loot ??= [];
   for (const a of s.units) {
-    if (a.team !== 'alien' || a.hp > 0 || a.looted) continue;
-    a.looted = true;
-    if (rand(s) < 0.55) {
-      const r = rand(s);
-      s.loot.push({ x: a.x, y: a.y, kind: r < 0.5 ? 'mag' : r < 0.75 ? 'gren' : 'mat', n: 1 });
+    if (a.hp > 0 || a.looted) continue;
+    if (a.team === 'alien') {
+      a.looted = true;
+      if (rand(s) < 0.55) {
+        const r = rand(s);
+        s.loot.push({ x: a.x, y: a.y, kind: r < 0.4 ? 'mag' : r < 0.65 ? 'gren' : r < 0.82 ? 'mat' : 'kit', n: 1 });
+      }
+      if (rand(s) < (a.kind === 'sniper' || a.kind === 'heavy' || a.kind === 'commander' ? 0.35 : 0.2)) { // оружие пришельца
+        const w: WeaponId = a.kind === 'sniper' ? 'sniper' : a.kind === 'heavy' ? 'launcher' : a.kind === 'commander' ? 'shotgun' : (['rifle', 'smg', 'shotgun'] as const)[Math.floor(rand(s) * 3)];
+        s.loot.push({ x: a.x, y: a.y, kind: 'wpn', n: 1, w, ammo: Math.max(1, Math.ceil(WEAPONS[w].ammo * 0.6)) });
+      }
+    } else { // снаряжение павшего бойца остаётся на теле
+      a.looted = true;
+      s.loot.push({ x: a.x, y: a.y, kind: 'wpn', n: 1, w: a.weapon, ammo: a.ammo });
+      if (a.sec) s.loot.push({ x: a.x, y: a.y, kind: 'wpn', n: 1, w: a.sec, ammo: a.secAmmo });
+      if (a.mags > 0) s.loot.push({ x: a.x, y: a.y, kind: 'mag', n: a.mags });
+      if (a.grenades > 0) s.loot.push({ x: a.x, y: a.y, kind: 'gren', n: a.grenades });
     }
   }
-  for (const u of s.units) {
-    if (u.team !== 'human' || u.hp <= 0) continue;
-    const i = s.loot.findIndex(l => l.x === u.x && l.y === u.y);
-    if (i < 0) continue;
-    const l = s.loot.splice(i, 1)[0];
-    if (l.kind === 'mag') { u.mags += l.n; log(s, `${u.name} знаходить магазин.`); }
-    else if (l.kind === 'gren') { u.grenades += l.n; log(s, `${u.name} знаходить гранату.`); }
-    else { s.mats = (s.mats ?? 0) + 2; log(s, `${u.name} знаходить матеріали (+2).`); }
-  }
+  for (const u of s.units) { if (u.team === 'human' && u.hp > 0) autoPickup(s, u); }
 }
 
 export function checkEnd(s: GameState) {
@@ -867,13 +872,13 @@ export function callSupply(s: GameState): boolean {
   if (!hs.length || radioReady(s) > 0) return false;
   const cx = Math.round(hs.reduce((a, h) => a + h.x, 0) / hs.length), cy = Math.round(hs.reduce((a, h) => a + h.y, 0) / hs.length);
   s.loot ??= [];
-  const kinds = ['mag', 'gren', 'mat'] as const;
+  const kinds = ['mag', 'gren', 'kit', 'mat', 'wpn'] as const;
   let k = 0;
-  for (let r = 2; r <= 6 && k < 3; r++) for (let oy = -r; oy <= r && k < 3; oy++) for (let ox = -r; ox <= r && k < 3; ox++) {
+  for (let r = 2; r <= 6 && k < 5; r++) for (let oy = -r; oy <= r && k < 5; oy++) for (let ox = -r; ox <= r && k < 5; ox++) {
     if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
     const x = cx + ox, y = cy + oy;
     if (s.cover[y]?.[x] !== 'none' || s.terrain[y][x] !== 'ground' || s.loot.some(l => l.x === x && l.y === y) || s.units.some(u => u.hp > 0 && u.x === x && u.y === y)) continue;
-    s.loot.push({ x, y, kind: kinds[k], n: 1 }); k++;
+    s.loot.push(kinds[k] === 'wpn' ? { x, y, ...randomWeapon(s, true) } : { x, y, kind: kinds[k], n: 1 }); k++;
   }
   s.radioAt = (s.rt?.clock ?? 0) + 90;
   log(s, 'Рація: скид постачання здійснено, скрині поруч із загоном.');

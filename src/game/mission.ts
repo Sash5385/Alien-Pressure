@@ -3,8 +3,9 @@ import { BIOME_NAME, DIFF } from './difficulty';
 import { applyTraits, shuffle } from './traits';
 import { ARMORS, WEAPONS } from './weapons';
 import { LOCATIONS } from './locations';
+import { stashItems } from './inventory';
 import { footprint, roofAccess, stairTiles, tileCover, type BuildingSpec } from '../render/buildings';
-import type { Biome, Cover, Difficulty, GameState, House, Look, Objective, Soldier, Tech, Terrain, Unit } from './types';
+import type { Stash, Biome, Cover, Difficulty, GameState, House, Look, Objective, Soldier, Tech, Terrain, Unit } from './types';
 
 export const MAP_SIZE = 44;
 const SCN: string[] = ['storm', 'holdbld', 'hostage', 'bomb', 'counter', 'escort', 'ambush', 'raid'];
@@ -28,6 +29,7 @@ const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
   if (s.cls === 'engineer') u.grenades += 1;
   if (s.att?.includes('optic')) { u.aim += 8; u.range += 3; u.optic = true; }
   if (s.att?.includes('mag')) { u.extMag = true; u.maxAmmo = Math.ceil(u.maxAmmo * 1.5); u.ammo = u.maxAmmo; }
+  if (s.sec) { u.sec = s.sec; u.secAmmo = WEAPONS[s.sec].ammo; }
   if (s.att?.includes('supp')) u.supp = true;
   if (s.att?.includes('nvg')) u.nvg = true;
   if (tech.armor) u.maxHp += 2;
@@ -740,13 +742,27 @@ function createHugeForest(o: MissionOpts): GameState {
       }
     }
   }
+  // ящики с содержимым: в домах (30% зданий) и на улице (ящики и контейнеры)
+  if (!scn) for (const b of bldgs) {
+    if (hhash(b.id!, 55, seed) > 0.3) continue;
+    const st2 = stairTiles(b);
+    spot: for (let dy = 1; dy < b.d - 1; dy++) for (let dx = 1; dx < b.w - 1; dx++) {
+      if (tileCover(b, dx, dy, 0) !== 'none' || (dx === st2.dx && dy >= st2.bottom && dy <= st2.top)) continue;
+      const x = b.x! + dx, y = b.y! + dy; cover[y][x] = 'half'; look[y][x] = 'crate'; break spot;
+    }
+  }
+  const stash: Stash[] = [];
+  for (let y = 0; y < n && stash.length < 1800; y++) for (let x = 0; x < n; x++) {
+    const l = look[y][x]; if (l !== 'crate' && l !== 'container') continue;
+    const big = l === 'container'; stash.push({ x, y, opened: false, big, items: stashItems(rng, big) });
+  }
   const w0 = loc.weather ?? (o.missionNo % 2 === 0 ? 'night' : undefined); // стартовая погода
   const cycleOn = w0 === undefined || w0 === 'night' || w0 === 'dusk' || w0 === 'dawn'; // дождь и туман — без смены суток
   const tod0 = w0 === 'night' ? 0.02 : w0 === 'dusk' ? 0.7 : w0 === 'dawn' ? 0.27 : 0.42;
   const seen = grid(n, false);
   const st: GameState = {
     exitPt: exitOut, raidUntil: raidOut,
-    size: n, cover, terrain, height, look, houses, bldgs, bidx, roads, roadm, locName: loc.name, trenches: [], biome: 'forest', locId: scn ? undefined : loc.id, scn, target: targetIdx, captives, units: [...humans, ...aliens], selectedId: null, targetId: null,
+    size: n, cover, terrain, height, look, houses, bldgs, bidx, roads, roadm, locName: loc.name, trenches: [], biome: 'forest', stash, locId: scn ? undefined : loc.id, scn, target: targetIdx, captives, units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels: [], fires: [], scorched: grid(n, false), bridges: [], targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: objectiveOut, markId: null, beacons: hugeBeacons, holdTurns: holdTurnsOut, zone: null, weather: cycleOn ? undefined : w0, todOn: cycleOn, tod: tod0, tod0, sides: 'all', waveBoost: 0,

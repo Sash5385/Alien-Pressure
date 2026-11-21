@@ -7,6 +7,9 @@ export type LaunchKind = 'ugl' | 'launcher' | 'mortar' | 'ags';
 export type ArmorId = 'none' | 'vest' | 'plate' | 'exo';
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
 export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container' | 'bags' | 'wall' | 'window' | 'car';
+export type LootKind = 'mag' | 'gren' | 'mat' | 'kit' | 'wpn';
+export interface Loot { x: number; y: number; kind: LootKind; n: number; raid?: boolean; w?: WeaponId; ammo?: number; warn?: boolean }
+export interface Stash { x: number; y: number; opened: boolean; items: { kind: LootKind; n: number; w?: WeaponId; ammo?: number }[]; big?: boolean }
 export interface House { x: number; y: number; w: number; h: number; id: number; hp: number }
 export type Stance = 'stand' | 'kneel' | 'prone';
 export type Biome = 'ruins' | 'forest' | 'lake';
@@ -33,6 +36,7 @@ export interface Soldier {
   weapon: WeaponId;
   armor: ArmorId;
   cls: ClassId;
+  sec?: WeaponId; // запасное оружие
   att?: ('optic' | 'supp' | 'mag' | 'nvg')[]; // обвес оружия
 }
 
@@ -91,6 +95,7 @@ export interface Unit {
   optic?: boolean; extMag?: boolean; // обвес для отрисовки
   nvg?: boolean; // ночное видение
   supp?: boolean; // глушитель: выстрелы почти не слышны
+  sec?: WeaponId; secAmmo?: number; // запасное оружие на ремне
   fl?: number; // этаж здания (0 — земля)
   dest?: { x: number; y: number; fl?: number };
   queue?: { x: number; y: number; fl?: number }[]; // следующие точки маршрута (Shift+клик) // приказ «идти» (реальное время)
@@ -166,7 +171,9 @@ export interface GameState {
   pits?: { x: number; y: number }[]; // ямы, в которых прячутся пришельцы (огромная карта)
   huge?: boolean; // огромная карта (лес): кусочная отрисовка, засады
   mats?: number; // стройматериалы: окоп и мешки с песком стоят по 1; пополняются за волны и трофеи
-  loot?: { x: number; y: number; kind: 'mag' | 'gren' | 'mat'; n: number; raid?: boolean }[]; // трофеи с убитых пришельцев
+  loot?: Loot[];
+  stash?: Stash[]; // ящики и контейнеры с содержимым
+  found?: WeaponId[]; // найденное оружие (открывается в лагере) // трофеи с убитых пришельцев
   wavePlan?: { x: number; y: number; kind: UnitKind }[]; // следующая волна: откуда и кто придёт (видно заранее)
   smokeMode?: boolean; // прицел дымовой гранаты
   lookMode?: boolean; // режим «Осмотр»: подсветка зоны обзора выбранного бойца

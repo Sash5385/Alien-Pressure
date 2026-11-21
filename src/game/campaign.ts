@@ -65,6 +65,12 @@ export const ATT = {
 } as const;
 export type AttId = keyof typeof ATT;
 /** Поставить/снять обвес: установка стоит трофеев, снятие бесплатно. */
+export function setSec(c: Campaign, soldierId: number, id: WeaponId | undefined): string | null {
+  const s = c.roster.find(x => x.id === soldierId);
+  if (!s) return 'Недоступно.';
+  if (id !== undefined && !c.weapons.includes(id)) return 'Недоступно.';
+  s.sec = id; return null;
+}
 export function toggleAtt(c: Campaign, soldierId: number, a: AttId): string | null {
   const s = c.roster.find(x => x.id === soldierId);
   if (!s) return 'Недоступно.';
@@ -199,6 +205,7 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
   c.roster.forEach(x => { x.hpLoss = Math.max(0, x.hpLoss - 3); }); // отдых между миссиями
   c.rng = (s.rng + Math.floor(rand(c) * 1e6)) >>> 0;
   { const alive = deployed.filter(id => s.units.some(u => u.id === id && u.hp > 0)).length; const n = recordMission(c.stats ??= emptyStats(), c.ach ??= [], s, alive, deployed.length, (c.cleared ?? []).length + (s.status === 'won' && s.huge && s.locId !== undefined && !(c.cleared ?? []).includes(s.locId) ? 1 : 0)); c.achNew = [...(c.achNew ?? []), ...n]; }
+  for (const w of s.found ?? []) if (!c.weapons.includes(w)) { c.weapons.push(w); } // найденное оружие открывается в лагере
   if (s.status === 'won' && s.huge && s.locId !== undefined && !(c.cleared ??= []).includes(s.locId)) { c.cleared.push(s.locId); c.scrap += 3; } // перше проходження локації: +3
   if (s.status === 'won') {
     c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : c.objective === 'assassinate' || c.objective === 'sabotage' ? 3 : 2) + (c.boss ? 4 : 0) + (c.risky ? 3 : 0);

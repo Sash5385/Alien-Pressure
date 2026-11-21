@@ -504,7 +504,8 @@ export class GameView {
     return g;
   }
 
-  private lootMeshes = new Map<string, THREE.Object3D>();
+  private unitWpn = new Map<number, string>();
+  private lootMeshes = new Map<string, THREE.Object3D>(); // ключ — сам объект трофея
   private waveMarks: THREE.Group | null = null;
   private waveSig = '';
   private droneRing: THREE.Mesh | null = null;
@@ -540,19 +541,31 @@ export class GameView {
       for (let i = 0; i < 2; i++) { const b = new THREE.Mesh(bagG, mats[(x + y + i) % 3]); b.position.set(-0.17 + i * 0.34, 0.25, 0); b.castShadow = true; g.add(b); }
       this.scene.add(g); this.coverMeshes.set(`${x},${y}`, g); sfx('dig');
     }
-    // трофеи: ящичек с цветной крышкой, покачивается
-    const live = new Set((s.loot ?? []).map(l => `${l.x},${l.y}`));
-    for (const l of s.loot ?? []) {
-      const k = `${l.x},${l.y}`;
-      if (this.lootMeshes.has(k)) continue;
-      const g = new THREE.Group();
-      g.position.set(l.x + 0.5, this.hy(l.x, l.y) + 0.12, l.y + 0.5);
-      const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.26), new THREE.MeshStandardMaterial({ color: 0x4a4f3a, roughness: 0.8 }));
-      const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.22), new THREE.MeshBasicMaterial({ color: { mag: 0xffd34d, gren: 0x6fe39a, mat: 0xc98a4a }[l.kind] }));
-      top.position.y = 0.12; box.castShadow = true; g.add(box, top);
-      this.scene.add(g); this.lootMeshes.set(k, g);
-    }
-    for (const [k, g] of this.lootMeshes) if (!live.has(k)) { this.scene.remove(g); this.lootMeshes.delete(k); }
+    // трофеи: ящичек с цветной крышкой; аптечка — белая с крестом; оружие — тёмный силуэт; покачиваются
+    const liveL = new Set<object>(s.loot ?? []);
+    s.loot ??= [];
+    s.loot.forEach((l, i) => {
+      if (this.lootMeshes.has(l as unknown as string)) return;
+      const g = new THREE.Group(), off = (i % 3) * 0.12 - 0.1;
+      g.position.set(l.x + 0.5 + off, this.hy(l.x, l.y) + 0.12, l.y + 0.5 - off);
+      if (l.kind === 'wpn') {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.1), new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.5, metalness: 0.5 }));
+        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.08), new THREE.MeshStandardMaterial({ color: 0x5a3f25, roughness: 0.8 })); stock.position.x = -0.38;
+        const mag = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.07), new THREE.MeshStandardMaterial({ color: 0x1a1c1f })); mag.position.set(0.02, -0.09, 0);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.4, 20), new THREE.MeshBasicMaterial({ color: 0xff9f43, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = -0.1;
+        body.castShadow = true; g.add(body, stock, mag, ring); g.rotation.y = (l.x * 7 + l.y * 3) % 6;
+      } else if (l.kind === 'kit') {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.26), new THREE.MeshStandardMaterial({ color: 0xf0f0ea, roughness: 0.7 }));
+        const c1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.06), new THREE.MeshBasicMaterial({ color: 0xe03a3a })), c2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.2), new THREE.MeshBasicMaterial({ color: 0xe03a3a }));
+        c1.position.y = c2.position.y = 0.11; box.castShadow = true; g.add(box, c1, c2);
+      } else {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.26), new THREE.MeshStandardMaterial({ color: 0x4a4f3a, roughness: 0.8 }));
+        const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.22), new THREE.MeshBasicMaterial({ color: { mag: 0xffd34d, gren: 0x6fe39a, mat: 0xc98a4a }[l.kind] }));
+        top.position.y = 0.12; box.castShadow = true; g.add(box, top);
+      }
+      this.scene.add(g); this.lootMeshes.set(l as unknown as string, g);
+    });
+    for (const [k, g] of this.lootMeshes) if (!liveL.has(k as unknown as object)) { this.scene.remove(g); this.lootMeshes.delete(k); }
     // разведдрон: кольцо зоны обзора
     const dr = s.drone && (s.rt?.clock ?? 0) < s.drone.until ? s.drone : null;
     if (dr && !this.droneRing) {
@@ -1331,6 +1344,7 @@ void main(){
     for (const u of this.state.units) {
       if (u.hp <= 0 && !this.held.has(u.id)) continue;
       alive.add(u.id);
+      { const pw = this.unitWpn.get(u.id), old0 = this.unitMeshes.get(u.id); if (pw && pw !== u.weapon && old0) { this.scene.remove(old0); this.unitMeshes.delete(u.id); this.rigs.delete(u.id); } this.unitWpn.set(u.id, u.weapon); } // сменили оружие — пересоздаём модель
       let m = this.unitMeshes.get(u.id);
       if (!m && u.team === 'alien' && !isVisible(this.state, u)) continue;
       const fromPit = !m && u.team === 'alien' && !!this.state.pits?.some(p => p.x === u.x && p.y === u.y); // пришельцев без видимости не создаём (огромные карты: сотни спящих)
