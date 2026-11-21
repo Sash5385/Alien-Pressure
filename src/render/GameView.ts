@@ -12,7 +12,7 @@ import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
-import { buildBuilding, showFloors, STOREY, type BuildingObj } from './buildings';
+import { buildBuilding, roadMaterial, showFloors, STOREY, type BuildingObj } from './buildings';
 import { reachable, findPath } from '../game/pathfinding';
 import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
 import { bldgAt, coverAt, flOf } from '../game/floors';
@@ -589,8 +589,10 @@ export class GameView {
   // ---------- огромная карта: земля, лес и трава кусками вокруг камеры ----------
   private static readonly CH = 32;
   private groundGroup = new THREE.Group();
-  private chunks = new Map<string, { terrain: THREE.Mesh; objs: THREE.Object3D[]; grass: THREE.Object3D | null; sig: number; blds: { b: BuildingObj; x: number; y: number; w: number; d: number }[] }>();
+  private chunks = new Map<string, { terrain: THREE.Mesh; objs: THREE.Object3D[]; grass: THREE.Object3D | null; sig: number; roads: THREE.Mesh[]; blds: { b: BuildingObj; x: number; y: number; w: number; d: number }[] }>();
   private bldgByChunk = new Map<string, NonNullable<GameState['bldgs']>>();
+  private roadByChunk = new Map<string, { x: number; y: number; w: number; h: number }[]>();
+  private carGeo!: THREE.BufferGeometry;
   private hugeT = 0; private hugeSigT = 0;
   private treeGeo!: THREE.BufferGeometry; private treeMat!: THREE.Material;
   private bushGeo!: THREE.BufferGeometry; private rockGeo!: THREE.BufferGeometry; private boxGeo!: THREE.BufferGeometry;
@@ -626,6 +628,13 @@ export class GameView {
       this.scene.add(disc, ring);
     }
     for (const b of this.state.bldgs ?? []) { const k = this.chunkKey(Math.floor(b.x! / GameView.CH), Math.floor(b.y! / GameView.CH)); (this.bldgByChunk.get(k) ?? this.bldgByChunk.set(k, []).get(k)!).push(b); }
+    const CH = GameView.CH;
+    for (const r of this.state.roads ?? []) for (let cz = Math.floor(r.y / CH); cz <= Math.floor((r.y + r.h - 1) / CH); cz++) for (let cx = Math.floor(r.x / CH); cx <= Math.floor((r.x + r.w - 1) / CH); cx++) {
+      const x0 = Math.max(r.x, cx * CH), x1 = Math.min(r.x + r.w, (cx + 1) * CH), y0 = Math.max(r.y, cz * CH), y1 = Math.min(r.y + r.h, (cz + 1) * CH);
+      const k = this.chunkKey(cx, cz); (this.roadByChunk.get(k) ?? this.roadByChunk.set(k, []).get(k)!).push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+    }
+    const body = new THREE.BoxGeometry(1.0, 0.3, 0.52).translate(0, 0.24, 0), cab = new THREE.BoxGeometry(0.5, 0.26, 0.46).translate(-0.05, 0.52, 0);
+    this.carGeo = mergeGeometries([body, cab])!;
     this.updateHuge(true);
   }
 
@@ -635,7 +644,7 @@ export class GameView {
   private buildChunkObjects(cx: number, cz: number) {
     const s = this.state, n = s.size, CH = GameView.CH;
     const x0 = Math.max(0, cx * CH), x1 = Math.min(n, (cx + 1) * CH), z0 = Math.max(0, cz * CH), z1 = Math.min(n, (cz + 1) * CH);
-    const lists: Record<string, { x: number; y: number }[]> = { tree: [], bush: [], rock: [], crate: [], container: [] };
+    const lists: Record<string, { x: number; y: number }[]> = { tree: [], bush: [], rock: [], crate: [], container: [], car: [] };
     let sig = 0;
     for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) {
       if (s.cover[y][x] === 'none') continue;
@@ -644,11 +653,11 @@ export class GameView {
     }
     const objs: THREE.Object3D[] = [];
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
-    const make = (geo: THREE.BufferGeometry, mat: THREE.Material, list: { x: number; y: number }[], f: (t: { x: number; y: number }, i: number) => { sx: number; sy: number; color?: number }, shadow = false) => {
+    const make = (geo: THREE.BufferGeometry, mat: THREE.Material, list: { x: number; y: number }[], f: (t: { x: number; y: number }, i: number) => { sx: number; sy: number; color?: number; yaw?: number }, shadow = false) => {
       if (!list.length) return;
       const im = new THREE.InstancedMesh(geo, mat, list.length);
       list.forEach((t, i) => {
-        const r = f(t, i), yaw = nhash(t.x * 7 + 1, t.y * 13 + 5) * 6.28;
+        const r = f(t, i), yaw = r.yaw ?? nhash(t.x * 7 + 1, t.y * 13 + 5) * 6.28;
         q.setFromEuler(e.set(0, yaw, 0)); v.set(t.x + 0.5, this.hy(t.x, t.y), t.y + 0.5); sc.set(r.sx, r.sy, r.sx);
         im.setMatrixAt(i, m4.compose(v, q, sc));
         if (r.color !== undefined) im.setColorAt(i, c.set(r.color));
@@ -663,6 +672,8 @@ export class GameView {
     make(this.rockGeo, this.rockMat, lists.rock, (t) => { const full = s.cover[t.y][t.x] === 'full'; return { sx: full ? 1.1 : 0.85, sy: full ? 1.9 : 1 }; }, true);
     make(this.boxGeo, this.boxMat, lists.crate, () => ({ sx: 0.85, sy: 0.7, color: 0xb0743a }), true);
     make(this.boxGeo, this.boxMat, lists.container, () => ({ sx: 1, sy: 1.5, color: 0x4a5a78 }), true);
+    const carCols = [0xa83232, 0x2f5f9a, 0x6a6e72, 0xd8d4c8, 0x3a6a3a, 0x8a6a2a];
+    make(this.carGeo, this.boxMat, lists.car, t => ({ sx: 1, sy: 1, color: carCols[(t.x * 7 + t.y * 3) % 6], yaw: (nhash(t.x, t.y) - 0.5) * 0.5 + ((t.x + t.y) % 2) * Math.PI }), true);
     return { objs, sig };
   }
 
@@ -694,6 +705,7 @@ export class GameView {
     this.groundGroup.remove(ch.terrain); ch.terrain.geometry.dispose();
     for (const o of ch.objs) { this.scene.remove(o); (o as THREE.InstancedMesh).dispose?.(); }
     if (ch.grass) { this.scene.remove(ch.grass); (ch.grass as THREE.InstancedMesh).dispose?.(); }
+    for (const m of ch.roads) { this.scene.remove(m); m.geometry.dispose(); }
     for (const { b } of ch.blds) { this.scene.remove(b); b.traverse(o => (o as THREE.Mesh).geometry?.dispose()); }
     this.chunks.delete(k);
   }
@@ -707,7 +719,7 @@ export class GameView {
       const occ = who.filter(inb);
       if (!occ.length) { showFloors(e.b, 99, true); continue; }
       const lvl = sel && inb(sel) ? flOf(sel) : Math.max(...occ.map(flOf));
-      showFloors(e.b, lvl, false);
+      showFloors(e.b, lvl, lvl >= e.b.userData.floors.length);
     }
   }
 
@@ -738,7 +750,13 @@ export class GameView {
           const b = buildBuilding(sp); b.position.set(sp.x!, this.hy(sp.x! + (sp.w >> 1), sp.y! + (sp.d >> 1)), sp.y!); this.scene.add(b);
           return { b, x: sp.x!, y: sp.y!, w: sp.w, d: sp.d };
         });
-        ch = { terrain: mesh, objs: ob?.objs ?? [], grass: null, sig: ob?.sig ?? 0, blds };
+        const roads = (this.roadByChunk.get(k) ?? []).map(r => {
+          const g = new THREE.PlaneGeometry(r.w, r.h).rotateX(-Math.PI / 2), uv = g.attributes.uv as THREE.BufferAttribute;
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * r.w / 2.5, uv.getY(i) * r.h / 2.5);
+          const m = new THREE.Mesh(g, roadMaterial()); m.position.set(r.x + r.w / 2, this.hs(r.x + r.w / 2, r.y + r.h / 2) + 0.035, r.y + r.h / 2); m.receiveShadow = true; this.scene.add(m);
+          return m;
+        });
+        ch = { terrain: mesh, objs: ob?.objs ?? [], grass: null, sig: ob?.sig ?? 0, roads, blds };
         this.chunks.set(k, ch);
       }
       if (d2 <= RG * RG * 2 && !ch.grass && cx >= 0 && cz >= 0 && budget >= 0) { ch.grass = this.buildGrass(cx, cz); budget--; }
@@ -753,7 +771,7 @@ export class GameView {
         if (cx < 0 || cz < 0) continue;
         let sig = 0;
         const x0 = cx * CH, x1 = Math.min(n, x0 + CH), z0 = cz * CH, z1 = Math.min(n, z0 + CH);
-        for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) if (this.state.cover[y][x] !== 'none' && ['tree', 'bush', 'rock', 'crate', 'container'].includes(this.state.look[y][x])) sig++;
+        for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) if (this.state.cover[y][x] !== 'none' && ['tree', 'bush', 'rock', 'crate', 'container', 'car'].includes(this.state.look[y][x])) sig++;
         if (sig !== ch.sig) { for (const o of ch.objs) { this.scene.remove(o); (o as THREE.InstancedMesh).dispose?.(); } const ob = this.buildChunkObjects(cx, cz); ch.objs = ob?.objs ?? []; ch.sig = ob?.sig ?? 0; }
       }
     }

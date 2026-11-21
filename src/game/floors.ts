@@ -1,5 +1,5 @@
 // Этажи: укрытия, обзор и перемещение по лестнице внутри зданий.
-import { stairTiles, tileCover } from '../render/buildings';
+import { maxLevel, stairTiles, tileCover } from '../render/buildings';
 import type { Cover, GameState, Unit } from './types';
 
 export const flOf = (u: { fl?: number }) => u.fl ?? 0;
@@ -16,7 +16,7 @@ export function coverAt(s: GameState, x: number, y: number, fl: number): Cover {
   const bi = bldgAt(s, x, y);
   if (bi < 0) return 'none';
   const sp = s.bldgs![bi];
-  if (fl >= sp.floors) return 'none';
+  if (fl > sp.floors) return 'none';
   return tileCover(sp, x - sp.x!, y - sp.y!, fl);
 }
 
@@ -30,7 +30,7 @@ export function canClimb(s: GameState, u: Unit, dir: 1 | -1): boolean {
   const bi = bldgAt(s, u.x, u.y);
   if (bi < 0) return false;
   const sp = s.bldgs![bi], f = flOf(u);
-  if (dir > 0 ? f >= sp.floors - 1 : f <= 0) return false;
+  if (dir > 0 ? f >= maxLevel(sp) : f <= 0) return false;
   const p = stairPos(s, bi, dir > 0 ? 'bottom' : 'top');
   return u.x === p.x && u.y === p.y;
 }

@@ -470,7 +470,7 @@ function createHugeForest(o: MissionOpts): GameState {
   const n = o.size!, seed = o.rng & 0xffff, rng = { rng: o.rng };
   const loc = LOCATIONS[((o.loc ?? 0) % LOCATIONS.length + LOCATIONS.length) % LOCATIONS.length];
   const cover: Cover[][] = grid(n, 'none' as Cover), terrain: Terrain[][] = grid(n, 'ground' as Terrain), look: Look[][] = grid(n, '' as Look), height: number[][] = grid(n, 0);
-  const houses: House[] = [], bldgs: BuildingSpec[] = [];
+  const houses: House[] = [], bldgs: BuildingSpec[] = [], roads: { x: number; y: number; w: number; h: number }[] = [];
   const bmask = grid(n, false); // забудова и отступ вокруг
   // холмы: крупный и средний шум; масштаб зависит от локации
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
@@ -526,9 +526,16 @@ function createHugeForest(o: MissionOpts): GameState {
         }
         x += w + 1 + (rand(rng) < 0.3 ? 1 : 0);
       }
+      { const rx0 = Math.max(2, cx - R), rx1 = Math.min(n - 2, cx + R), ry0 = y + rowD; if (rx1 - rx0 > 4 && ry0 + 2 < n - 2 && Math.hypot(0, ry0 + 1 - cy) < R) roads.push({ x: rx0, y: ry0, w: rx1 - rx0, h: 2 }); }
       y += rowD + 2;
     }
     for (let i = 0; i < loc.crates; i++) { const xx = cx - R + Math.floor(rand(rng) * (2 * R + 1)), yy = cy - R + Math.floor(rand(rng) * (2 * R + 1)); if (cover[yy]?.[xx] === 'none' && !bmask[yy][xx] && terrain[yy][xx] === 'ground') { const half = rand(rng) < 0.6; cover[yy][xx] = half ? 'half' : 'full'; look[yy][xx] = half ? 'crate' : 'container'; } }
+  }
+  const roadm = new Uint8Array(n * n);
+  for (const r of roads) for (let yy = r.y; yy < r.y + r.h; yy++) for (let xx = r.x; xx < r.x + r.w; xx++) if (!bmask[yy][xx] || cover[yy][xx] === 'none') { if (terrain[yy][xx] === 'ground') roadm[yy * n + xx] = 1; }
+  for (const r of roads) for (let xx = r.x + 2; xx < r.x + r.w - 2; xx += 5 + Math.floor(rand(rng) * 4)) { // машины на улицах — полуукрытие
+    const yy = r.y + Math.floor(rand(rng) * 2);
+    if (cover[yy][xx] === 'none' && roadm[yy * n + xx] && rand(rng) < 0.5) { cover[yy][xx] = 'half'; look[yy][xx] = 'car'; }
   }
   const bidx = new Int16Array(n * n);
   bldgs.forEach((b, i) => { for (let yy = b.y!; yy < b.y! + b.d; yy++) for (let xx = b.x!; xx < b.x! + b.w; xx++) bidx[yy * n + xx] = i + 1; });
@@ -597,7 +604,7 @@ function createHugeForest(o: MissionOpts): GameState {
   }
   const seen = grid(n, false);
   const st: GameState = {
-    size: n, cover, terrain, height, look, houses, bldgs, bidx, locName: loc.name, trenches: [], biome: 'forest', units: [...humans, ...aliens], selectedId: null, targetId: null,
+    size: n, cover, terrain, height, look, houses, bldgs, bidx, roads, roadm, locName: loc.name, trenches: [], biome: 'forest', units: [...humans, ...aliens], selectedId: null, targetId: null,
     turn: 'human', turnNo: 1, status: 'playing', medkits: DIFF[o.difficulty].kits + (o.tech.kits ? 1 : 0),
     aiming: null, mines: [], barrels: [], fires: [], scorched: grid(n, false), bridges: [], targetBarrel: null, turning: false, busy: false, vis: grid(n, false), seen, revealed: [], missionNo: o.missionNo, difficulty: o.difficulty,
     objective: 'clear', markId: null, beacons: [], holdTurns: HOLD_TURNS, zone: null, weather: loc.weather ?? (o.missionNo % 2 === 0 ? 'night' : undefined), sides: 'all', waveBoost: 0,

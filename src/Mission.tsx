@@ -9,6 +9,7 @@ import { reinforce } from './game/mission';
 import { GameView, setTimeScale, WEATHER_NAME, weatherOf, type Weather } from './render/GameView';
 import { rtTick, orderAttack, orderMove, type RtHooks } from './game/rt';
 import { bldgAt, flOf, stairPos } from './game/floors';
+import { maxLevel } from './render/buildings';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
 import { BIOME_NAME } from './game/difficulty';
@@ -31,7 +32,8 @@ function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick:
         const x = Math.floor(pxx * k), y = Math.floor(py * k), o = (py * MS + pxx) * 4;
         let r = 40 + s.height[y][x] * 14, gg = 70 + s.height[y][x] * 14, b = 34;
         const l = s.look[y][x];
-        if (s.cover[y][x] !== 'none') { if (l === 'tree') { r = 26; gg = 70; b = 28; } else if (l === 'house' || l === 'wall') { r = 200; gg = 180; b = 140; } else if (l === 'window') { r = 150; gg = 140; b = 110; } else if (l === 'bush') { r = 50; gg = 96; b = 40; } else { r = 120; gg = 118; b = 108; } }
+        if (s.roadm?.[y * n + x] && s.cover[y][x] === 'none') { r = 70; gg = 72; b = 78; }
+        if (s.cover[y][x] !== 'none') { if (l === 'tree') { r = 26; gg = 70; b = 28; } else if (l === 'house' || l === 'wall') { r = 200; gg = 180; b = 140; } else if (l === 'car') { r = 190; gg = 60; b = 50; } else if (l === 'window') { r = 150; gg = 140; b = 110; } else if (l === 'bush') { r = 50; gg = 96; b = 40; } else { r = 120; gg = 118; b = 108; } }
         const f = s.vis[y][x] ? 1 : s.seen[y][x] ? 0.62 : 0.22;
         d[o] = r * f; d[o + 1] = gg * f; d[o + 2] = b * f; d[o + 3] = 255;
       }
@@ -392,7 +394,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const round = (on = false): React.CSSProperties => ({ ...nbBase, background: on ? AC : nbBase.background, width: 46, height: 46, borderRadius: '50%', boxShadow: OUTS, color: on ? ONAC : '#f2f6ff', fontSize: 18, cursor: 'pointer' });
   type Item = { icon: string; label: string; sub: string; on: boolean; off: boolean; click: () => void; title?: string };
   const it = (icon: string, label: string, sub: string, on: boolean, off: boolean, click: () => void, title?: string): Item => ({ icon, label, sub, on, off, click, title });
-  const bi = sel && s.bldgs ? bldgAt(s, sel.x, sel.y) : -1, sf = sel ? flOf(sel) : 0, nfl = bi >= 0 ? s.bldgs![bi].floors : 1;
+  const bi = sel && s.bldgs ? bldgAt(s, sel.x, sel.y) : -1, sf = sel ? flOf(sel) : 0, nfl = bi >= 0 ? maxLevel(s.bldgs![bi]) + 1 : 1;
   const goFloor = (dir: 1 | -1) => { if (!sel || bi < 0 || sel.down) return; const p = stairPos(s, bi, dir > 0 ? 'top' : 'bottom'); orderMove(sel, p.x, p.y, sf + dir); s.targetId = null; view.current?.syncUnits(); rerender(); };
   const toggleLook = () => { s.lookMode = !s.lookMode; view.current?.syncUnits(); rerender(); };
   const bigL = it('◉', 'Засідка', '', false, !canOw, overwatch, 'Засідка (overwatch): боєць стоїть і стріляє по ворогу, що потрапив у поле зору');

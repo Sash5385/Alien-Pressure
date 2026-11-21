@@ -70,6 +70,7 @@ function materials() {
     brick: pbr('brick'), plaster: pbr('plaster', 0xe6dcc8), concrete: pbr('concrete', 0xd0d0cc),
     wood: pbr('wood', 0xc9a37a), roof: pbr('roof', 0xd88060), steel: pbr('steel'),
     tar: new THREE.MeshStandardMaterial({ color: 0x4a4a48, roughness: 1 }),
+    asphalt: pbr('asphalt', 0xb8b8b8),
     frame: new THREE.MeshStandardMaterial({ color: 0x3b2c20, roughness: 0.7 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x20324a, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
   };
@@ -95,10 +96,15 @@ export function cellKind(sp: BuildingSpec, side: Side, idx: number, f: number): 
   return r > 0.93 && f === 0 && side !== 'F' ? 'solid' : 'window';
 }
 
+/** Плоская целая крыша: на неё можно подняться по лестнице; парапет — полуукрытие. */
+export const roofAccess = (sp: BuildingSpec) => sp.roof === 'flat' && (sp.damage ?? 0) < 0.6;
+/** Наивысший уровень: этаж (floors-1) или крыша (floors). */
+export const maxLevel = (sp: BuildingSpec) => sp.floors - 1 + (roofAccess(sp) ? 1 : 0);
 const kindCover = (k: CellKind) => (k === 'solid' ? 'full' : k === 'window' ? 'half' : 'none') as 'none' | 'half' | 'full';
 /** Укрытие клетки (dx,dy от угла здания) на этаже f. */
 export function tileCover(sp: BuildingSpec, dx: number, dy: number, f: number): 'none' | 'half' | 'full' {
   const { w, d } = sp;
+  if (f >= sp.floors) return f === sp.floors && roofAccess(sp) && (dx === 0 || dy === 0 || dx === w - 1 || dy === d - 1) ? 'half' : 'none';
   if (dy === d - 1) return kindCover(cellKind(sp, 'F', dx, f));
   if (dy === 0) return kindCover(cellKind(sp, 'B', dx, f));
   if (dx === 0) return kindCover(cellKind(sp, 'L', dy, f));
@@ -187,7 +193,7 @@ export function buildBuilding(spec: BuildingSpec): BuildingObj {
       const x0 = px + 0.5 - 0.06, x1 = px + 0.5 + 0.06, dj = Math.floor(d / 2);
       P.wall.box(x0, y + SLAB, T, x1, y + H, dj); P.wall.box(x0, y + SLAB, dj + 1, x1, y + H, d - T); P.wall.box(x0, y + H * 0.8, dj, x1, y + H, dj + 1);
     }
-    if (f < floors - 1) { // лестница
+    if (f < maxLevel(spec)) { // лестница
       const steps = 8, sx0 = w - 2 + 0.05, sx1 = w - 1 - 0.05;
       for (let i = 0; i < steps; i++) P.floor.box(sx0, y + SLAB + (i / steps) * H, 1 + (i / steps) * slen, sx1, y + SLAB + ((i + 1) / steps) * H, 1 + ((i + 1) / steps) * slen);
     }
@@ -211,11 +217,14 @@ export function buildBuilding(spec: BuildingSpec): BuildingObj {
       for (const l of [0, L]) R.wall.tri(pt(l, 0, 0), pt(l, Wd, 0), pt(l, mid, rh), alongX ? [l === 0 ? -1 : 1, 0, 0] : [0, 0, l === 0 ? -1 : 1]);
       R.trim.box(0, ry - 0.02, 0, w, ry + 0.05, d);
     } else {
-      R.tar.box(0, ry, 0, w, ry + 0.06, d);
-      const pr = 0.16;
-      R.trim.box(-0.04, ry, -0.04, w + 0.04, ry + pr, 0.12); R.trim.box(-0.04, ry, d - 0.12, w + 0.04, ry + pr, d + 0.04);
-      R.trim.box(-0.04, ry, 0.12, 0.12, ry + pr, d - 0.12); R.trim.box(w - 0.12, ry, 0.12, w + 0.04, ry + pr, d - 0.12);
-      R.trim.box(w - 1.1, ry, 0.5, w - 0.4, ry + 0.4, 1.8);
+      if (roofAccess(spec)) {
+        const hx0 = w - 2, hx1 = w - 1, hz0 = 1, hz1 = 1 + slen;
+        R.tar.box(0, ry, 0, hx0, ry + 0.06, d); R.tar.box(hx0, ry, hz1, w, ry + 0.06, d); R.tar.box(hx1, ry, 0, w, ry + 0.06, hz1); R.tar.box(hx0, ry, 0, hx1, ry + 0.06, hz0);
+      } else R.tar.box(0, ry, 0, w, ry + 0.06, d);
+      const pr = roofAccess(spec) ? 0.5 : 0.16; // парапет: на доступной крыше — укрытие
+      R.trim.box(-0.04, ry, -0.04, w + 0.04, ry + pr, 0.14); R.trim.box(-0.04, ry, d - 0.14, w + 0.04, ry + pr, d + 0.04);
+      R.trim.box(-0.04, ry, 0.14, 0.14, ry + pr, d - 0.14); R.trim.box(w - 0.14, ry, 0.14, w + 0.04, ry + pr, d - 0.14);
+      if (!roofAccess(spec)) R.trim.box(w - 1.1, ry, 0.5, w - 0.4, ry + 0.4, 1.8);
     }
   }
   flush(R, rg);
@@ -229,3 +238,6 @@ export function showFloors(b: BuildingObj, lvl: number, roof = true) {
   b.userData.floors.forEach((g, i) => { g.visible = i <= lvl; });
   if (b.userData.roof) b.userData.roof.visible = roof && lvl >= b.userData.floors.length - 1;
 }
+
+/** Асфальт для улиц (общий материал). */
+export const roadMaterial = () => materials().asphalt;
