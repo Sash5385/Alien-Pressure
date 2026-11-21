@@ -157,7 +157,8 @@ export function rtTick(s: GameState, dt: number, hooks: RtHooks) {
   const d = rt.paused ? 0 : dt * rt.speed;
   rt.clock += d;
   if (s.todOn) s.tod = (((s.tod0 ?? 0.45) + rt.clock / DAY_SECONDS) % 1 + 1) % 1; // время суток идёт вместе с миссией
-  for (const u of living(s)) { settle(u, d); if (u.team === 'human' && !u.dest) u.sta = Math.min(100, (u.sta ?? 100) + d * (u.stance === 'stand' || u.stance === undefined ? 5 : 8)); } // отдых восстанавливает силы
+  for (const u of living(s)) { settle(u, d); if (u.team === 'human') u.rec = Math.max(0, (u.rec ?? 0) - d * 5); // отдача спадает
+    if (u.team === 'human' && !u.dest) u.sta = Math.min(100, (u.sta ?? 100) + d * (u.stance === 'stand' || u.stance === undefined ? 5 : 8)); } // отдых восстанавливает силы
   if (d > 0) {
     // «ход»: волны, кровь, огонь, паника
     if (rt.clock - rt.pulseAt >= TURN_SECS) {

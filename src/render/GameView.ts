@@ -2106,7 +2106,7 @@ void main(){
     if (am) { const yaw = am.rotation.y; muzzle.set(am.position.x + Math.sin(yaw) * 0.5, this.eye(a) + this.uy(a), am.position.z + Math.cos(yaw) * 0.5); }
     if (!r.reaction) await sleep(a.team === 'alien' ? 250 : 100); // короткая пауза на прицеливание
     // звук выстрела по оружию: автомат/ПП/дробовик/снайперка; у пришельцев — по типу
-    const variant = a.team === 'human' ? a.weapon : a.kind === 'sniper' ? 'sniper' : a.kind === 'heavy' || a.kind === 'commander' ? 'shotgun' : undefined;
+    const variant = a.team === 'human' ? a.weapon + (a.supp ? '+s' : '') : a.kind === 'sniper' ? 'sniper' : a.kind === 'heavy' || a.kind === 'commander' ? 'shotgun' : undefined;
     this.gaze.set(a.id, { tid: t.id, until: this.clock.elapsedTime + 2 });
     this.play(a.id, 'Idle_Shoot', true);
     const rounds = a.burst;

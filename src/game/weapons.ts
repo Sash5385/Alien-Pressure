@@ -14,6 +14,9 @@ export interface WeaponDef {
   cost: number; // трофеев за разблокировку
   launch?: LaunchKind; // оружие стреляет гранатами по клетке
   kg: number; // вес, кг
+  pen?: number; // пробитие брони: снижает защиту цели
+  recoil?: number; // отдача: каждый выстрел подряд снижает меткость
+  noise?: number; // радиус слышимости выстрела, клеток
 }
 
 import { CATALOG, specDesc } from './catalog';
@@ -29,8 +32,8 @@ const BASE: Record<string, WeaponDef> = {
 
 /** Базовые 7 видов и каталог из 100 (пистолеты, автоматы, винтовки, пулемёты). */
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  ...BASE,
-  ...Object.fromEntries(CATALOG.map(g => [g.id, { name: g.name, desc: specDesc(g), aim: g.stats.aim, dmg: g.stats.dmg, ammo: g.stats.ammo, range: g.stats.range, burst: g.stats.burst, falloffFrom: g.stats.falloffFrom, falloff: g.stats.falloff, move: g.stats.move, cost: g.stats.cost, kg: g.stats.kg } as WeaponDef])),
+  ...Object.fromEntries(Object.entries(BASE).map(([k, w]) => [k, { pen: { rifle: 1, smg: 0, shotgun: 0, sniper: 2 }[k] ?? 0, recoil: { rifle: 7, smg: 4, shotgun: 12, sniper: 10 }[k] ?? 5, noise: { rifle: 22, smg: 18, shotgun: 20, sniper: 32 }[k] ?? 24, ...w }])),
+  ...Object.fromEntries(CATALOG.map(g => [g.id, { name: g.name, desc: specDesc(g), aim: g.stats.aim, dmg: g.stats.dmg, ammo: g.stats.ammo, range: g.stats.range, burst: g.stats.burst, falloffFrom: g.stats.falloffFrom, falloff: g.stats.falloff, move: g.stats.move, cost: g.stats.cost, kg: g.stats.kg, pen: g.stats.pen, recoil: g.stats.recoil, noise: g.stats.noise } as WeaponDef])),
 };
 
 export interface ArmorDef { kg: number; name: string; desc: string; hp: number; cut: number; move: number; aim: number; cost: number }

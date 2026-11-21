@@ -1,4 +1,5 @@
 /** Синтезированные звуки (WebAudio) — без файлов. Контекст создаётся лениво, после первого клика. */
+import { sndProfile } from './game/catalog';
 export type Sfx =
   | 'alert' | 'throw' | 'pin' | 'grenade' | 'shot' | 'alienShot' | 'hit' | 'miss' | 'psi' | 'death' | 'panic'
   | 'reload' | 'click' | 'select' | 'step' | 'dig' | 'heal' | 'bandage' | 'stance' | 'stanceProne' | 'roll' | 'emerge' | 'mine' | 'charge'
@@ -100,13 +101,23 @@ function pops(c: AudioContext, t: number, n: number, span: number, gain: number,
   for (let i = 0; i < n; i++) noise(c, t + Math.random() * span, 0.02 + Math.random() * 0.04, gain * (0.5 + Math.random() * 0.8), 'highpass', lo + Math.random() * (hi - lo));
 }
 
+/** Выстрел по профилю оружия: резкий щелчок, «бум» по калибру, хвост эха; глушитель глушит; пулемёт — с разбросом тона. */
 function gun(c: AudioContext, t: number, variant: string) {
-  switch (variant) {
-    case 'smg': noise(c, t, 0.05, 0.5, 'highpass', 1500); noise(c, t, 0.09, 0.3, 'bandpass', 2200); tone(c, t, 0.08, 220, 90, 0.3); noise(c, t + 0.02, 0.25, 0.08, 'lowpass', 600); break;
-    case 'shotgun': noise(c, t, 0.06, 0.6, 'highpass', 900); noise(c, t, 0.28, 0.5, 'lowpass', 1000); tone(c, t, 0.24, 120, 35, 0.6); noise(c, t + 0.04, 0.6, 0.14, 'lowpass', 400); break;
-    case 'sniper': noise(c, t, 0.07, 0.65, 'highpass', 800); tone(c, t, 0.4, 95, 28, 0.6); noise(c, t, 0.2, 0.4, 'bandpass', 1400); noise(c, t + 0.06, 1.0, 0.2, 'lowpass', 300); break;
-    default: noise(c, t, 0.05, 0.55, 'highpass', 1200); noise(c, t, 0.14, 0.35, 'bandpass', 1800); tone(c, t, 0.12, 150, 45, 0.45); noise(c, t + 0.03, 0.4, 0.12, 'lowpass', 500);
+  const sp = sndProfile(variant), p = sp.p, jit = 0.93 + Math.random() * 0.14;
+  const save = P; P = save * jit;
+  if (sp.sup) { // глушитель: глухой хлопок и механика затвора
+    noise(c, t, 0.05, 0.18 + 0.03 * p, 'bandpass', 900); tone(c, t, 0.07, 140 / Math.sqrt(p), 70, 0.22 + 0.04 * p); noise(c, t + 0.015, 0.09, 0.1, 'lowpass', 500); noise(c, t + 0.05, 0.03, 0.07, 'highpass', 3500);
+  } else if (sp.cat === 'shotgun') { noise(c, t, 0.06, 0.6, 'highpass', 900); noise(c, t, 0.28, 0.5, 'lowpass', 1000); tone(c, t, 0.24, 120, 35, 0.6); noise(c, t + 0.04, 0.6, 0.14, 'lowpass', 400); }
+  else if (sp.cat === 'launcher') { noise(c, t, 0.3, 0.7, 'lowpass', 500); tone(c, t, 0.28, 150, 55, 0.5); }
+  else {
+    const pistol = sp.cat === 'pistol', mg = sp.cat === 'mg', rifle = sp.cat === 'rifle';
+    noise(c, t, pistol ? 0.035 : 0.05, 0.4 + 0.06 * p, 'highpass', pistol ? 1900 : mg ? 1300 : 1000 + 150 * (3 - Math.min(3, p)));
+    noise(c, t, 0.06 + 0.025 * p, 0.28 + 0.05 * p, 'bandpass', pistol ? 2600 : 1700 - 120 * p);
+    tone(c, t, 0.05 + 0.045 * p, 230 / Math.pow(p, 0.55), 36 + 14 / p, (pistol ? 0.3 : 0.4) + 0.07 * p);
+    noise(c, t + 0.02, (pistol ? 0.12 : 0.22) + 0.22 * p * (rifle ? 1.4 : 1), 0.07 + 0.03 * p, 'lowpass', 520 - 60 * Math.min(4, p)); // хвост
+    if (mg) noise(c, t + 0.015, 0.04, 0.18, 'bandpass', 700); // лязг затвора пулемёта
   }
+  P = save;
 }
 
 export function sfx(kind: Sfx, o: SfxOpts = {}) {

@@ -99,7 +99,7 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonu
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
-    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - Math.round(encumbrance(a) * 8) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
+    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - Math.round(encumbrance(a) * 8) - (a.team === 'human' ? Math.round(a.rec ?? 0) : 0) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
   const cat = catOf(a.weapon), tweak = cat === 'mg' ? (a.stance === 'prone' ? 10 : a.stance === 'kneel' ? 4 : -6) : cat === 'pistol' ? (dist <= 3 ? 10 : dist > 7 ? -6 : 0) : 0; // пулемёт — с сошек, пистолет — вблизи
   return Math.round(Math.min(95, Math.max(5, c + tweak + (a.team === 'human' && isFlanked(s, a, t) ? 10 : 0))));
 }
@@ -120,14 +120,16 @@ export function faceToward(u: Unit, x: number, y: number) {
 
 export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 0): ShotResult {
   faceToward(a, t.x, t.y);
-  if (a.team === 'human') (s.noise ??= []).push({ x: a.x, y: a.y, r: a.supp ? 5 : 22 }); // выстрел слышно (глушитель: тише): ближайшие лагеря просыпаются
+  if (a.team === 'human') (s.noise ??= []).push({ x: a.x, y: a.y, r: noiseOf(a) }); // выстрел слышно (глушитель и оружие меняют радиус): ближайшие лагеря просыпаются
   const chance = hitChance(s, a, t, reaction, bonus) ?? 0;
   a.ammo -= 1;
   if (!reaction) a.ap -= 1;
   if (a.team === 'alien' && !s.revealed.includes(a.id)) s.revealed.push(a.id);
   const hit = rand(s) * 100 < chance;
   let dmg = hit ? a.dmg[0] + Math.floor(rand(s) * (a.dmg[1] - a.dmg[0] + 1)) : 0;
-  if (hit && t.cut > 0) dmg = Math.max(1, dmg - t.cut);
+  const wd = WEAPONS[a.weapon], pen = a.team === 'human' ? wd?.pen ?? 0 : 0;
+  if (hit && t.cut > 0) dmg = Math.max(1, dmg - Math.max(0, t.cut - pen)); // пробитие брони
+  if (a.team === 'human') a.rec = Math.min(24, (a.rec ?? 0) + (wd?.recoil ?? 5) * (a.stance === 'prone' ? 0.5 : a.stance === 'kneel' ? 0.75 : 1)); // отдача копится
   const flank = isFlanked(s, a, t);
   t.hp = Math.max(0, t.hp - dmg);
   let downed = false;
@@ -136,7 +138,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
   }
   const killed = hit && t.hp <= 0;
   if (flank && t.team === 'human' && a.team === 'alien') shift(t, -3);
-  const alerted = a.team === 'human' ? raiseAlert(s, a.x, a.y, 14) : undefined; // выстрел слышно
+  const alerted = a.team === 'human' ? raiseAlert(s, a.x, a.y, Math.max(4, Math.round(noiseOf(a) * 0.6))) : undefined; // выстрел слышно
   let wound: ShotResult['wound'];
   if (t.team === 'human') {
     if (hit && !killed) {
@@ -444,6 +446,8 @@ export const SIGHT = 12;
 /** Дальность зрения бойца: уночі 7 клеток, с ночным прицелом — 12. */
 /** Ночь сейчас: явная погода или тёмное время суток при смене дня и ночи. */
 export const isNight = (s: GameState) => s.todOn ? nightAmount(s.tod ?? 0.5) > 0.6 : s.weather === 'night';
+/** Радиус слышимости выстрела: у оружия свой, глушитель режет почти всё. */
+export const noiseOf = (a: Unit) => a.supp ? 5 : (a.team === 'human' ? WEAPONS[a.weapon]?.noise ?? 22 : 22);
 export const sightOf = (s: GameState, u: Unit) => (isNight(s) && !u.nvg ? 7 : SIGHT);
 
 /** Пересчёт зоны видимости бойцов (радиус + линия видимости) и карты исследованного. */

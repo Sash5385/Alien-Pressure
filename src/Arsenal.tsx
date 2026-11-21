@@ -39,7 +39,8 @@ export function Arsenal({ c, soldier, mode, onPick, onBuy, onClose }: {
                 {ic ? <img src={ic} alt="" style={{ width: 128, height: 64, objectFit: 'contain', filter: 'brightness(2) drop-shadow(0 0 2px rgba(255,255,255,.6))' }} /> : <div style={{ height: 64, fontSize: 30 }}>🔫</div>}
                 <b style={{ fontSize: 13 }}>{w.name}</b>
                 <span style={{ fontSize: 10, opacity: 0.7 }}>{sp ? `${sp.caliber} · ${sp.finish}${sp.scope ? ' · приціл' : ''}${sp.supp ? ' · глушник' : ''}${sp.bipod ? ' · сошки' : ''}` : 'базова'}</span>
-                <span style={{ fontSize: 11 }}>🎯{w.aim} · 💥{w.dmg[0]}–{w.dmg[1]} · ▮{w.ammo} · ↔{w.range} · {w.kg} кг</span>
+                <span style={{ fontSize: 11 }}>🎯{w.aim} · 💥{w.dmg[0]}–{w.dmg[1]} · ▮{w.ammo} · ↔{w.falloffFrom}/{w.range} · {w.kg} кг</span>
+                <span style={{ fontSize: 10, opacity: 0.8 }}>↩ віддача {w.recoil ?? 5} · 🔊 шум {w.noise ?? 22}{(w.pen ?? 0) > 0 ? ` · 🛡 пробиття +${w.pen}` : ''}</span>
                 {have
                   ? <button style={{ ...btn(on), padding: '3px 10px', fontSize: 12 }} onClick={() => onPick(id)}>{on ? '✓ Обрано' : 'Обрати'}</button>
                   : <button style={{ ...btn(false), padding: '3px 10px', fontSize: 12, opacity: c.scrap >= w.cost ? 1 : 0.5 }} onClick={() => onBuy(id)}>🔓 Відкрити ({w.cost})</button>}
