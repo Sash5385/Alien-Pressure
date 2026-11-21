@@ -483,27 +483,31 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   // Перетягування кнопок: довге натискання → рух; позиції зберігаються (CSS translate не конфліктує з transform)
   const hudRef = useRef<HTMLDivElement>(null);
   const [btnEpoch, setBtnEpoch] = useState(0);
+  const [edit, setEdit] = useState(false), [selKey, setSelKey] = useState<string | null>(null);
+  const editRef = useRef(false); editRef.current = edit;
   const dkMode = fan ? 'f' : narrow ? 'n' : 'd';
   const dkOf = (b: HTMLElement) => dkMode + ':' + (b.dataset.dk || (b.textContent ?? '').replace(/[\d.%×]+/g, '').trim() || b.title);
-  const loadPos = (): Record<string, [number, number]> => { try { return JSON.parse(localStorage.getItem('ap_btnpos') ?? '{}'); } catch { return {}; } };
+  const loadPos = (): Record<string, [number, number, number?]> => { try { return JSON.parse(localStorage.getItem('ap_btnpos') ?? '{}'); } catch { return {}; } };
   useEffect(() => { // применить сохранённые позиции ко всем кнопкам после каждой отрисовки
     const root = hudRef.current; if (!root) return;
     const pos = loadPos();
     root.querySelectorAll<HTMLElement>('button').forEach(b => {
       if (b.closest('[data-nodrag]')) return;
       b.style.touchAction = 'none';
-      const p = pos[dkOf(b)]; b.style.translate = p ? `${p[0]}px ${p[1]}px` : '';
+      const k = dkOf(b), p = pos[k]; b.style.translate = p ? `${p[0]}px ${p[1]}px` : ''; b.style.scale = p?.[2] && p[2] !== 1 ? String(p[2]) : '';
+      b.style.outline = edit ? (k === selKey ? '2px solid #ffd34d' : '2px dashed #7ee0ff88') : '';
     });
   });
   useEffect(() => {
     const root = hudRef.current; if (!root) return;
-    let timer = 0, cur: { b: HTMLElement; id: number; sx: number; sy: number; ox: number; oy: number; on: boolean; key: string } | null = null;
+    let timer = 0, cur: { b: HTMLElement; id: number; sx: number; sy: number; ox: number; oy: number; on: boolean; key: string; sc?: number; moved?: boolean } | null = null;
     const down = (e: PointerEvent) => {
       const b = (e.target as HTMLElement).closest('button') as HTMLElement | null;
       if (!b || b.closest('[data-nodrag]') || !root.contains(b)) return;
       const key = dkOf(b), cp = loadPos()[key] ?? [0, 0];
-      cur = { b, id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: cp[0], oy: cp[1], on: false, key };
+      cur = { b, id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: cp[0], oy: cp[1], on: false, key, sc: loadPos()[key]?.[2] };
       window.clearTimeout(timer);
+      if (editRef.current) { cur.on = true; setSelKey(key); b.style.zIndex = '30'; try { b.setPointerCapture(e.pointerId); } catch { /* */ } return; }
       timer = window.setTimeout(() => { if (!cur) return; cur.on = true; b.style.zIndex = '30'; b.style.outline = '2px dashed #7ee0ff'; b.style.opacity = '0.85'; try { b.setPointerCapture(cur.id); navigator.vibrate?.(25); } catch { /* */ } }, 450);
     };
     const move = (e: PointerEvent) => {
@@ -511,6 +515,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       if (!cur.on) { if (Math.hypot(e.clientX - cur.sx, e.clientY - cur.sy) > 10) { window.clearTimeout(timer); cur = null; } return; }
       e.preventDefault();
       let dx = cur.ox + (e.clientX - cur.sx) / z, dy = cur.oy + (e.clientY - cur.sy) / z;
+      if (editRef.current) { dx = Math.round(dx / 10) * 10; dy = Math.round(dy / 10) * 10; cur.moved = true; }
       const b = cur.b; b.style.translate = `${dx}px ${dy}px`;
       const r = b.getBoundingClientRect(); // не выпускать за экран
       if (r.left < 0) dx -= r.left / z; if (r.right > window.innerWidth) dx -= (r.right - window.innerWidth) / z;
@@ -520,22 +525,34 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     const up = () => {
       window.clearTimeout(timer);
       if (cur?.on) {
-        const c: any = cur, pos = loadPos(); pos[c.key] = [c.nx ?? c.ox, c.ny ?? c.oy];
+        const c: any = cur, pos = loadPos(); pos[c.key] = [c.nx ?? c.ox, c.ny ?? c.oy, c.sc];
         try { localStorage.setItem('ap_btnpos', JSON.stringify(pos)); } catch { /* */ }
-        c.b.style.zIndex = ''; c.b.style.outline = ''; c.b.style.opacity = '';
+        c.b.style.zIndex = ''; c.b.style.outline = editRef.current ? '2px solid #ffd34d' : ''; c.b.style.opacity = '';
         const stop = (ev: Event) => { ev.stopPropagation(); ev.preventDefault(); }; // клик после перетягивания не срабатывает
         root.addEventListener('click', stop, { capture: true, once: true }); window.setTimeout(() => root.removeEventListener('click', stop, true), 400);
       }
       cur = null;
     };
     const noMenu = (e: Event) => { if ((e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('[data-nodrag]')) e.preventDefault(); };
+    const stopClick = (ev: Event) => { if (editRef.current && (ev.target as HTMLElement).closest('button') && !(ev.target as HTMLElement).closest('[data-nodrag]') && !(ev.target as HTMLElement).closest('[data-editbar]')) { ev.stopPropagation(); ev.preventDefault(); } };
+    root.addEventListener('click', stopClick, true);
     root.addEventListener('pointerdown', down); root.addEventListener('pointermove', move); root.addEventListener('pointerup', up); root.addEventListener('pointercancel', up); root.addEventListener('contextmenu', noMenu);
-    return () => { window.clearTimeout(timer); root.removeEventListener('pointerdown', down); root.removeEventListener('pointermove', move); root.removeEventListener('pointerup', up); root.removeEventListener('pointercancel', up); root.removeEventListener('contextmenu', noMenu); };
+    return () => { root.removeEventListener('click', stopClick, true); window.clearTimeout(timer); root.removeEventListener('pointerdown', down); root.removeEventListener('pointermove', move); root.removeEventListener('pointerup', up); root.removeEventListener('pointercancel', up); root.removeEventListener('contextmenu', noMenu); };
   }, [z, dkMode]);
+  const scaleSel = (d: number | null) => { if (!selKey) return; const pos = loadPos(), c = pos[selKey] ?? [0, 0]; pos[selKey] = [c[0], c[1], d === null ? 1 : Math.min(2.2, Math.max(0.6, Math.round(((c[2] ?? 1) + d) * 100) / 100))]; try { localStorage.setItem('ap_btnpos', JSON.stringify(pos)); } catch { /* */ } setBtnEpoch(n => n + 1); };
   void btnEpoch;
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
+      {edit && (
+        <div data-editbar="1" style={{ position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', padding: 8, borderRadius: 14, background: '#0b1220ee', border: '1px solid #7ee0ff', color: '#eaf2ff', fontSize: 12, maxWidth: '94vw' }}>
+          <span>{selKey ? 'Тягни кнопку · розмір:' : 'Тягни будь-яку кнопку (крок 10). Тап — вибрати.'}</span>
+          <button disabled={!selKey} style={{ ...nb(false, !selKey), minWidth: 40 }} onClick={() => scaleSel(-0.15)}>−</button>
+          <button disabled={!selKey} style={{ ...nb(false, !selKey), minWidth: 40 }} onClick={() => scaleSel(0.15)}>+</button>
+          <button disabled={!selKey} style={nb(false, !selKey)} onClick={() => { if (!selKey) return; const pos = loadPos(); delete pos[selKey]; try { localStorage.setItem('ap_btnpos', JSON.stringify(pos)); } catch { /* */ } setBtnEpoch(n => n + 1); }}>Скинути її</button>
+          <button style={nb(true, false)} onClick={() => { setEdit(false); setSelKey(null); }}>Готово</button>
+        </div>
+      )}
       <style>{'.hud>*{pointer-events:auto}@keyframes apPulse{0%,100%{opacity:.55}50%{opacity:1}}'}</style>
       <div className="hud" ref={hudRef} style={{ position: 'absolute', left: 0, top: 0, width: `${100 / z}%`, height: `${100 / z}%`, transform: `scale(${z})`, transformOrigin: '0 0', pointerEvents: 'none' }}>
       {s.rt?.paused && s.status === 'playing' && (
@@ -663,6 +680,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
                 {UI_NAMES.map((n, i) => <button key={n} style={{ ...nb(i === uiIdx, false), minWidth: 0, minHeight: 34, padding: '4px 8px', width: 'auto', fontSize: 12, borderRadius: 10 }} onClick={() => { setUiIdx(i); saveUi(i); }}>{n}</button>)}
               </div>
             </div>
+            <button style={nb(edit, false)} onClick={() => { setEdit(true); setMore(false); setSelKey(null); }}>Налаштувати кнопки</button>
             <button style={nb(false, false)} onClick={() => { try { localStorage.removeItem('ap_btnpos'); } catch { /* */ } setBtnEpoch(n => n + 1); }}>Скинути позиції кнопок</button>
             <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палець — рухати карту, 2 — обертати, щипок — масштаб, довге натискання — повернути бійця. Довге натискання на кнопці — перемістити її.' : 'ЛКМ із затисканням — рухати карту, ПКМ із затисканням — обертати, колесо — масштаб, затиснуте колесо — пауза (в реальному часі). Клік ПКМ — повернути бійця.'}</div>
             <div style={{ opacity: 0.45, textAlign: 'center' }}>{VERSION}</div>
