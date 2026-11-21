@@ -11,7 +11,7 @@ export interface House { x: number; y: number; w: number; h: number; id: number;
 export type Stance = 'stand' | 'kneel' | 'prone';
 export type Biome = 'ruins' | 'forest' | 'lake';
 export type Terrain = 'ground' | 'water';
-export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage' | 'defend';
+export type Objective = 'clear' | 'extract' | 'hold' | 'assassinate' | 'sabotage' | 'defend' | 'rescue';
 export type PerkId = 'aim' | 'hp' | 'nerve';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export interface Tech { armor: boolean; optics: boolean; kits: boolean; grenades: boolean }
@@ -85,6 +85,7 @@ export interface Unit {
   retreatUntil?: number; // до какого хода держит оборону после отхода
   ugl?: number; // выстрелов подствольника
   cd?: number; // реальное время: секунд до следующего действия
+  static?: boolean; // турель: не ходит
   stuck?: number; // сколько раз подряд путь был перекрыт (союзники в проходе)
   nvg?: boolean; // ночное видение
   supp?: boolean; // глушитель: выстрелы почти не слышны
@@ -108,6 +109,8 @@ export interface GameState {
   height: number[][]; // уровень рельефа 0–3: подъём на 1 проходим, обрыв (2+) — нет
   look: Look[][]; // вид укрытия (дерево, камень, дом…)
   houses: House[];
+  captives?: { x: number; y: number; saved: boolean }[]; // полонённые (задание «Порятунок»)
+  locId?: number; // номер локации каталога
   roads?: { x: number; y: number; w: number; h: number }[]; // улицы населённых пунктов
   roadm?: Uint8Array; // карта асфальта (мини-карта)
   bidx?: Int16Array; // клетка → номер здания + 1

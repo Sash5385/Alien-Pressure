@@ -12,8 +12,10 @@ export interface Loc {
   styles: Style[]; gable: number; // частка двосхилих дахів
   damage: number; // руйнування
   weather?: string; aliens: number; crates: number;
+  obj: 'clear' | 'sabotage' | 'assassinate' | 'rescue'; // задание локации
 }
-type Arch = Omit<Loc, 'id' | 'name' | 'arch'> & { key: string };
+type Arch = Omit<Loc, 'id' | 'name' | 'arch' | 'obj'> & { key: string };
+const OBJ: Record<string, Loc['obj']> = { 'Промзона': 'sabotage', 'Військова база': 'sabotage', 'Руїни міста': 'assassinate', 'Нічне місто': 'assassinate', 'Ферма': 'rescue', 'Озерне селище': 'rescue' };
 const A: Arch[] = [
   { key: 'Лісове село', blurb: 'Хати серед густого лісу, вузькі стежки.', forest: 0.85, hill: 1, water: 0.06, towns: 1, radius: 13, fill: 0.55, w: [4, 5], d: [4, 5], floors: [1, 2], styles: ['plaster', 'brick'], gable: 0.95, damage: 0.15, aliens: 1, crates: 6 },
   { key: 'Передмістя', blurb: 'Квартали будинків, невеликі двори, рідкий ліс.', forest: 0.3, hill: 0.7, water: 0.04, towns: 1.1, radius: 20, fill: 0.7, w: [5, 6], d: [4, 5], floors: [2, 3], styles: ['brick', 'plaster'], gable: 0.5, damage: 0.2, aliens: 1.1, crates: 5 },
@@ -49,7 +51,7 @@ export const LOCATIONS: Loc[] = Array.from({ length: 50 }, (_, i) => {
   const a = A[Math.floor(i / 5)], v = VAR[i % 5];
   const cl = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
   return {
-    ...a, id: i, name: NAMES[i], arch: a.key,
+    ...a, id: i, name: NAMES[i], arch: a.key, obj: OBJ[a.key] ?? 'clear',
     forest: cl(a.forest + (v.forest ?? 0), 0.02, 1), fill: cl(a.fill + (v.fill ?? 0), 0.2, 0.9), damage: cl(a.damage + (v.damage ?? 0), 0, 1),
     weather: v.weather ?? a.weather, aliens: a.aliens + (v.aliens ?? 0), radius: a.radius + (v.radius ?? 0), towns: a.towns + (v.towns ?? 0),
     hill: a.hill * (1 + (i % 5) * 0.08), water: a.water,

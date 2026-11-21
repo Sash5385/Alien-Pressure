@@ -39,6 +39,7 @@ function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick:
         d[o] = r * f; d[o + 1] = gg * f; d[o + 2] = b * f; d[o + 3] = 255;
       }
       g.putImageData(img, 0, 0);
+      for (const c of s.captives ?? []) if (!c.saved) { g.fillStyle = '#ffb84d'; g.fillRect(c.x / k - 2, c.y / k - 2, 4, 4); }
       for (const p of s.pits ?? []) if (s.seen[p.y][p.x]) { g.fillStyle = '#1c150d'; g.fillRect(p.x / k - 1, p.y / k - 1, 2, 2); }
       for (const u of s.units) {
         if (u.hp <= 0) continue;
@@ -56,6 +57,7 @@ function Minimap({ s, narrow, onPick }: { s: GameState; narrow: boolean; onPick:
     }
     if (s.zone) { g.strokeStyle = '#35e07a'; g.strokeRect(s.zone.x * px + 0.5, s.zone.y * px + 0.5, s.zone.w * px, s.zone.h * px); }
     g.fillStyle = '#ffd34d';
+    for (const c of s.captives ?? []) if (!c.saved) { g.fillStyle = '#ffb84d'; g.fillRect(c.x * px - 1, c.y * px - 1, px + 2, px + 2); }
     for (const b of s.beacons) if (!b.done) g.fillRect(b.x * px - 1, b.y * px - 1, px + 2, px + 2);
     for (const t of s.trenches) { g.fillStyle = '#1c150d'; g.fillRect(t.x * px, t.y * px, px, px); }
     for (const u of s.units) {
@@ -363,6 +365,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     defend: `оборона ${Math.min(s.turnNo, s.holdTurns)}/${s.holdTurns}`,
     assassinate: cmd ? `вбити командира (HP ${cmd.hp}/${cmd.maxHp})` : 'командира вбито',
     sabotage: `маяки ${s.beacons.filter(b => b.done).length}/${s.beacons.length}`,
+    rescue: `полонені ${s.captives?.filter(c => c.saved).length ?? 0}/${s.captives?.length ?? 0}`,
   }[s.objective];
   const aliens = living(s, 'alien').filter(u => isVisible(s, u)).length;
   const campHint = (() => {

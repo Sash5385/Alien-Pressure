@@ -214,6 +214,11 @@ export function checkEnd(s: GameState) {
   const z = s.zone;
   if (s.objective === 'hold' || s.objective === 'defend') { if (s.turnNo > s.holdTurns) s.status = 'won'; return; }
   if (s.objective === 'assassinate') { if (!living(s, 'alien').some(a => a.kind === 'commander')) s.status = 'won'; return; }
+  if (s.objective === 'rescue' && s.captives) {
+    for (const c of s.captives) if (!c.saved && humans.some(h => Math.hypot(h.x - c.x, h.y - c.y) <= 1.6)) { c.saved = true; s.mats = (s.mats ?? 0) + 2; log(s, `Полоненого звільнено! (${s.captives.filter(q => q.saved).length}/${s.captives.length})`); }
+    if (s.captives.every(c => c.saved)) s.status = 'won';
+    return;
+  }
   if (s.objective === 'sabotage') { if (s.beacons.length > 0 && s.beacons.every(b => b.done)) s.status = 'won'; return; }
   if (s.huge) { if (!living(s, 'alien').some(a => (a.grp ?? 0) < 500)) s.status = 'won'; return; } // огромный лес: победа, когда зачищены все лагеря (ямы — по желанию)
   if (living(s, 'alien').length === 0) s.status = 'won';

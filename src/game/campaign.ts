@@ -15,6 +15,7 @@ export interface Campaign {
   missionNo: number;
   objective: Objective;
   biome: Biome;
+  cleared?: number[]; // локації, які вже зачищено
   loc?: number; // локація великих карт (-1/пусто — за номером місії)
   mapSize: 44 | 64 | 640 | 1024; // размер карты миссий (640 и 1024 — огромный лес с засадами)
   roster: Soldier[];
@@ -40,6 +41,7 @@ export const OBJECTIVE_NAME: Record<Objective, string> = {
   defend: 'Оборона',
   assassinate: 'Ліквідація',
   sabotage: 'Диверсія',
+  rescue: 'Порятунок',
 };
 
 export const MAX_ROSTER = 6;
@@ -186,6 +188,7 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
   }
   c.roster.forEach(x => { x.hpLoss = Math.max(0, x.hpLoss - 3); }); // отдых между миссиями
   c.rng = (s.rng + Math.floor(rand(c) * 1e6)) >>> 0;
+  if (s.status === 'won' && s.huge && s.locId !== undefined && !(c.cleared ??= []).includes(s.locId)) { c.cleared.push(s.locId); c.scrap += 3; } // перше проходження локації: +3
   if (s.status === 'won') {
     c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : c.objective === 'assassinate' || c.objective === 'sabotage' ? 3 : 2) + (c.boss ? 4 : 0) + (c.risky ? 3 : 0);
     c.missionNo += 1;

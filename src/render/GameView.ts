@@ -480,6 +480,22 @@ export class GameView {
   private droneRing: THREE.Mesh | null = null;
 
   /** Мешки с песком, трофеи и метки следующей волны. */
+  private capMeshes = new Map<string, THREE.Object3D>();
+  /** Полонённые: оранжевая фигурка с кольцом; исчезает, когда освобождён. */
+  private syncCaptives() {
+    const cs = this.state.captives; if (!cs) return;
+    for (const c of cs) {
+      const k = `${c.x},${c.y}`, m = this.capMeshes.get(k);
+      if (c.saved) { if (m) { this.scene.remove(m); this.capMeshes.delete(k); } continue; }
+      if (m) continue;
+      const g = new THREE.Group(), mat = new THREE.MeshStandardMaterial({ color: 0xffa23a, roughness: 0.8 });
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.5, 4, 8), mat); body.position.y = 0.5;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd9b48f })); head.position.y = 1.05;
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.5, 20), new THREE.MeshBasicMaterial({ color: 0xffd34d, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
+      g.add(body, head, ring); g.position.set(c.x + 0.5, this.hy(c.x, c.y), c.y + 0.5); this.scene.add(g); this.capMeshes.set(k, g);
+    }
+  }
+
   private syncTactics() {
     const s = this.state;
     // мешки, выложенные бойцами
@@ -1254,6 +1270,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     }
     for (const m of this.corpses.values()) { const cx = Math.floor(m.position.x), cy = Math.floor(m.position.z); m.visible = !!this.state.seen[cy]?.[cx]; }
     this.syncSmoke();
+    this.syncCaptives();
     for (const [k, m] of this.coverMeshes) {
       const [cx, cy] = k.split(',').map(Number);
       if (this.state.cover[cy][cx] === 'none') {

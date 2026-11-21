@@ -26,6 +26,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
   const cap = c.sandbox ? MAX_ROSTER : DEPLOY; // в песочнице можно выставить до 6 бойцов
   const [msg, setMsg] = useState('');
   const [selId, setSelId] = useState<number>(() => c.roster[0]?.id ?? 0);
+  const [worldMap, setWorldMap] = useState(false);
   const [open, setOpen] = useState<'weapon' | 'armor' | 'cls' | 'att' | null>(null);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
   const ids = deploy.filter(id => c.roster.some(s => s.id === id));
@@ -104,7 +105,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             const on = c.objective === o.objective && c.biome === o.biome && c.boss === o.boss && c.risky === o.risky && (c.variant ?? 0) === (o.variant ?? 0);
             return (
               <button key={i} onClick={() => act(x => chooseOption(x, i))} style={{ ...btn(on), padding: '10px 8px', display: 'grid', gap: 3, justifyItems: 'center', textAlign: 'center', fontSize: 12 }}>
-                <span style={{ fontSize: 22 }}>{o.boss ? '☠' : { clear: '⚔', extract: '🚁', hold: '🛡', defend: '🏠', assassinate: '🎯', sabotage: '💣' }[o.objective]}</span>
+                <span style={{ fontSize: 22 }}>{o.boss ? '☠' : { clear: '⚔', extract: '🚁', hold: '🛡', defend: '🏠', assassinate: '🎯', sabotage: '💣', rescue: '🆘' }[o.objective]}</span>
                 <b style={{ fontSize: 13 }}>{o.boss ? 'Бос: Тиран' : o.objective === 'defend' ? `Оборона: ${DEFEND_KINDS[o.variant ?? 0].name}` : OBJECTIVE_NAME[o.objective]}</b>
                 <span style={{ opacity: 0.75 }}>{BIOME_NAME[o.biome]}</span>
                 <span style={{ color: NM.accent }}>{o.boss ? 'нагорода +4' : o.risky ? 'ризик: +2 вороги, нагорода +3' : 'стандарт'}</span>
@@ -128,7 +129,33 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             {Array.from(new Set(LOCATIONS.map(l => l.arch))).map(a => <optgroup key={a} label={a}>{LOCATIONS.filter(l => l.arch === a).map(l => <option key={l.id} value={l.id}>{l.name}{l.weather ? ' · ' + ({ night: 'ніч', rain: 'дощ', fog: 'туман' } as Record<string, string>)[l.weather] : ''}</option>)}</optgroup>)}
           </select>
         )}
+        {c.mapSize >= 640 && <button style={{ ...btn(worldMap), padding: '4px 10px', fontSize: 12 }} onClick={() => setWorldMap(true)}>🗺 Карта світу ({(c.cleared ?? []).length}/{LOCATIONS.length})</button>}
       </div>
+      {worldMap && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(8,14,28,.9)', overflow: 'auto', padding: 14 }} onClick={() => setWorldMap(false)}>
+          <div style={{ maxWidth: 980, margin: '0 auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <b style={{ fontSize: 18 }}>🗺 Карта світу — зачищено {(c.cleared ?? []).length} з {LOCATIONS.length}</b>
+              <button style={{ ...btn(false), padding: '4px 12px' }} onClick={() => setWorldMap(false)}>✕</button>
+            </div>
+            {Array.from(new Set(LOCATIONS.map(l => l.arch))).map(a => (
+              <div key={a} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 3 }}>{a} · {{ clear: '⚔ зачистка', sabotage: '💣 диверсія', assassinate: '🎯 ліквідація', rescue: '🆘 порятунок' }[LOCATIONS.find(l => l.arch === a)!.obj]}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(130px,1fr))', gap: 6 }}>
+                  {LOCATIONS.filter(l => l.arch === a).map(l => {
+                    const done = (c.cleared ?? []).includes(l.id), on = c.loc === l.id;
+                    return <button key={l.id} style={{ ...btn(on), padding: '8px 6px', fontSize: 12, display: 'grid', gap: 2, opacity: done && !on ? 0.75 : 1 }} onClick={() => { act(x => setLoc(x, l.id)); setWorldMap(false); }}>
+                      <b>{done ? '✓ ' : ''}{l.name}</b>
+                      <span style={{ fontSize: 10, opacity: 0.8 }}>{l.weather ? ({ night: '🌙 ніч', rain: '☔ дощ', fog: '🌫 туман' } as Record<string, string>)[l.weather] : '☀ день'} · {Math.round(l.damage * 100)}% руйн.</span>
+                    </button>;
+                  })}
+                </div>
+              </div>
+            ))}
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Перше проходження локації дає +3 трофеї. Обрана локація запам’ятовується.</div>
+          </div>
+        </div>
+      )}
 
       {(() => {
         const s = c.roster.find(x => x.id === selId) ?? c.roster[0];
