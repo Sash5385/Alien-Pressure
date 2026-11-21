@@ -9,11 +9,27 @@ const NAMES: ModelName[] = ['Soldier', 'Enemy', 'Hazmat'];
 
 interface Loaded { scene: THREE.Object3D; clips: THREE.AnimationClip[]; height: number }
 const cache = new Map<ModelName, Loaded>();
+const gunCache = new Map<string, THREE.Object3D>();
+/** Модель оружия из пакета (CC0 Quaternius): Rifle, SMG, Shotgun, Sniper, Pistol, Scope, Silencer… Центр в начале, ствол по +X. */
+export function gunModel(name: string): THREE.Object3D | null {
+  const g = gunCache.get(name); if (!g) return null;
+  const c = g.clone(true); c.userData = { ...g.userData }; return c;
+}
+export const GUN_OF_WEAPON: Record<string, string> = { rifle: 'Rifle', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper' };
+async function loadGuns() {
+  if (gunCache.size) return;
+  try {
+    const g = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/weapons.glb`);
+    const root = g.scene.children.length === 1 && !g.scene.children[0].name ? g.scene.children[0] : g.scene;
+    [...root.children].forEach(ch => { ch.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = false; const mats = Array.isArray(m.material) ? m.material : [m.material]; for (const mm of mats as THREE.MeshStandardMaterial[]) { mm.metalness = 0.3; mm.roughness = 0.5; mm.color.multiplyScalar(0.75); } } }); ch.removeFromParent(); gunCache.set(ch.name, ch); });
+    gunCache.forEach(ch => { const b = new THREE.Box3().setFromObject(ch); ch.userData.size = b.getSize(new THREE.Vector3()).toArray(); });
+  } catch { /* без моделей оружия — прежние детали */ }
+}
 
 /** Грузит glTF из public/models/. Не найденные файлы просто пропускаются — сцена использует примитивы. */
 export async function loadModels(covers = true): Promise<void> {
   const loader = new GLTFLoader();
-  await Promise.all([covers ? loadCovers() : Promise.resolve(), ...NAMES.map(async n => {
+  await Promise.all([loadGuns(), covers ? loadCovers() : Promise.resolve(), ...NAMES.map(async n => {
     if (cache.has(n)) return;
     try {
       const g = await loader.loadAsync(`${import.meta.env.BASE_URL}models/Character_${n}.gltf`);
@@ -162,18 +178,22 @@ function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE
 const AXES = ['x', 'y', 'z'] as const;
 /** Разбор оружия: длинная ось, куда смотрит дуло (от руки к дальнему концу), где верх. Длины в локальных единицах узла. */
 function weaponFrame(node: THREE.Object3D, hand: THREE.Vector3) {
-  const mesh = node as THREE.Mesh;
-  if (!mesh.geometry) return null;
-  mesh.geometry.computeBoundingBox();
-  const bb = mesh.geometry.boundingBox!, size = bb.getSize(new THREE.Vector3()), ctr = bb.getCenter(new THREE.Vector3());
+  // точки всех вершин оружия в локальных осях узла (узел — Mesh или группа мешей)
+  const inv = new THREE.Matrix4().copy(node.matrixWorld).invert(), pts: THREE.Vector3[] = [];
+  node.updateMatrixWorld(true);
+  node.traverse(o => {
+    const m = o as THREE.Mesh; if (!m.isMesh || !m.geometry || m.userData.attached) return;
+    const p = m.geometry.attributes.position, mat = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
+    for (let i = 0; i < p.count; i += 2) pts.push(new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(mat));
+  });
+  if (!pts.length) return null;
+  const bb = new THREE.Box3().setFromPoints(pts), size = bb.getSize(new THREE.Vector3()), ctr = bb.getCenter(new THREE.Vector3());
   const order = [0, 1, 2].sort((i, j) => size[AXES[j]] - size[AXES[i]]);
   const la = AXES[order[0]], ha = AXES[order[1]];
   const hl = node.worldToLocal(hand.clone());
   const mz = (hl[la] - ctr[la]) > 0 ? -1 : 1; // дуло — на дальнем от руки конце
-  // верх — там, где центр масс вершин выше центра габарита (магазин свисает вниз)
-  const pos = mesh.geometry.attributes.position; let sum = 0;
-  for (let i = 0; i < pos.count; i += 3) sum += pos.getComponent(i, order[1]);
-  const up = (sum / Math.ceil(pos.count / 3) - ctr[ha]) >= 0 ? 1 : -1;
+  let sum = 0; for (const q of pts) sum += q[ha];
+  const up = (sum / pts.length - ctr[ha]) >= 0 ? 1 : -1; // верх — где центр масс выше центра габарита (магазин свисает вниз)
   return { bb, size, ctr, la, ha, mz, up, len: size[la], hl };
 }
 
@@ -217,6 +237,31 @@ function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<Retur
   } else if (kind === 'Shotgun') {
     place(new THREE.CylinderGeometry(L * 0.04, L * 0.04, L * 0.22, 10), new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 0.9 }), at(0.6, -up * 0.6)); // цевьё
   }
+}
+
+/** Ставит модель оружия из пакета вместо родной: по длинной оси, направлению ствола и «верху» исходного узла. */
+function mountGun(node: THREE.Object3D, weapon: string, f: NonNullable<ReturnType<typeof weaponFrame>>, att?: Att): boolean {
+  const key = { AK: 'Rifle', SMG: 'SMG', Shotgun: 'Shotgun', Sniper: 'Sniper' }[weapon];
+  const gun = key ? gunModel(key) : null;
+  if (!gun) return false;
+  const size = gun.userData.size as number[];
+  node.children.forEach(c => { c.visible = false; }); // родная модель скрыта
+  const e = (a: 'x' | 'y' | 'z') => new THREE.Vector3(a === 'x' ? 1 : 0, a === 'y' ? 1 : 0, a === 'z' ? 1 : 0);
+  const ex = e(f.la).multiplyScalar(f.mz), ey = e(f.ha).multiplyScalar(f.up), ez = new THREE.Vector3().crossVectors(ex, ey);
+  const holder = new THREE.Group(); holder.name = 'gun';
+  holder.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex, ey, ez));
+  holder.position.copy(f.ctr); holder.scale.setScalar(f.len / size[0]);
+  holder.add(gun);
+  // насадки: глушитель на дуле, оптика сверху — по габариту этого оружия
+  const gb = new THREE.Box3().setFromObject(gun), L = size[0];
+  let barrelY = 0, nB = 0, topY = -1e9;
+  gun.updateMatrixWorld(true);
+  gun.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh) return; const p = m.geometry.attributes.position; for (let i = 0; i < p.count; i += 2) { const v = new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); if (v.x > gb.max.x - L * 0.06) { barrelY += v.y; nB++; } if (Math.abs(v.x) < L * 0.08) topY = Math.max(topY, v.y); } });
+  barrelY = nB ? barrelY / nB : 0;
+  if (att?.supp) { const sl = gunModel('Silencer'); if (sl) { const sw = (sl.userData.size as number[])[0]; sl.position.set(gb.max.x + sw / 2 - L * 0.02, barrelY, 0); holder.add(sl); } }
+  if (att?.optic && weapon !== 'Sniper') { const sc = gunModel('Scope'); if (sc) { const sh = (sc.userData.size as number[])[1]; sc.scale.setScalar(L * 0.17 / (sc.userData.size as number[])[0]); sc.position.set(0, topY + sh * 0.5 * (L * 0.17 / (sc.userData.size as number[])[0]) - 0.02, 0); holder.add(sc); } }
+  node.add(holder);
+  return true;
 }
 
 /** Станковый АГС: сошки-треножник, короб с барабаном-лентой, ствол с пламегасителем, рукоятки. Розміры для роста 1,8. */
@@ -324,7 +369,8 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
       inner.updateMatrixWorld(true);
       const f = weaponFrame(node, rigR.wrist.getWorldPosition(new THREE.Vector3()));
       if (f) {
-        addWeaponParts(node, weapon, f, att);
+        const mounted = mountGun(node, weapon, f, att);
+        addWeaponParts(node, mounted ? 'mounted' : weapon, f, mounted ? { mag: att?.mag } : att);
         const local = f.hl.clone(); local[f.la] = Math.max(f.bb.min[f.la], Math.min(f.bb.max[f.la], f.hl[f.la] + f.mz * f.len * 0.38)); // хват впереди, на цевье
         local[f.ha] = f.ctr[f.ha] - f.up * f.size[f.ha] * 0.1;
         grip = { node, local };

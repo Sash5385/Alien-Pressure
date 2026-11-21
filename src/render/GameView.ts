@@ -8,7 +8,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
 import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, throwSmoke, type GrenadeResult, canThrow, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, type Sfx } from '../audio';
-import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
+import { applyTwoHands, GUN_OF_WEAPON, gunModel, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
@@ -548,7 +548,12 @@ export class GameView {
       if (this.lootMeshes.has(l as unknown as string)) return;
       const g = new THREE.Group(), off = (i % 3) * 0.12 - 0.1;
       g.position.set(l.x + 0.5 + off, this.hy(l.x, l.y) + 0.12, l.y + 0.5 - off);
-      if (l.kind === 'wpn') {
+      const lg = l.kind === 'wpn' && l.w ? gunModel(GUN_OF_WEAPON[l.w] ?? '') : null;
+      if (lg) { // реальная модель оружия на земле
+        const sz = lg.userData.size as number[]; lg.scale.setScalar(0.78 / sz[0]); lg.position.y = 0.02; lg.rotation.y = ((l.x * 7 + l.y * 3) % 6); lg.rotation.z = 0;
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.46, 20), new THREE.MeshBasicMaterial({ color: 0xff9f43, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = -0.1;
+        g.add(lg, ring);
+      } else if (l.kind === 'wpn') {
         const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.1), new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.5, metalness: 0.5 }));
         const stock = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.08), new THREE.MeshStandardMaterial({ color: 0x5a3f25, roughness: 0.8 })); stock.position.x = -0.38;
         const mag = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.07), new THREE.MeshStandardMaterial({ color: 0x1a1c1f })); mag.position.set(0.02, -0.09, 0);

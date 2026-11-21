@@ -3,3 +3,5 @@ Quaternius — "Toon Shooter Game Kit", CC0 1.0 (public domain): https://creativ
 https://quaternius.com/packs/toonshootergamekit.html
 
 cover/*.fbx — Quaternius, "Toon Shooter Game Kit", CC0 1.0 (same pack as above).
+
+weapons.glb — «Ultimate Gun Pack» by Quaternius (CC0): https://opengameart.org/content/low-poly-guns-pack
