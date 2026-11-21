@@ -4,7 +4,7 @@ import { WEAPONS } from './game/weapons';
 import type { Campaign } from './game/campaign';
 import type { Soldier, WeaponId } from './game/types';
 import { weaponIcon } from './render/models';
-import { btn, glass } from './ui';
+import { btn, glass } from './hud';
 const panel = { ...glass, borderRadius: 18, padding: 14 };
 
 const TABS: { k: 'base' | Cat; name: string }[] = [{ k: 'base', name: 'Базові' }, { k: 'pistol', name: CAT_NAME.pistol }, { k: 'auto', name: CAT_NAME.auto }, { k: 'rifle', name: CAT_NAME.rifle }, { k: 'mg', name: CAT_NAME.mg }];

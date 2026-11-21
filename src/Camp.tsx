@@ -11,8 +11,7 @@ import { PERKS, RANKS, TRAITS, XP_STEPS } from './game/traits';
 import type { ArmorId, PerkId, Tech } from './game/types';
 import { ARMORS, WEAPONS } from './game/weapons';
 import { GEARS, GEAR_SLOTS, HELMETS, type GearDef } from './game/gear';
-import { btn, comicH, cta, glass, INK, NM, UI_NAMES, UI_SCALES, useUiSize } from './ui';
-import { Backdrop } from './Title';
+import { btn, cta, glass, HN, hudH, HudScreen } from './hud';
 import { SoldierView } from './SoldierView';
 import { DEFEND_KINDS } from './game/mission';
 
@@ -48,7 +47,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
 
   if (c.over) {
     return (
-      <Screen>
+      <HudScreen>
         <h1 style={{ margin: 0 }}>Загін знищено</h1>
         <p>Місій пройдено: {c.missionNo - 1}</p>
         <div style={panel}>
@@ -56,16 +55,16 @@ export function Camp({ c, onChange, onStart, onMenu }: {
           {c.fallen.map((f, i) => <div key={i}>{f.name} — місія {f.mission}</div>)}
         </div>
         <button style={cta()} onClick={onMenu}>До меню</button>
-      </Screen>
+      </HudScreen>
     );
   }
 
   return (
-    <Screen>
+    <HudScreen>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-        <h1 style={{ ...comicH, fontSize: 34 }}>База</h1>
-        <span style={{ background: '#fff', border: `4px solid ${INK}`, borderRadius: 12, padding: '3px 12px', fontWeight: 800, boxShadow: `0 4px 0 ${INK}` }}>Складність: {DIFF[c.difficulty].label}</span>
-        <b style={{ background: '#ffe14d', border: `4px solid ${INK}`, borderRadius: 12, padding: '3px 12px', boxShadow: `0 4px 0 ${INK}`, color: INK }}>{c.sandbox ? 'Пісочниця: усе відкрито' : `Трофеї: ${c.scrap}`}</b>
+        <h1 style={{ ...hudH, fontSize: 30 }}>База</h1>
+        <span style={{ border: `1px solid ${HN.accent}88`, background: '#06203acc', borderRadius: 4, padding: '3px 12px', fontWeight: 700 }}>Складність: {DIFF[c.difficulty].label}</span>
+        <b style={{ border: `1px solid ${HN.accent}`, background: '#0a4a7acc', borderRadius: 4, padding: '3px 12px', color: HN.fg, boxShadow: `0 0 12px ${HN.accent}66` }}>{c.sandbox ? 'Пісочниця: усе відкрито' : `Трофеї: ${c.scrap}`}</b>
       </div>
       {c.sandbox && (() => {
         const cur = { objective: c.objective, biome: c.biome, boss: c.boss, risky: c.risky, variant: c.variant ?? 0 };
@@ -106,7 +105,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
               return <path key={i} d={`M150 0 Q150 20 ${x} 34`} stroke="rgba(255,255,255,.3)" strokeWidth="2" fill="none" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />;
             })}
           </svg>
-          <div style={{ position: 'absolute', left: '50%', top: -4, transform: 'translateX(-50%)', width: 14, height: 14, clipPath: HEX, background: NM.accent }} title="База" />
+          <div style={{ position: 'absolute', left: '50%', top: -4, transform: 'translateX(-50%)', width: 14, height: 14, clipPath: HEX, background: HN.accent }} title="База" />
           {c.options.map((o, i) => {
             const on = c.objective === o.objective && c.biome === o.biome && c.boss === o.boss && c.risky === o.risky && (c.variant ?? 0) === (o.variant ?? 0);
             return (
@@ -114,7 +113,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
                 <span style={{ fontSize: 22 }}>{o.boss ? '☠' : { clear: '⚔', extract: '🚁', hold: '🛡', defend: '🏠', assassinate: '🎯', sabotage: '💣', rescue: '🆘', storm: '🏢', holdbld: '🏚', hostage: '🔑', bomb: '🧨', counter: '🔭', escort: '🚁', ambush: '🚛', raid: '📦' }[o.objective]}</span>
                 <b style={{ fontSize: 13 }}>{o.boss ? 'Бос: Тиран' : o.objective === 'defend' ? `Оборона: ${DEFEND_KINDS[o.variant ?? 0].name}` : OBJECTIVE_NAME[o.objective]}</b>
                 <span style={{ opacity: 0.75 }}>{BIOME_NAME[o.biome]}</span>
-                <span style={{ color: NM.accent }}>{o.boss ? 'нагорода +4' : o.risky ? 'ризик: +2 вороги, нагорода +3' : 'стандарт'}</span>
+                <span style={{ color: HN.accent }}>{o.boss ? 'нагорода +4' : o.risky ? 'ризик: +2 вороги, нагорода +3' : 'стандарт'}</span>
               </button>
             );
           })}
@@ -190,47 +189,52 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         const max = maxHpOf(s, c.tech), on = ids.includes(s.id);
         const w = WEAPONS[s.weapon], ar = ARMORS[s.armor];
         const grenades = 2 + (c.tech.grenades ? 1 : 0) + (s.cls === 'engineer' ? 1 : 0);
-        const hex = (k: 'weapon' | 'armor' | 'helm' | 'gear' | 'cls' | 'att' | 'sec' | null, icon: string, lab: string, val: string, side: 'l' | 'r', dx: number) => (
-          <div style={{ display: 'flex', flexDirection: narrow ? 'column' : side === 'l' ? 'row' : 'row-reverse', alignItems: 'center', gap: narrow ? 4 : 10, transform: narrow ? undefined : `translateX(${side === 'l' ? dx : -dx}px)`, cursor: k ? 'pointer' : 'default' }}
-            role={k ? 'button' : undefined} tabIndex={k ? 0 : undefined} onClick={() => k && setOpen(open === k ? null : k)} onKeyDown={e => { if (k && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(open === k ? null : k); } }}>
-            <div style={{ width: 62, height: 70, flex: 'none', clipPath: HEX, background: open === k && k ? NM.accent : NM.line, display: 'grid', placeItems: 'center' }}>
-              <div style={{ width: 58, height: 66, clipPath: HEX, background: NM.solid, display: 'grid', placeItems: 'center', fontSize: 22 }}>{icon.startsWith('data:') ? <img src={icon} alt="" style={{ width: 54, height: 27, objectFit: 'contain', filter: 'brightness(2.2) drop-shadow(0 0 2px rgba(255,255,255,.7))' }} /> : icon}</div>
+        type K = 'weapon' | 'armor' | 'helm' | 'gear' | 'cls' | 'att' | 'sec';
+        const hp = Math.max(1, max - s.hpLoss), kgTot = Math.round((w.kg + ar.kg + (HELMETS[s.helmet ?? 'none']?.kg ?? 0) + (s.gear ?? []).reduce((a2, g) => a2 + (GEARS[g]?.kg ?? 0), 0)) * 10) / 10;
+        // слот-вузол: скошені кути, світиться, коли відкритий
+        const node = (k: K | null, lab: string, val: string, side: 'l' | 'r', icon?: string) => (
+          <button key={lab} disabled={!k} onClick={() => k && setOpen(open === k ? null : k)}
+            style={{ textAlign: side === 'l' ? 'left' : 'right', padding: '6px 9px', border: `1px solid ${open === k && k ? HN.accent : HN.accent + '88'}`, background: open === k && k ? '#0a4a7acc' : '#06203acc', color: HN.fg, cursor: k ? 'pointer' : 'default', font: 'inherit', width: '100%', minWidth: 0,
+              clipPath: side === 'l' ? 'polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))' : 'polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)', boxShadow: open === k && k ? `0 0 14px ${HN.accent}88` : 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: side === 'l' ? 'flex-start' : 'flex-end', fontSize: 9, letterSpacing: narrow ? '.08em' : '.2em', textTransform: 'uppercase', color: HN.accent }}>
+              {icon && (icon.startsWith('data:') ? <img src={icon} alt="" style={{ width: 28, height: 14, objectFit: 'contain', filter: 'brightness(2.2)' }} /> : <span style={{ fontSize: 12 }}>{icon}</span>)}{lab}
             </div>
-            <div style={{ textAlign: narrow ? 'center' : side === 'l' ? 'left' : 'right', minWidth: 0, fontSize: narrow ? 11 : undefined }}>
-              <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: NM.dim }}>{lab}</div>
-              <b style={{ fontSize: 13 }}>{val}</b>
-            </div>
-          </div>
+            <b style={{ fontSize: narrow ? 12 : 14, lineHeight: 1.1, display: 'block', overflowWrap: 'anywhere' }}>{val}</b>
+          </button>
         );
+        const L: [K, string, string, string][] = [['helm', 'Шолом', HELMETS[s.helmet ?? 'none']?.name ?? 'немає', '⛑'], ['armor', 'Броня', ar.name, '▣'], ['gear', 'Спорядження', (s.gear?.length ?? 0) ? s.gear!.map(g => GEARS[g]?.name).join(', ') : 'немає', '✦'], ['cls', 'Клас', CLASSES[s.cls].name, '⚔']];
+        const Rr: [K, string, string, string][] = [['weapon', 'Зброя', w.name, ''], ['sec', 'Запасна', s.sec ? WEAPONS[s.sec].name : 'немає', ''], ['att', 'Обвіс зброї', (s.att?.length ?? 0) ? s.att!.map(a2 => ATT[a2].name).join(', ') : 'немає', '🔧']];
+        const bar = (lab: string, pct: number, col = HN.accent) => <div key={lab} style={{ fontSize: 10, letterSpacing: '.14em', color: HN.dim, textTransform: 'uppercase' }}>{lab}<i style={{ display: 'block', height: 5, background: '#0b3558', marginTop: 3, position: 'relative' }}><i style={{ position: 'absolute', inset: '0 auto 0 0', width: `${Math.max(2, Math.min(100, pct))}%`, background: col, boxShadow: `0 0 8px ${col}` }} /></i></div>;
         return (
           <div style={{ ...panel, display: 'grid', gap: 12 }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
               {c.roster.map(x => <button key={x.id} style={btn(x.id === s.id)} onClick={() => { setSelId(x.id); setOpen(null); }}>{x.name}{ids.includes(x.id) ? ' ✓' : ''}</button>)}
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: NM.dim }}>{RANKS[s.rank]}</div>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>{s.name}</div>
+              <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: HN.accent }}>{RANKS[s.rank]}</div>
+              <div style={{ ...hudH, fontSize: 24 }}>{s.name}</div>
               <div style={{ fontSize: 12, opacity: 0.7 }}>HP {Math.max(1, max - s.hpLoss)}/{max}{s.fracture ? ' · перелом' : ''} · вбито {s.kills} · місій {s.missions} · досвід {s.xp}{s.rank < XP_STEPS.length ? `/${XP_STEPS[s.rank]}` : ' (макс.)'}</div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', alignItems: 'center', gap: narrow ? 2 : 8 }}>
-              <div style={{ display: 'grid', gap: narrow ? 10 : 26 }}>
-                {hex('weapon', weaponIcon(s.weapon) ?? '🔫', 'Зброя', w.name, 'l', 0)}
-                {hex('helm', '⛑', 'Шолом', HELMETS[s.helmet ?? 'none']?.name ?? 'немає', 'l', 14)}
-                {hex('armor', '🛡', 'Броня', ar.name, 'l', 0)}
-                {hex('gear', '🎒', 'Спорядження', (s.gear?.length ?? 0) ? s.gear!.map(g => GEARS[g]?.name).join(', ') : 'немає', 'l', 14)}
-                {hex('cls', '⚔', 'Клас', CLASSES[s.cls].name, 'l', 0)}
-                {hex('sec', (s.sec && weaponIcon(s.sec)) || '🎽', 'Запасна', s.sec ? WEAPONS[s.sec].name : 'немає', 'l', 0)}
-                {hex('att', '🔧', 'Обвіс', (s.att?.length ?? 0) ? s.att!.map(a => ATT[a].name).join(', ') : 'немає', 'l', 14)}
+            <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', alignItems: 'stretch', gap: narrow ? 4 : 10 }}>
+              <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                <g stroke={`${HN.accent}99`} fill="none" strokeWidth="1" vectorEffect="non-scaling-stroke">
+                  {L.map((_, i) => <path key={'l' + i} vectorEffect="non-scaling-stroke" d={`M${narrow ? 30 : 33} ${(i + 0.5) / L.length * 100} H${narrow ? 38 : 40} L45 ${[24, 44, 58, 70][i]}`} />)}
+                  {Rr.map((_, i) => <path key={'r' + i} vectorEffect="non-scaling-stroke" d={`M${narrow ? 70 : 67} ${(i + 0.5) / Rr.length * 100} H${narrow ? 62 : 60} L55 ${[46, 62, 54][i]}`} />)}
+                </g>
+              </svg>
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-around', gap: 8, position: 'relative' }}>{L.map(([k, lab, val, ic]) => node(k, lab, val, 'l', ic))}</div>
+              <div style={{ display: 'grid', justifyItems: 'center', alignContent: 'center' }}>
+                <SoldierView weapon={s.weapon} armor={s.armor} helmet={s.helmet} gear={s.gear} width={narrow ? 130 : 210} height={narrow ? 250 : 400} />
               </div>
-              <div style={{ position: 'relative', display: 'grid', justifyItems: 'center' }}>
-                <SoldierView weapon={s.weapon} armor={s.armor} helmet={s.helmet} gear={s.gear} width={narrow ? 130 : 210} height={narrow ? 230 : 380} />
-                <div style={{ width: narrow ? 120 : 190, height: 30, borderRadius: '50%', background: 'radial-gradient(ellipse,#7ee0ff55 -20%,transparent 70%)', marginTop: -14 }} />
-              </div>
-              <div style={{ display: 'grid', gap: narrow ? 10 : 26 }}>
-                {hex(null, '💣', 'Гранати', `× ${grenades}`, 'r', 0)}
-                {hex(null, '▮', 'Магазини', `× 2 · ${w.ammo} набоїв`, 'r', 14)}
-                {hex(null, '✚', 'Аптечки', `× ${DIFF[c.difficulty].kits + (c.tech.kits ? 1 : 0)} (на загін)`, 'r', 0)}
-              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-around', gap: 8, position: 'relative' }}>{Rr.map(([k, lab, val, ic], i) => node(k, lab, val, 'r', i === 0 ? weaponIcon(s.weapon) ?? '⌖' : ic))}</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 8 }}>
+              {bar('HP ' + hp + '/' + max, hp / max * 100, hp / max < 0.4 ? HN.warn : HN.good)}{bar('Броня ' + ar.hp, ar.hp * 20)}{bar('Вага ' + kgTot + ' кг', kgTot * 6, kgTot > 11 ? HN.warn : HN.accent)}{bar('Рух ' + (5 + w.move + ar.move), (5 + w.move + ar.move) * 12)}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', fontSize: 12 }}>
+              {[['💣', 'Гранати', `× ${grenades}`], ['▮', 'Магазини', `× 2 · ${w.ammo} набоїв`], ['✚', 'Аптечки', `× ${DIFF[c.difficulty].kits + (c.tech.kits ? 1 : 0)} (на загін)`]].map(([i2, l2, v2]) => (
+                <span key={l2} style={{ border: `1px solid ${HN.accent}55`, background: '#06203a99', padding: '4px 10px', borderRadius: 3 }}><span style={{ color: HN.accent, letterSpacing: '.14em', textTransform: 'uppercase', fontSize: 10 }}>{i2} {l2}</span> <b>{v2}</b></span>
+              ))}
             </div>
             {open && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -250,7 +254,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             </div>
             {s.perkPoints > 0 && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
-                <b style={{ color: NM.accent }}>Підвищення!</b>
+                <b style={{ color: HN.accent }}>Підвищення!</b>
                 {(Object.keys(PERKS) as PerkId[]).map(p => (
                   <button key={p} style={{ ...btn(), padding: '6px 12px', fontSize: 12 }} onClick={() => act(x => choosePerk(x, s.id, p))}>{PERKS[p]}</button>
                 ))}
@@ -296,22 +300,6 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         </button>
         <button style={btn()} onClick={onMenu}>До меню</button>
       </div>
-    </Screen>
-  );
-}
-
-export function Screen({ children }: { children: React.ReactNode }) {
-  const [ui, setUi] = useUiSize();
-  return (
-    <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', color: NM.fg, background: NM.bg, fontFamily: "'Onest',system-ui,sans-serif", fontWeight: 600, fontSize: 14 }}>
-      <Backdrop />
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: 720, margin: '0 auto', padding: 16, display: 'grid', gap: 14, zoom: UI_SCALES[ui] }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', fontSize: 12, fontWeight: 800, color: INK }}>
-          <span style={{ background: '#fff', border: `3px solid ${INK}`, borderRadius: 10, padding: '2px 10px' }}>Розмір інтерфейсу</span>
-          {UI_NAMES.map((n, i) => <button key={n} style={{ ...btn(i === ui), padding: '3px 10px', fontSize: 12, borderWidth: 3, boxShadow: `0 3px 0 ${INK}` }} onClick={() => setUi(i)}>{n}</button>)}
-        </div>
-        {children}
-      </div>
-    </div>
+    </HudScreen>
   );
 }
