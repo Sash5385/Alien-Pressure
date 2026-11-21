@@ -624,8 +624,8 @@ export class GameView {
     this.scene.add(this.groundGroup);
     const col = (g: THREE.BufferGeometry, c: number) => { const k = new THREE.Color(c), a: number[] = []; for (let i = 0; i < g.attributes.position.count; i++) a.push(k.r, k.g, k.b); g.setAttribute('color', new THREE.Float32BufferAttribute(a, 3)); return g; };
     const trunk = col(new THREE.CylinderGeometry(0.07, 0.11, 0.8, 6).translate(0, 0.4, 0), 0x5a3f25);
-    const c1 = col(new THREE.ConeGeometry(0.55, 1.1, 7).translate(0, 1.0, 0), 0x3f7a2e);
-    const c2 = col(new THREE.ConeGeometry(0.38, 0.9, 7).translate(0, 1.6, 0), 0x4a8a30);
+    const c1 = col(new THREE.ConeGeometry(0.55, 1.1, 7).translate(0, 1.0, 0), 0x34642a);
+    const c2 = col(new THREE.ConeGeometry(0.38, 0.9, 7).translate(0, 1.6, 0), 0x3e7230);
     this.treeGeo = mergeGeometries([trunk, c1, c2])!;
     this.treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
     sway(this.treeMat, { amp: 0.05, h: 2.1, base: 0, oh: 2.1 });
@@ -709,7 +709,7 @@ export class GameView {
     if (!spots.length) return null;
     const im = new THREE.InstancedMesh(this.grassGeo, this.grassMat, spots.length);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
-    const cols = [0x4f8a2a, 0x5f9a34, 0x3f7a22, 0x7bb33f];
+    const cols = [0x4a7a2c, 0x588632, 0x3c6a24, 0x6a9638];
     spots.forEach(([px, pz], i) => {
       const k = 0.7 + nhash(i, x0 + z0) * 0.9;
       q.setFromEuler(e.set((nhash(i, 3) - 0.5) * 0.3, nhash(i, 9) * 6, (nhash(i, 5) - 0.5) * 0.3)); v.set(px, 0.13 * k + this.hs(px, pz), pz); sc.set(1, k, 1);
@@ -890,15 +890,22 @@ export class GameView {
     gt.anisotropy = 4;
     ground.map = gt;
     ground.color.set(0xffffff);
+    const tb = (import.meta as any).env?.BASE_URL ?? '/', tl = new THREE.TextureLoader();
+    const dt = (nm: string, srgb: boolean) => { const t = tl.load(`${tb}tex/${nm}.jpg`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+    const tGrass = dt('grass', true), tDirt = dt('dirt', true);
+    const gn = dt('grass_n', false); gn.repeat.set(n / 2.5, n / 2.5); ground.normalMap = gn; ground.normalScale.set(0.55, 0.55); // мелкий рельеф травы
     const sandCol = { ruins: [0.5, 0.45, 0.38], forest: [0.42, 0.32, 0.18], lake: [0.72, 0.64, 0.42] }[biome];
     ground.customProgramCacheKey = () => 'ground-soft';
     ground.onBeforeCompile = sh => { // грунт и песок вместо зелени по маске вершин; у воды бегущая пена по уровню воды
-      sh.uniforms.uTime = WIND.uTime; sh.uniforms.uSand = { value: new THREE.Vector3(...sandCol) };
+      sh.uniforms.uTime = WIND.uTime; sh.uniforms.tGrass = { value: tGrass }; sh.uniforms.tDirt = { value: tDirt }; sh.uniforms.uSand = { value: new THREE.Vector3(...sandCol) };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float sand; varying float vSand; varying vec3 vW;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSand = sand; vW = (modelMatrix * vec4(position, 1.0)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vSand; varying vec3 vW; uniform float uTime; uniform vec3 uSand;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vSand; varying vec3 vW; uniform float uTime; uniform vec3 uSand; uniform sampler2D tGrass; uniform sampler2D tDirt;')
         .replace('#include <color_fragment>', `#include <color_fragment>
-diffuseColor.rgb = mix(diffuseColor.rgb, uSand * (0.85 + 0.3 * diffuseColor.g), vSand);
+vec3 gdet = texture2D(tGrass, vW.xz * 0.4).rgb, ddet = texture2D(tDirt, vW.xz * 0.4).rgb;
+diffuseColor.rgb *= mix(vec3(1.0), gdet * 1.9, 0.85);
+float gl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)); diffuseColor.rgb = mix(vec3(gl), diffuseColor.rgb, 0.8); // естественнее: меньше насыщенность
+diffuseColor.rgb = mix(diffuseColor.rgb, uSand * (0.85 + 0.3 * diffuseColor.g) * (0.45 + ddet * 1.3), vSand);
 float lvl = -0.3 + 0.045 * sin(uTime * 1.3 + vW.x * 2.1 + vW.z * 1.6) + 0.02 * sin(uTime * 2.1 + vW.x * 4.3 - vW.z * 3.1);
 float foam = (1.0 - smoothstep(0.0, 0.05, abs(vW.y - lvl))) * smoothstep(-0.6, -0.3, vW.y);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
