@@ -1296,11 +1296,11 @@ void main(){
     const gun = u.team === 'human'
       ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'RocketLauncher', mortar: 'MORTAR', ags: 'AGS' }[u.weapon]
       : { soldier: '', trooper: 'AK', sniper: 'Sniper_2', psi: '', heavy: 'ShortCannon', commander: 'Revolver' }[u.kind];
-    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor, u.team === 'human' ? { optic: u.optic, supp: u.supp, mag: u.extMag } : undefined);
+    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor, u.team === 'human' ? { optic: u.optic, supp: u.supp, mag: u.extMag } : undefined, { id: u.id, cls: u.cls, kind: u.kind });
     if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
     if (u.team === 'alien') { // инопланетная биолюминесценция: лёгкое свечение материалов
       const glow = { trooper: 0x39ff7a, sniper: 0x35e0c0, psi: 0xb36bff, heavy: 0xc8ff3a, commander: 0xff3a3a, soldier: 0x39ff7a }[u.kind] ?? 0x39ff7a;
-      sp.obj.traverse(o => { const mm = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (mm && 'emissive' in mm) { mm.emissive = new THREE.Color(glow); mm.emissiveIntensity = u.kind === 'commander' ? 0.32 : 0.16; } });
+      sp.obj.traverse(o => { const mm = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (mm && 'emissive' in mm) { mm.emissive = new THREE.Color(glow); mm.emissiveIntensity = u.kind === 'commander' ? 0.14 : 0.07; } });
     }
     this.rigs.set(u.id, sp);
     this.play(u.id, 'Idle');

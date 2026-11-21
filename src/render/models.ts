@@ -195,6 +195,69 @@ function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE
   if (aim) aim.stop();
 }
 
+
+export interface Who { id: number; cls?: string; kind?: string }
+const TONES = [0xffffff, 0xc89a78, 0x9a6a4a, 0xe2b48f];
+/** Детали внешности и экипировки: лицо, шлем, знаки класса; у пришельцев — светящиеся глаза, шипы, пластины. Позиции в системе модели, привязка к костям. */
+function dressCharacter(inner: THREE.Object3D, mixer: THREE.AnimationMixer, pose: THREE.AnimationAction | undefined, name: ModelName, who: Who) {
+  if (pose) { pose.play(); mixer.update(0); }
+  inner.updateMatrixWorld(true);
+  const bone = (n: string) => inner.getObjectByName(n);
+  const head = bone('Head'), torso = bone('Torso'), hips = bone('Hips');
+  if (!head || !torso || !hips) { pose?.stop(); return; }
+  const hw = head.getWorldPosition(new THREE.Vector3()), hc = inner.worldToLocal(hw.clone()).add(new THREE.Vector3(0, 0.17, 0)); // центр головы в системе модели
+  const items: { o: THREE.Object3D; host: THREE.Object3D }[] = [];
+  const std = (c: number, r = 0.7, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m, flatShading: true });
+  const glow = (c: number, k = 1.4) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: k, roughness: 0.4 });
+  const put = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, host: THREE.Object3D, rot?: [number, number, number]) => {
+    const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); if (rot) o.rotation.set(...rot); o.castShadow = true; inner.add(o); items.push({ o, host }); return o;
+  };
+  const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d), sph = (r: number) => new THREE.SphereGeometry(r, 10, 8), cyl = (r: number, h: number, n = 8) => new THREE.CylinderGeometry(r, r, h, n);
+  const F = hc.z + 0.26; // передняя плоскость лица
+  if (name === 'Soldier') {
+    const dk = std(0x15110e, 0.9), white = std(0xf0f0ea, 0.8), red = std(0xc42a2a, 0.7);
+    for (const x of [-0.1, 0.1]) { put(sph(0.032), dk, hc.x + x, hc.y + 0.0, F, head); put(box(0.1, 0.022, 0.03), dk, hc.x + x, hc.y + 0.07, F - 0.01, head, [0, 0, x > 0 ? -0.15 : 0.15]); } // глаза и брови
+    put(box(0.12, 0.018, 0.03), dk, hc.x, hc.y - 0.13, F - 0.02, head); // рот
+    put(box(0.58, 0.05, 0.05), std(0x1b1d1a, 0.8), hc.x, hc.y + 0.17, F - 0.04, head); // ремешок подшлемника/очков
+    const gl = glow(0x6fd0ff, 0.5); for (const x of [-0.12, 0.12]) put(cyl(0.065, 0.07, 10), std(0x20262b, 0.4, 0.4), hc.x + x, hc.y + 0.2, F + 0.02, head, [Math.PI / 2, 0, 0]), put(cyl(0.048, 0.02, 10), gl, hc.x + x, hc.y + 0.2, F + 0.065, head, [Math.PI / 2, 0, 0]); // очки на шлеме
+    for (const x of [-0.3, 0.3]) put(box(0.07, 0.15, 0.13), std(0x23272b, 0.5, 0.3), hc.x + x, hc.y - 0.02, hc.z, head); // наушники гарнитуры
+    put(box(0.02, 0.2, 0.02), std(0x23272b), hc.x + 0.3, hc.y - 0.1, F - 0.14, head, [0.4, 0, 0]); // микрофон
+    const cls = who.cls;
+    if (cls === 'medic') { put(box(0.2, 0.2, 0.03), white, hc.x, hc.y + 0.3, F - 0.07, head, [-0.5, 0, 0]); put(box(0.14, 0.04, 0.035), red, hc.x, hc.y + 0.3, F - 0.065, head, [-0.5, 0, 0]); put(box(0.04, 0.14, 0.035), red, hc.x, hc.y + 0.3, F - 0.065, head, [-0.5, 0, 0]);
+      const ua = bone('UpperArm.L'); if (ua) { put(box(0.2, 0.1, 0.2), white, 0.62, hc.y - 0.3, 0.0, ua); put(box(0.14, 0.03, 0.14), red, 0.62, hc.y - 0.3, 0.0, ua); } }
+    else if (cls === 'sniper') { const gh = [0x4a5a2a, 0x6a5a32, 0x3a4a22, 0x5c6a34]; for (let i = 0; i < 16; i++) { const a = (i / 16) * 6.283, r = 0.3 + (i % 3) * 0.03; put(box(0.03, 0.16 + (i % 4) * 0.05, 0.03), std(gh[i % 4], 0.95), hc.x + Math.cos(a) * r, hc.y + 0.22 - (i % 3) * 0.1, hc.z + Math.sin(a) * r, head, [Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5]); }
+      for (const sx of [-1, 1]) for (let i = 0; i < 5; i++) put(box(0.03, 0.22, 0.03), std(gh[(i + 1) % 4], 0.95), sx * (0.34 + i * 0.05), hc.y - 0.42, -0.02 + (i - 2) * 0.07, torso, [0, 0, sx * 0.3]); }
+    else if (cls === 'engineer') { put(box(0.62, 0.06, 0.34), std(0xe0b020, 0.7), hc.x, hc.y + 0.37, hc.z, head); put(box(0.1, 0.4, 0.1), std(0xe0b020, 0.7), 0.0, hc.y - 0.55, 0.3, torso); /* жёлтые акценты */ put(cyl(0.05, 0.5, 6), std(0x7a7f85, 0.4, 0.6), -0.28, hc.y - 0.62, -0.28, torso, [0.2, 0, 0.3]); }
+    else { put(box(0.5, 0.2, 0.46), dk, hc.x, hc.y - 0.15, hc.z + 0.01, head); } // штурмовик: балаклава на нижней части лица
+    // колени и ботинки
+    for (const n of ['L', 'R']) { const ul = bone('UpperLeg.' + n), ll = bone('LowerLeg.' + n), ft = bone('Foot.' + n); const kp = std(0x1d211a, 0.8);
+      if (ll) { const kw = ll.getWorldPosition(new THREE.Vector3()); const kl = inner.worldToLocal(kw); put(box(0.18, 0.18, 0.14), kp, kl.x, kl.y + 0.02, kl.z + 0.12, ll); void ul; }
+      if (ft) { const fw = inner.worldToLocal(ft.getWorldPosition(new THREE.Vector3())); put(box(0.2, 0.16, 0.36), std(0x1a1512, 0.85), fw.x, fw.y + 0.02, fw.z + 0.1, ft); } }
+    // рюкзак с скаткой и рацией (антенна у каждого третьего)
+    put(box(0.5, 0.55, 0.24), std(0x38412c, 0.9), 0, hc.y - 0.62, -0.38, torso); put(cyl(0.1, 0.55, 8), std(0x5a5a44, 0.95), 0, hc.y - 0.3, -0.38, torso, [0, 0, Math.PI / 2]);
+    if (who.id % 3 === 0) put(cyl(0.012, 0.9, 4), std(0x15171a), 0.16, hc.y - 0.1, -0.4, torso);
+  } else { // пришельцы
+    const k = who.kind ?? 'trooper';
+    const eye = { trooper: 0x39ff7a, sniper: 0x35e0ff, psi: 0xc06bff, heavy: 0xffd23a, commander: 0xff3a3a }[k] ?? 0x39ff7a;
+    const eg = glow(eye, 2.2);
+    for (const x of [-0.1, 0.1]) put(sph(0.045), eg, hc.x + x, hc.y + 0.02, F + 0.01, head); // светящиеся глаза
+    const hornM = std(0x2a2e24, 0.6, 0.2), plate = std(0x303842, 0.5, 0.5);
+    if (k === 'trooper') { for (let i = -1; i <= 1; i++) put(new THREE.ConeGeometry(0.045, 0.2 + (i === 0 ? 0.08 : 0), 6), hornM, hc.x + i * 0.12, hc.y + 0.36, hc.z - 0.02, head, [-0.2, 0, i * 0.25]); }
+    else if (k === 'heavy') { for (const sx of [-1, 1]) { put(box(0.3, 0.2, 0.44), plate, sx * 0.46, hc.y - 0.37, 0.0, torso); put(new THREE.ConeGeometry(0.07, 0.3, 6), hornM, sx * 0.5, hc.y - 0.15, 0.0, torso, [0, 0, -sx * 0.6]); } put(box(0.62, 0.42, 0.1), plate, 0, hc.y - 0.6, 0.3, torso); put(box(0.5, 0.12, 0.3), plate, hc.x, hc.y + 0.3, hc.z, head); }
+    else if (k === 'sniper') { put(box(0.5, 0.06, 0.08), glow(eye, 1.6), hc.x, hc.y + 0.02, F + 0.02, head); put(cyl(0.012, 0.7, 4), std(0x20262b), hc.x + 0.25, hc.y + 0.4, hc.z, head); put(sph(0.035), eg, hc.x + 0.25, hc.y + 0.78, hc.z, head); }
+    else if (k === 'commander') { for (let i = -2; i <= 2; i++) put(box(0.05, 0.28 - Math.abs(i) * 0.04, 0.05), std(0xc8a030, 0.4, 0.7), hc.x + i * 0.11, hc.y + 0.38, hc.z - 0.05, head, [0, 0, i * 0.18]); // золотой гребень
+      put(box(0.7, 0.9, 0.04), std(0x7a1418, 0.9), 0, hc.y - 0.7, -0.3, torso, [0.12, 0, 0]); // плащ
+      for (const sx of [-1, 1]) put(box(0.26, 0.1, 0.34), std(0xc8a030, 0.4, 0.7), sx * 0.42, hc.y - 0.3, 0, torso); }
+    else if (k === 'psi') { put(box(0.5, 0.2, 0.06), glow(0xc06bff, 1.0), hc.x, hc.y + 0.0, F + 0.04, head); for (const sx of [-1, 1]) put(cyl(0.03, 0.5, 6), std(0x3a4a2a, 0.6), sx * 0.2, hc.y - 0.5, 0.3, torso, [0.5, 0, sx * 0.3]); }
+    // светящиеся «жилы» на предплечьях и спине
+    for (const n of ['L', 'R']) { const la = bone('LowerArm.' + n); if (la) { const lw = inner.worldToLocal(la.getWorldPosition(new THREE.Vector3())); put(box(0.04, 0.2, 0.04), glow(eye, 1.0), lw.x, lw.y - 0.05, lw.z + 0.06, la); } }
+    put(box(0.04, 0.4, 0.04), glow(eye, 0.9), 0, hc.y - 0.55, -0.27, torso);
+  }
+  inner.updateMatrixWorld(true);
+  for (const it of items) it.host.attach(it.o);
+  pose?.stop();
+}
+
 const AXES = ['x', 'y', 'z'] as const;
 /** Разбор оружия: длинная ось, куда смотрит дуло (от руки к дальнему концу), где верх. Длины в локальных единицах узла. */
 function weaponFrame(node: THREE.Object3D, hand: THREE.Vector3) {
@@ -351,7 +414,7 @@ export function applyTwoHands(sp: Spawned) {
   }
 }
 
-export function spawnModel(name: ModelName, height: number, tint?: number, weapon = 'AK', armor = 'none', att?: Att): Spawned | null {
+export function spawnModel(name: ModelName, height: number, tint?: number, weapon = 'AK', armor = 'none', att?: Att, who?: Who): Spawned | null {
   const m = cache.get(name);
   if (!m) return null;
   const obj = new THREE.Group();
@@ -363,8 +426,10 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
     if (!mesh.isMesh) return;
     mesh.castShadow = true;
     const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-    if (tint !== undefined && mat.color) mat.color.lerp(new THREE.Color(tint), 0.5);
+    if (tint !== undefined && mat.color) mat.color.lerp(new THREE.Color(tint), name === 'Soldier' ? 0.5 : 0.32);
     if (name === 'Soldier' && (mat.name === 'Pants' || mat.name === 'Character_Main')) camo(mat);
+    if (name !== 'Soldier' && mat.color) { const hsl = { h: 0, s: 0, l: 0 }; mat.color.getHSL(hsl); mat.color.setHSL(hsl.h, hsl.s * 0.72, hsl.l * 0.78); mat.roughness = 0.65; } // пришельцы: темнее и приглушённее
+    if (who && name === 'Soldier' && mat.name === 'Skin') mat.color.multiply(new THREE.Color(TONES[who.id % TONES.length]));
     mesh.material = mat;
   });
   obj.add(inner);
@@ -376,6 +441,7 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   }
   if (name === 'Soldier') inner.traverse(o => { if ((o as THREE.Bone).isBone && o.name === 'Head') o.scale.setScalar(0.8); }); // пропорции ближе к реальным: голова меньше
   if (name === 'Soldier') addGear(inner, mixer, actions.get('Idle'), armor);
+  if (who) dressCharacter(inner, mixer, actions.get('Idle'), name, who);
   // оружие в руках: детали, хват второй рукой; АГС — отдельная станковая модель
   const rigL = findArm(inner, 'L') ?? undefined, rigR = findArm(inner, 'R') ?? undefined;
   let grip: Spawned['grip'], agsRig: Spawned['ags'];
