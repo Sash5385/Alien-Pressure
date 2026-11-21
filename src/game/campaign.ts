@@ -209,6 +209,7 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
   c.roster.forEach(x => { x.hpLoss = Math.max(0, x.hpLoss - 3); }); // отдых между миссиями
   c.rng = (s.rng + Math.floor(rand(c) * 1e6)) >>> 0;
   { const alive = deployed.filter(id => s.units.some(u => u.id === id && u.hp > 0)).length; const n = recordMission(c.stats ??= emptyStats(), c.ach ??= [], s, alive, deployed.length, (c.cleared ?? []).length + (s.status === 'won' && s.huge && s.locId !== undefined && !(c.cleared ?? []).includes(s.locId) ? 1 : 0)); c.achNew = [...(c.achNew ?? []), ...n]; }
+  for (const fg of s.foundGear ?? []) { const [gk, gid] = fg.split(':'); const list = (gk === 'helmet' ? (c.helmets ??= ['none', 'cap']) : gk === 'gear' ? (c.gears ??= ['kneepads']) : c.armors) as string[]; if (!list.includes(gid)) list.push(gid); }
   for (const w of s.found ?? []) if (!c.weapons.includes(w)) { c.weapons.push(w); } // найденное оружие открывается в лагере
   if (s.status === 'won' && s.huge && s.locId !== undefined && !(c.cleared ??= []).includes(s.locId)) { c.cleared.push(s.locId); c.scrap += 3; } // перше проходження локації: +3
   if (s.status === 'won') {

@@ -2,7 +2,7 @@
 import { living, log } from './combat';
 import { ARMORS, WEAPONS } from './weapons';
 import { CATALOG, type Cat } from './catalog';
-import { gearKg } from './gear';
+import { GEARS, HELMETS, gearKg } from './gear';
 import { SMOKE, SMOKE_IDS, smokeCount, type SmokeId } from './smoke';
 import type { GameState, Loot, LootKind, Stash, Unit, WeaponId } from './types';
 
@@ -10,8 +10,8 @@ export const BAG = 12;
 export const bagUsed = (u: Unit) => u.mags + u.grenades + smokeCount(u);
 export const bagOf = (u: Unit) => BAG + (u.bagExtra ?? 0);
 export const bagFree = (u: Unit) => Math.max(0, bagOf(u) - bagUsed(u));
-export const WEAPON_ICON: Record<LootKind, string> = { mag: '▮', gren: '✹', mat: '▤', kit: '✚', wpn: '🔫', smoke: '☁' };
-export const LOOT_NAME: Record<LootKind, string> = { mag: 'магазин', gren: 'граната', mat: 'матеріали', kit: 'аптечка', wpn: 'зброя', smoke: 'димова' };
+export const WEAPON_ICON: Record<LootKind, string> = { mag: '▮', gren: '✹', mat: '▤', kit: '✚', wpn: '🔫', smoke: '☁', gear: '⛑' };
+export const LOOT_NAME: Record<LootKind, string> = { mag: 'магазин', gren: 'граната', mat: 'матеріали', kit: 'аптечка', wpn: 'зброя', smoke: 'димова', gear: 'спорядження' };
 const rnd = (s: { rng: number }) => { s.rng = (Math.imul(s.rng ^ (s.rng >>> 15), 2246822507) + 0x9e3779b9) >>> 0; return (s.rng >>> 8) / 16777216; };
 
 /** Вес снаряжения, кг: оружие, броня, магазины, гранаты, рюкзак. */
@@ -50,6 +50,7 @@ export function autoPickup(s: GameState, u: Unit) {
   for (const l of here) {
     if (l.kind === 'wpn') continue;
     if (l.kind === 'mat') { s.mats = (s.mats ?? 0) + 2 * l.n; log(s, `${u.name} находит материалы (+${2 * l.n}).`); remove(s, l); continue; }
+    if (l.kind === 'gear') { const [gk, gid] = (l.sm ?? ':').split(':'); const d = (gk === 'helmet' ? HELMETS : gk === 'armor' ? ARMORS : GEARS)[gid]; (s.foundGear ??= []).includes(l.sm!) || s.foundGear.push(l.sm!); log(s, `${u.name} знаходить: ${d?.name ?? 'спорядження'} (відкриється в таборі).`); remove(s, l); continue; }
     if (l.kind === 'kit') { s.medkits += l.n; log(s, `${u.name} находит аптечку.`); remove(s, l); continue; }
     if (l.kind === 'smoke') { const t = Math.min(l.n, bagFree(u)); if (t <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: рюкзак полон.`); } continue; } (u.smoke ??= {})[l.sm ?? 'white'] = ((u.smoke ??= {})[l.sm ?? 'white'] ?? 0) + t; log(s, `${u.name} бере: ${SMOKE[(l.sm ?? 'white') as SmokeId]?.name ?? 'димова'}.`); l.n -= t; if (l.n <= 0) remove(s, l); continue; }
     const take = Math.min(l.n, bagFree(u), Math.floor(Math.max(0, capOf(u) * 1.4 - loadOf(u)) / (l.kind === 'mag' ? 0.7 : 0.5)));
@@ -121,11 +122,18 @@ export function stashItems(s: { rng: number }, big: boolean): Stash['items'] {
     else if (r < 0.52) items.push({ kind: 'gren', n: 1 });
     else if (r < 0.62) items.push({ kind: 'kit', n: 1 });
     else if (r < 0.78) items.push({ kind: 'smoke', n: 1, sm: SMOKE_IDS[Math.floor(rnd(s) * SMOKE_IDS.length)] });
-    else if (r < 0.9) items.push({ kind: 'mat', n: 1 });
+    else if (r < 0.88) items.push({ kind: 'mat', n: 1 });
+    else if (r < 0.94) items.push({ kind: 'gear', n: 1, sm: randomGear(s, big) });
     else items.push(randomWeapon(s, big));
   }
   if (big && !items.some(i => i.kind === 'wpn') && rnd(s) < 0.3) items.push(randomWeapon(s, true));
   return items;
+}
+/** Случайная каска/обвес/броня: в больших контейнерах — дороже. */
+export function randomGear(s: { rng: number }, rich = false): string {
+  const pool: string[] = [];
+  for (const [k, t] of [['helmet', HELMETS], ['gear', GEARS], ['armor', ARMORS]] as const) for (const [id, d] of Object.entries(t)) if (d.cost > 0 && d.cost <= (rich ? 12 : 6)) pool.push(`${k}:${id}`);
+  return pool[Math.floor(rnd(s) * pool.length)] ?? 'helmet:cap';
 }
 export function randomWeapon(s: { rng: number }, rich = false, cat?: Cat): { kind: 'wpn'; n: number; w: WeaponId; ammo: number } {
   const pool = CATALOG.filter(g => (!cat || g.cat === cat) && (rich || g.stats.cost <= 6));

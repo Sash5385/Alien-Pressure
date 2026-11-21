@@ -122,10 +122,10 @@ export const torsoHurt = (u: Unit) => (u.hurt ?? []).includes('torso');
 export const canFire = (u: Unit) => u.team !== 'human' || (hurtN(u, 'arm') === 0 || (hurtN(u, 'arm') === 1 && catOf(u.weapon) === 'pistol'));
 export const immobile = (u: Unit) => u.team === 'human' && hurtN(u, 'leg') >= 2;
 /** Множитель медлительности: торс ×1.4, одна нога ×2. */
-export const slowMul = (u: Unit) => u.team !== 'human' ? 1 : (torsoHurt(u) ? 1.4 : 1) * (hurtN(u, 'leg') === 1 ? 2 : 1);
+export const slowMul = (u: Unit) => !u || u.team !== 'human' ? 1 : (torsoHurt(u) ? 1.4 : 1) * (hurtN(u, 'leg') === 1 ? 2 : 1);
 export function rollPart(s: GameState): BodyPart {
   const r = rand(s);
-  return r < 0.1 ? 'head' : r < 0.5 ? 'torso' : r < 0.62 ? 'armL' : r < 0.74 ? 'armR' : r < 0.87 ? 'legL' : 'legR';
+  return r < 0.06 ? 'head' : r < 0.5 ? 'torso' : r < 0.62 ? 'armL' : r < 0.74 ? 'armR' : r < 0.87 ? 'legL' : 'legR';
 }
 export function maimed(u: Unit, p: BodyPart) { if (p === 'head') return; const h = (u.hurt ??= []); if (!h.includes(p)) h.push(p); }
 
@@ -585,10 +585,11 @@ export function throwGrenade(s: GameState, u: Unit, x: number, y: number): Grena
 }
 
 /** Обе руки выведены: единственное, что остаётся, — подорвать себя гранатой вместе с врагами рядом. */
-export const canSelfBlast = (u: Unit) => u.team === 'human' && u.hp > 0 && hurtN(u, 'arm') >= 2 && u.grenades > 0 && !u.down;
+export const canSelfBlast = (s: GameState, u: Unit) => u.team === 'human' && u.hp > 0 && hurtN(u, 'arm') >= 2 && (u.grenades > 0 || (s.mats ?? 0) >= 3) && !u.down;
 export function selfBlast(s: GameState, u: Unit): GrenadeResult {
-  u.grenades -= 1; u.overwatch = false; s.aiming = null;
-  const res = blast(s, u, u.x, u.y, `${u.name} підриває себе гранатою`, false, { r: BLAST + 0.6, center: 9, edge: 5 }, flOf(u));
+  const viaMats = u.grenades <= 0; if (viaMats) s.mats = (s.mats ?? 0) - 3; else u.grenades -= 1;
+  u.overwatch = false; s.aiming = null;
+  const res = blast(s, u, u.x, u.y, `${u.name} підриває себе ${viaMats ? 'зарядом із матеріалів' : 'гранатою'}`, false, { r: BLAST + (viaMats ? 1.0 : 0.6), center: viaMats ? 11 : 9, edge: viaMats ? 6 : 5 }, flOf(u));
   u.hp = 0;
   if (!res.hits.some(h => h.id === u.id)) res.hits.push({ id: u.id, dmg: 99, killed: true });
   checkEnd(s);

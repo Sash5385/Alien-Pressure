@@ -434,7 +434,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     it('✚', 'Бинт', `${s.medkits}`, false, !canBandage, heal, 'Перев’язка'),
     sel ? it('★', { assault: 'Придуш.', sniper: 'Снайп.', medic: 'Лікувати', engineer: 'Міна' }[sel.cls], abilityLabel.match(/\((.*)\)/)?.[1] ?? '', false, !canAbility, doAbility, `${abilityLabel}: ${CLASSES[sel.cls].desc}`) : it('★', 'Вміння', '', false, true, () => {}),
     ...(doorNear && sel ? [it('🚪', 'Відкрити', '', true, sel.ap <= 0, () => act2(() => openQuiet(s, sel)), 'Тихо відчинити двері (1 дія)'), it('🦶', 'Виламати', '70%', true, sel.ap <= 0, () => act2(() => { const r = kickDoor(s, sel); if (r) sfx('kick'); return r; }), 'Вибити двері: швидко, але гучно (чутно за 12 клітинок), 70% успіху')] : []),
-    ...(sel && canSelfBlast(sel) ? [it('💥', 'Підрив', 'себе', true, false, () => { if (confirm('Підірвати себе гранатою?')) void view.current!.selfBlastAt(sel); }, 'Обидві руки виведені: єдине, що лишилось — підірвати себе гранатою разом з ворогами поруч')] : []),
+    ...(sel && canSelfBlast(s, sel) ? [it('💥', 'Підрив', 'себе', true, false, () => { if (confirm('Підірвати себе гранатою?')) void view.current!.selfBlastAt(sel); }, 'Обидві руки виведені: підірвати себе гранатою (або зарядом із 3 матеріалів) разом з ворогами поруч')] : []),
     ...(nearStash && sel ? [it('📦', 'Обшук', '', true, sel.ap <= 0, () => act2(() => searchStash(s, sel)), 'Обшукати ящик поруч (1 дія)')] : []),
     ...(wpnHere && sel ? [it('🔫', 'Взяти', WEAPONS[wpnHere.w!].name.slice(0, 7), true, sel.ap <= 0, () => act2(() => takeWeapon(s, sel)), `Підняти: ${WEAPONS[wpnHere.w!].name}`)] : []),
     ...(sel?.sec ? [it('⇄', 'Зброя', WEAPONS[sel.sec].name.slice(0, 7), false, !canSwap(sel), () => act2(() => swapWeapons(s, sel)), 'Змінити зброю на запасну (1 дія)')] : []),
@@ -630,6 +630,12 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {/* ——— инфо о бойце и цели, по центру ——— */}
       <div style={{ position: 'absolute', top: narrow ? 172 : 50, left: '50%', transform: 'translateX(-50%)', width: narrow ? vw(94) : 560, display: 'grid', gap: 5, justifyItems: 'center', textAlign: 'center', pointerEvents: 'none', textShadow: '0 1px 2px #000' }}>
         <div style={{ fontWeight: 700 }}>{info}</div>
+        {sel && sel.team === 'human' && (() => { const h = sel.hurt ?? [], c = (k: string) => h.includes(k) ? '#e23b3b' : '#4a5a6a'; return (
+          <svg width="34" height="52" viewBox="0 0 34 52" role="img" aria-label="Стан частин тіла" style={{ pointerEvents: 'none' }}>
+            <circle cx="17" cy="6" r="5" fill="#4a5a6a" /><rect x="10" y="13" width="14" height="17" rx="3" fill={c('torso')} />
+            <rect x="3" y="13" width="6" height="16" rx="3" fill={c('armL')} /><rect x="25" y="13" width="6" height="16" rx="3" fill={c('armR')} />
+            <rect x="10" y="32" width="6" height="18" rx="3" fill={c('legL')} /><rect x="18" y="32" width="6" height="18" rx="3" fill={c('legR')} />
+          </svg>); })()}
         {sel && !narrow && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', fontSize: 12 }}>
             {[`🎖 ${CLASSES[sel.cls].name}`, `🔫 ${sel.team === 'human' ? WEAPONS[sel.weapon].name : ''} ${sel.ammo}/${sel.maxAmmo}`, ...(sel.armor !== 'none' ? [`🛡 ${ARMORS[sel.armor].name}`] : []), `📦 ${sel.mags}`, `💣 ${sel.grenades}`, `🧱 ${s.mats ?? 0}`, ...(s.medkits > 0 ? [`➕ ${s.medkits}`] : [])].map(t => (

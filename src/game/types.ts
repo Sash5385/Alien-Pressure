@@ -7,7 +7,7 @@ export type LaunchKind = 'ugl' | 'launcher' | 'mortar' | 'ags';
 export type ArmorId = string; // 'none'|'vest'|'plate'|'exo' и новые виды из game/weapons.ts
 export const STEP = 0.55; // высота одного уровня рельефа, в клетках
 export type Look = '' | 'tree' | 'bush' | 'rock' | 'house' | 'crate' | 'container' | 'bags' | 'wall' | 'window' | 'car' | 'door';
-export type LootKind = 'mag' | 'gren' | 'mat' | 'kit' | 'wpn' | 'smoke';
+export type LootKind = 'mag' | 'gren' | 'mat' | 'kit' | 'wpn' | 'smoke' | 'gear';
 export interface Loot { x: number; y: number; kind: LootKind; n: number; sm?: string; raid?: boolean; w?: WeaponId; ammo?: number; warn?: boolean }
 export interface Stash { x: number; y: number; opened: boolean; items: { kind: LootKind; n: number; w?: WeaponId; ammo?: number; sm?: string }[]; big?: boolean }
 export interface House { x: number; y: number; w: number; h: number; id: number; hp: number }
@@ -188,6 +188,7 @@ export interface GameState {
   mats?: number; // стройматериалы: окоп и мешки с песком стоят по 1; пополняются за волны и трофеи
   loot?: Loot[];
   stash?: Stash[]; // ящики и контейнеры с содержимым
+  foundGear?: string[]; // найденные каски/обвес/броня: 'helmet:id' (открываются в лагере)
   found?: WeaponId[]; // найденное оружие (открывается в лагере) // трофеи с убитых пришельцев
   wavePlan?: { x: number; y: number; kind: UnitKind }[]; // следующая волна: откуда и кто придёт (видно заранее)
   smokeMode?: boolean; // прицел дымовой гранаты

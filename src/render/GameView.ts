@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
-import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, type GrenadeResult, canThrow, selfBlast, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
+import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, type GrenadeResult, canThrow, selfBlast, slowMul, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, setLife, setReverb, type Sfx } from '../audio';
 import { applyTwoHands, gunForWeapon, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -284,7 +284,7 @@ export class GameView {
           }
           m.position.y += (g.y - m.position.y) * (1 - Math.exp(-14 * dt)); // плавный подъём/спуск по рельефу
           const runA = this.rigs.get(id)?.actions.get(this.anim.get(id) === 'Run_Gun' ? 'Run_Gun' : 'Run');
-          if (runA) runA.timeScale = 0.6 + nv * 0.18;
+          if (runA) runA.timeScale = (0.6 + nv * 0.18) / slowMul(this.state.units.find(v => v.id === id)!);
           const rn = this.rigs.get(id)?.actions.has('Run_Gun') && this.rigs.get(id)?.armed ? 'Run_Gun' : 'Run';
           if (dist > 0.12 && this.rigs.has(id)) this.play(id, rn);
           else if (this.anim.get(id) === 'Run' || this.anim.get(id) === 'Run_Gun') this.play(id, 'Idle');
@@ -568,7 +568,7 @@ export class GameView {
         c1.position.y = c2.position.y = 0.11; box.castShadow = true; g.add(box, c1, c2);
       } else {
         const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.26), new THREE.MeshStandardMaterial({ color: 0x4a4f3a, roughness: 0.8 }));
-        const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.22), new THREE.MeshBasicMaterial({ color: l.kind === 'smoke' ? (SMOKE[(l.sm ?? 'white') as SmokeId]?.color ?? 0xcccccc) : { mag: 0xffd34d, gren: 0x6fe39a, mat: 0xc98a4a }[l.kind as 'mag' | 'gren' | 'mat'] }));
+        const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.22), new THREE.MeshBasicMaterial({ color: l.kind === 'smoke' ? (SMOKE[(l.sm ?? 'white') as SmokeId]?.color ?? 0xcccccc) : { mag: 0xffd34d, gren: 0x6fe39a, mat: 0xc98a4a, gear: 0x7ee0ff }[l.kind as 'mag' | 'gren' | 'mat' | 'gear'] }));
         top.position.y = 0.12; box.castShadow = true; g.add(box, top);
       }
       this.scene.add(g); this.lootMeshes.set(l as unknown as string, g);
@@ -1343,6 +1343,28 @@ void main(){
     return g;
   }
 
+  private woundSig = new Map<number, string>();
+  /** Красные повязки на раненых частях тела. */
+  private markWounds(u: Unit) {
+    const sig = (u.hurt ?? []).slice().sort().join(',');
+    if (this.woundSig.get(u.id) === sig) return;
+    const sp = this.rigs.get(u.id); if (!sp) return;
+    this.woundSig.set(u.id, sig);
+    sp.inner.traverse(o => { for (const c of [...o.children]) if (c.userData.wound) { o.remove(c); (c as THREE.Mesh).geometry?.dispose(); } });
+    const names: Record<string, string> = { armL: 'UpperArm.L', armR: 'UpperArm.R', legL: 'UpperLeg.L', legR: 'UpperLeg.R', torso: 'Torso' };
+    sp.obj.updateMatrixWorld(true);
+    for (const part of u.hurt ?? []) {
+      const b = sp.inner.getObjectByName(names[part]); if (!b) continue;
+      const wp = b.getWorldPosition(new THREE.Vector3()), ws = b.getWorldScale(new THREE.Vector3()).x || 1;
+      const kid = b.children.find(c => (c as THREE.Bone).isBone);
+      if (kid) wp.lerp(kid.getWorldPosition(new THREE.Vector3()), 0.5);
+      if (part === 'torso') { wp.y += 0.1; wp.add(new THREE.Vector3(0, 0, 0.15).applyQuaternion(sp.obj.getWorldQuaternion(new THREE.Quaternion()))); }
+      const sz = (part === 'torso' ? 0.11 : 0.11) / ws;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(sz, sz * (part === 'torso' ? 1 : 0.8), sz * (part === 'torso' ? 0.4 : 1)), new THREE.MeshStandardMaterial({ color: 0xb01818, roughness: 0.7, emissive: 0x440000 }));
+      m.position.copy(b.worldToLocal(wp)); m.userData.wound = true; b.add(m);
+    }
+  }
+
   syncUnits(instant = false) {
     updateVision(this.state);
     const tg = this.state.units.find(u => u.id === this.state.targetId);
@@ -1352,6 +1374,7 @@ void main(){
     for (const u of this.state.units) {
       if (u.hp <= 0 && !this.held.has(u.id)) continue;
       alive.add(u.id);
+      this.markWounds(u);
       { const pw = this.unitWpn.get(u.id), old0 = this.unitMeshes.get(u.id); if (pw && pw !== u.weapon && old0) { this.scene.remove(old0); this.unitMeshes.delete(u.id); this.rigs.delete(u.id); } this.unitWpn.set(u.id, u.weapon); } // сменили оружие — пересоздаём модель
       let m = this.unitMeshes.get(u.id);
       if (!m && u.team === 'alien' && !isVisible(this.state, u)) continue;
