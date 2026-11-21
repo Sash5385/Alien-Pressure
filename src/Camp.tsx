@@ -194,9 +194,9 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         // слот-вузол: скошені кути, світиться, коли відкритий
         const node = (k: K | null, lab: string, val: string, side: 'l' | 'r', icon?: string) => (
           <button key={lab} disabled={!k} onClick={() => k && setOpen(open === k ? null : k)}
-            style={{ textAlign: side === 'l' ? 'left' : 'right', padding: '6px 9px', border: `1px solid ${open === k && k ? HN.accent : HN.accent + '88'}`, background: open === k && k ? '#0a4a7acc' : '#06203acc', color: HN.fg, cursor: k ? 'pointer' : 'default', font: 'inherit', width: '100%', minWidth: 0,
+            style={{ textAlign: side === 'l' ? 'left' : 'right', padding: narrow ? '5px 6px' : '6px 9px', border: `1px solid ${open === k && k ? HN.accent : HN.accent + '88'}`, background: open === k && k ? '#0a4a7acc' : '#06203acc', color: HN.fg, cursor: k ? 'pointer' : 'default', font: 'inherit', width: '100%', height: '100%', minWidth: 0, display: 'grid', alignContent: 'center',
               clipPath: side === 'l' ? 'polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))' : 'polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)', boxShadow: open === k && k ? `0 0 14px ${HN.accent}88` : 'none' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: side === 'l' ? 'flex-start' : 'flex-end', fontSize: 9, letterSpacing: narrow ? '.08em' : '.2em', textTransform: 'uppercase', color: HN.accent }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: side === 'l' ? 'flex-start' : 'flex-end', fontSize: narrow ? 8 : 9, flexWrap: 'wrap', letterSpacing: narrow ? '.04em' : '.2em', textTransform: 'uppercase', color: HN.accent }}>
               {icon && (icon.startsWith('data:') ? <img src={icon} alt="" style={{ width: 28, height: 14, objectFit: 'contain', filter: 'brightness(2.2)' }} /> : <span style={{ fontSize: 12 }}>{icon}</span>)}{lab}
             </div>
             <b style={{ fontSize: narrow ? 12 : 14, lineHeight: 1.1, display: 'block', overflowWrap: 'anywhere' }}>{val}</b>
@@ -204,11 +204,12 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         );
         const L: [K, string, string, string][] = [['helm', 'Шолом', HELMETS[s.helmet ?? 'none']?.name ?? 'немає', '⛑'], ['armor', 'Броня', ar.name, '▣'], ['gear', 'Спорядження', (s.gear?.length ?? 0) ? s.gear!.map(g => GEARS[g]?.name).join(', ') : 'немає', '✦'], ['cls', 'Клас', CLASSES[s.cls].name, '⚔']];
         const Rr: [K, string, string, string][] = [['weapon', 'Зброя', w.name, ''], ['sec', 'Запасна', s.sec ? WEAPONS[s.sec].name : 'немає', ''], ['att', 'Обвіс зброї', (s.att?.length ?? 0) ? s.att!.map(a2 => ATT[a2].name).join(', ') : 'немає', '🔧']];
+        const ammoVal = `💣${grenades} ▮2 ✚${DIFF[c.difficulty].kits + (c.tech.kits ? 1 : 0)}`;
         const bar = (lab: string, pct: number, col = HN.accent) => <div key={lab} style={{ fontSize: 10, letterSpacing: '.14em', color: HN.dim, textTransform: 'uppercase' }}>{lab}<i style={{ display: 'block', height: 5, background: '#0b3558', marginTop: 3, position: 'relative' }}><i style={{ position: 'absolute', inset: '0 auto 0 0', width: `${Math.max(2, Math.min(100, pct))}%`, background: col, boxShadow: `0 0 8px ${col}` }} /></i></div>;
         return (
           <div style={{ ...panel, display: 'grid', gap: 12 }}>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {c.roster.map(x => <button key={x.id} style={btn(x.id === s.id)} onClick={() => { setSelId(x.id); setOpen(null); }}>{x.name}{ids.includes(x.id) ? ' ✓' : ''}</button>)}
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${narrow ? 3 : 6}, minmax(0, 1fr))`, gap: 8 }}>
+              {c.roster.map(x => <button key={x.id} style={{ ...btn(x.id === s.id), padding: narrow ? '8px 4px' : '8px 14px', fontSize: narrow ? 13 : 14 }} onClick={() => { setSelId(x.id); setOpen(null); }}>{x.name}{ids.includes(x.id) ? ' ✓' : ''}</button>)}
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: HN.accent }}>{RANKS[s.rank]}</div>
@@ -219,25 +220,20 @@ export function Camp({ c, onChange, onStart, onMenu }: {
               <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
                 <g stroke={`${HN.accent}99`} fill="none" strokeWidth="1" vectorEffect="non-scaling-stroke">
                   {L.map((_, i) => <path key={'l' + i} vectorEffect="non-scaling-stroke" d={`M${narrow ? 30 : 33} ${(i + 0.5) / L.length * 100} H${narrow ? 38 : 40} L45 ${[24, 44, 58, 70][i]}`} />)}
-                  {Rr.map((_, i) => <path key={'r' + i} vectorEffect="non-scaling-stroke" d={`M${narrow ? 70 : 67} ${(i + 0.5) / Rr.length * 100} H${narrow ? 62 : 60} L55 ${[46, 62, 54][i]}`} />)}
+                  {[...Rr, 0].map((_, i) => <path key={'r' + i} vectorEffect="non-scaling-stroke" d={`M${narrow ? 70 : 67} ${(i + 0.5) / 4 * 100} H${narrow ? 62 : 60} L55 ${[46, 62, 54, 76][i]}`} />)}
                 </g>
               </svg>
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-around', gap: 8, position: 'relative' }}>{L.map(([k, lab, val, ic]) => node(k, lab, val, 'l', ic))}</div>
+              <div style={{ display: 'grid', gridTemplateRows: 'repeat(4,minmax(0,1fr))', gap: 8, position: 'relative' }}>{L.map(([k, lab, val, ic]) => node(k, lab, val, 'l', ic))}</div>
               <div style={{ display: 'grid', justifyItems: 'center', alignContent: 'center' }}>
                 <SoldierView weapon={s.weapon} armor={s.armor} helmet={s.helmet} gear={s.gear} width={narrow ? 130 : 210} height={narrow ? 250 : 400} />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-around', gap: 8, position: 'relative' }}>{Rr.map(([k, lab, val, ic], i) => node(k, lab, val, 'r', i === 0 ? weaponIcon(s.weapon) ?? '⌖' : ic))}</div>
+              <div style={{ display: 'grid', gridTemplateRows: 'repeat(4,minmax(0,1fr))', gap: 8, position: 'relative' }}>{Rr.map(([k, lab, val, ic], i) => node(k, lab, val, 'r', i === 0 ? weaponIcon(s.weapon) ?? '⌖' : ic))}{node(null, 'Боєкомплект', ammoVal, 'r', '▮')}</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 8 }}>
               {bar('HP ' + hp + '/' + max, hp / max * 100, hp / max < 0.4 ? HN.warn : HN.good)}{bar('Броня ' + ar.hp, ar.hp * 20)}{bar('Вага ' + kgTot + ' кг', kgTot * 6, kgTot > 11 ? HN.warn : HN.accent)}{bar('Рух ' + (5 + w.move + ar.move), (5 + w.move + ar.move) * 12)}
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', fontSize: 12 }}>
-              {[['💣', 'Гранати', `× ${grenades}`], ['▮', 'Магазини', `× 2 · ${w.ammo} набоїв`], ['✚', 'Аптечки', `× ${DIFF[c.difficulty].kits + (c.tech.kits ? 1 : 0)} (на загін)`]].map(([i2, l2, v2]) => (
-                <span key={l2} style={{ border: `1px solid ${HN.accent}55`, background: '#06203a99', padding: '4px 10px', borderRadius: 3 }}><span style={{ color: HN.accent, letterSpacing: '.14em', textTransform: 'uppercase', fontSize: 10 }}>{i2} {l2}</span> <b>{v2}</b></span>
-              ))}
-            </div>
             {open && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
                 {open === 'weapon' && <button style={btn(false)} onClick={() => setArsenal('weapon')}>🔫 Відкрити арсенал ({Object.keys(WEAPONS).length})</button>}
                 {open === 'armor' && (Object.keys(ARMORS) as ArmorId[]).map(x => { const own = c.armors.includes(x) || ARMORS[x].cost === 0; return <button key={x} title={`${ARMORS[x].desc} · ${ARMORS[x].kg} кг`} style={{ ...btn(s.armor === x), opacity: own ? 1 : 0.75 }} onClick={() => act(cc => own ? equip(cc, s.id, 'armor', x) : unlockGear(cc, 'armor', x))}>{ARMORS[x].name}{own ? '' : ` · ${ARMORS[x].cost} тр.`}</button>; })}
                 {open === 'helm' && Object.entries(HELMETS).map(([x, d]: [string, GearDef]) => { const own = (c.helmets ?? []).includes(x) || d.cost === 0; return <button key={x} title={`${d.desc} · ${d.kg} кг`} style={{ ...btn((s.helmet ?? 'none') === x), opacity: own ? 1 : 0.75 }} onClick={() => act(cc => own ? setHelmet(cc, s.id, x) : unlockGear(cc, 'helmet', x))}>{d.icon} {d.name}{own ? '' : ` · ${d.cost} тр.`}</button>; })}
@@ -260,7 +256,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
                 ))}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <button style={btn(false, s.hpLoss === 0 && !s.fracture)} onClick={() => act(x => heal(x, s.id))}>Лікувати ({COST.heal})</button>
               <button style={btn(on)} onClick={() => toggle(s.id)}>{on ? 'У загоні' : 'У резерві'}</button>
             </div>
