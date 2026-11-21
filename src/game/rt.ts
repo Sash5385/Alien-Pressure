@@ -27,9 +27,15 @@ const aiState = new WeakMap<Unit, AiSt>();
 let plan = new Map<number, Grp>();
 
 /** Приказ идти (бойцы выполняют по клетке за раз). */
-export function orderMove(u: Unit, x: number, y: number, fl = 0) { u.dest = { x, y, fl }; u.atk = undefined; u.route = undefined; }
+export function orderMove(u: Unit, x: number, y: number, fl = 0, append = false) {
+  u.atk = undefined;
+  if (append && u.dest) { (u.queue ??= []).push({ x, y, fl }); return; }
+  u.dest = { x, y, fl }; u.queue = undefined; u.route = undefined;
+}
+/** Точка достигнута: берём следующую из очереди. */
+const nextDest = (u: Unit) => { u.dest = u.queue?.shift(); u.route = undefined; };
 /** Приказ атаковать цель до её гибели. */
-export function orderAttack(u: Unit, t: Unit) { u.atk = t.id; u.dest = undefined; }
+export function orderAttack(u: Unit, t: Unit) { u.atk = t.id; u.dest = undefined; u.queue = undefined; }
 
 /** AP → время: потратил действие — ждёшь; AP показывает «готов / не готов». */
 function settle(u: Unit, d: number) {
@@ -41,6 +47,12 @@ function settle(u: Unit, d: number) {
     u.cd = spent * CD_PER_AP * (u.suppressed ? 1.25 : 1);
     u.ap = 0;
   }
+}
+
+/** Проход занят своими: ждём и пробуем снова, прежде чем отменять приказ. */
+function waitOrCancel(u: Unit) {
+  u.stuck = (u.stuck ?? 0) + 1;
+  if (u.stuck > 12) { u.dest = undefined; u.queue = undefined; u.stuck = 0; } else { u.cd = 0.6; u.ap = 0; }
 }
 
 const launcher = (u: Unit) => !!WEAPONS[u.weapon].launch;
@@ -89,12 +101,12 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
       if (bi < 0) { u.dest = undefined; return; }
       wp = stairPos(s, bi, tf > cf ? 'bottom' : 'top');
       if (u.x === wp.x && u.y === wp.y) {
-        if (climb(s, u, tf > cf ? 1 : -1)) { u.route = undefined; u.cd = CD_PER_AP * 0.6; u.ap = 0; u.overwatch = false; void hooks.step(u).catch(() => {}); } else u.dest = undefined;
+        if (climb(s, u, tf > cf ? 1 : -1)) { u.route = undefined; u.cd = CD_PER_AP * 0.6; u.ap = 0; u.overwatch = false; void hooks.step(u).catch(() => {}); } else waitOrCancel(u);
         return;
       }
     } else if (cf > 0 && bldgAt(s, u.dest.x, u.dest.y) !== bldgAt(s, u.x, u.y)) { u.dest = undefined; return; }
     const tx0 = wp ? wp.x : u.dest.x, ty0 = wp ? wp.y : u.dest.y;
-    if (!wp && u.dest.x === u.x && u.dest.y === u.y) { u.dest = undefined; return; }
+    if (!wp && u.dest.x === u.x && u.dest.y === u.y) { nextDest(u); return; }
     let path: [number, number][];
     if (cf > 0) path = findPath(s, u.x, u.y, tx0, ty0, 40, cf);
     else if (s.huge) { // далёкие цели: маршрут считается кусками по 60 клеток и кэшируется
@@ -110,20 +122,21 @@ function humanThink(s: GameState, u: Unit, hooks: RtHooks) {
           if (x >= 1 && y >= 1 && x < s.size - 1 && y < s.size - 1 && s.cover[y][x] === 'none' && s.terrain[y][x] === 'ground' && !s.units.some(v => v.hp > 0 && flOf(v) === 0 && v.x === x && v.y === y)) { best = [x, y]; break; }
         }
         u.route = best ? findPath(s, u.x, u.y, best[0], best[1], 110) : [];
-        if (!u.route.length) { u.dest = undefined; u.route = undefined; return; }
+        if (!u.route.length) { u.route = undefined; waitOrCancel(u); return; }
       }
       path = u.route!;
     } else {
       path = findPath(s, u.x, u.y, tx0, ty0, 80);
     }
-    if (!path.length) { u.dest = undefined; return; }
+    if (!path.length) { waitOrCancel(u); return; }
+    u.stuck = 0;
     const step = Math.hypot(path[0][0] - u.x, path[0][1] - u.y);
     [u.x, u.y] = path[0]; if (s.huge && cf === 0) u.route = u.route!.slice(1); if (u.stance === 'stand' || u.stance === undefined) u.stance = 'stand'; u.overwatch = false; // лёжа ползёт, на колене крадётся
     if (s.huge && u.stance === 'stand') (s.noise ??= []).push({ x: u.x, y: u.y, r: 8 }); // бег шумит: лагеря в 8 клетках просыпаются
     // следующий шаг назначается раньше, чем боец дойдёт до клетки, поэтому бег непрерывный (без остановок на каждой клетке)
     u.cd = step * 0.8 / (u.stance === 'prone' ? CRAWL_SPEED : u.stance === 'kneel' ? SNEAK_SPEED : RUN_SPEED); u.ap = 0;
     void hooks.step(u).catch(() => {});
-    if ((!s.huge || cf > 0) && path.length === 1 && !wp) u.dest = undefined;
+    if ((!s.huge || cf > 0) && path.length === 1 && !wp) nextDest(u);
     return;
   }
   if (s.rt?.auto && !launcher(u)) { // огонь по готовности

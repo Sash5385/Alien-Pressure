@@ -48,6 +48,7 @@ export const COST = { heal: 1, recruit: 3, armor: 6, optics: 6, kits: 4, grenade
 export const ATT = {
   optic: { name: 'Приціл', icon: '◎', cost: 4, desc: '+8 до влучності, +3 до дальності' },
   supp: { name: 'Глушник', icon: '▥', cost: 4, desc: 'Постріли чутно лише за 5 клітинок: табори не прокидаються' },
+  nvg: { name: 'Нічний приціл', icon: '◐', cost: 5, desc: 'Уночі бачить на 12 клітинок (без нього — на 7)' },
   mag: { name: 'Місткий магазин', icon: '▮', cost: 3, desc: '+50% набоїв у магазині' },
 } as const;
 export type AttId = keyof typeof ATT;

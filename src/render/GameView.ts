@@ -1692,6 +1692,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     for (const o of s.units) if (o.hp > 0 && o.down) this.ring(o.x, o.y, 0xffffff, 0.3, 0.36);
     for (const o of s.units) if (o.hp > 0 && o.team === 'human' && o.dest) {
       this.ring(o.dest.x, o.dest.y, 0x4fd7ff, 0.18, 0.28, o.dest.fl ?? 0);
+      for (const q of o.queue ?? []) this.ring(q.x, q.y, 0x7ea8ff, 0.14, 0.22, q.fl ?? 0);
       if (s.rt) { // линия пути до цілі приказа
         const path = s.huge ? (o.route ?? []) : findPath(s, o.x, o.y, o.dest.x, o.dest.y, 80);
         if (path.length) {
@@ -2227,7 +2228,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     else if (barrelAt(s, x, y)) { if (sel) { s.targetBarrel = { x, y }; s.targetId = null; } }
     else if (s.rt) { // реальное время: приказ идти
       const bi = bldgAt(s, x, y), tfl = bi >= 0 && bi === bldgAt(s, sel?.x ?? -1, sel?.y ?? -1) ? flOf(sel!) : 0; // внутри своего здания — на том же этаже
-      if (sel && !sel.down && (s.huge ? (tfl > 0 ? coverAt(s, x, y, tfl) === 'none' : s.cover[y]?.[x] === 'none' && s.terrain[y]?.[x] === 'ground') : reachable(s, sel.x, sel.y, 80).has(`${x},${y}`))) { orderMove(sel, x, y, tfl); s.targetId = null; sfx('click'); }
+      if (sel && !sel.down && (s.huge ? (tfl > 0 ? coverAt(s, x, y, tfl) === 'none' : s.cover[y]?.[x] === 'none' && s.terrain[y]?.[x] === 'ground') : reachable(s, sel.x, sel.y, 80).has(`${x},${y}`))) { orderMove(sel, x, y, tfl, e.shiftKey); s.targetId = null; sfx('click'); }
     }
     else if (sel && sel.ap > 0 && reachable(s, sel.x, sel.y, moveRange(sel)).has(`${x},${y}`)) {
       const before = { id: sel.id, x: sel.x, y: sel.y, ap: sel.ap, stance: sel.stance, overwatch: sel.overwatch, facing: sel.facing };

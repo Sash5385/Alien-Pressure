@@ -395,6 +395,8 @@ export function psiAttack(s: GameState, a: Unit, t: Unit): ShotResult {
 }
 
 export const SIGHT = 12;
+/** Дальность зрения бойца: уночі 7 клеток, с ночным прицелом — 12. */
+export const sightOf = (s: GameState, u: Unit) => (s.weather === 'night' && !u.nvg ? 7 : SIGHT);
 
 /** Пересчёт зоны видимости бойцов (радиус + линия видимости) и карты исследованного. */
 const visMarks = new WeakMap<GameState, number[]>();
@@ -405,9 +407,10 @@ export function updateVision(s: GameState) {
     for (const k of prev) s.vis[(k / n) | 0][k % n] = false;
     const marks: number[] = [];
     for (const h of living(s, 'human')) {
-      for (let y = Math.max(0, h.y - SIGHT); y <= Math.min(n - 1, h.y + SIGHT); y++) {
-        for (let x = Math.max(0, h.x - SIGHT); x <= Math.min(n - 1, h.x + SIGHT); x++) {
-          if (!s.vis[y][x] && Math.hypot(x - h.x, y - h.y) <= SIGHT && los(s, h, { x, y })) { s.vis[y][x] = true; s.seen[y][x] = true; marks.push(y * n + x); }
+      const SR = sightOf(s, h);
+      for (let y = Math.max(0, h.y - SR); y <= Math.min(n - 1, h.y + SR); y++) {
+        for (let x = Math.max(0, h.x - SR); x <= Math.min(n - 1, h.x + SR); x++) {
+          if (!s.vis[y][x] && Math.hypot(x - h.x, y - h.y) <= SR && los(s, h, { x, y })) { s.vis[y][x] = true; s.seen[y][x] = true; marks.push(y * n + x); }
         }
       }
     }
@@ -423,9 +426,10 @@ export function updateVision(s: GameState) {
   }
   const vis = Array.from({ length: n }, () => Array<boolean>(n).fill(false));
   for (const h of living(s, 'human')) {
-    for (let y = Math.max(0, h.y - SIGHT); y <= Math.min(n - 1, h.y + SIGHT); y++) {
-      for (let x = Math.max(0, h.x - SIGHT); x <= Math.min(n - 1, h.x + SIGHT); x++) {
-        if (!vis[y][x] && Math.hypot(x - h.x, y - h.y) <= SIGHT && los(s, h, { x, y })) vis[y][x] = true;
+    const SR = sightOf(s, h);
+    for (let y = Math.max(0, h.y - SR); y <= Math.min(n - 1, h.y + SR); y++) {
+      for (let x = Math.max(0, h.x - SR); x <= Math.min(n - 1, h.x + SR); x++) {
+        if (!vis[y][x] && Math.hypot(x - h.x, y - h.y) <= SR && los(s, h, { x, y })) vis[y][x] = true;
       }
     }
   }
@@ -457,7 +461,7 @@ export function wakeTick(s: GameState) {
   log(s, `Засідка! Прибульці піднялися: ${count}.`);
 }
 
-export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || u.id === s.markId || ((s.vis[u.y][u.x] && (flOf(u) === 0 || living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= SIGHT && los(s, h, u))) || s.revealed.includes(u.id)) && !(u.hidden && !living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= 3.2)));
+export const isVisible = (s: GameState, u: Unit) => u.team === 'human' || u.id === s.markId || ((s.vis[u.y][u.x] && (flOf(u) === 0 || living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= sightOf(s, h) && los(s, h, u))) || s.revealed.includes(u.id)) && !(u.hidden && !living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= 3.2)));
 
 /** Перезаряджання: 1 AP; у людей тратит запасной магазин. */
 export function reload(s: GameState, u: Unit): boolean {
@@ -638,7 +642,7 @@ export const ALERT_SIGHT = 12;
 
 /** Пришелец видит бойца (радиус + линия видимости). */
 export const alienSees = (s: GameState, u: Unit) =>
-  living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= ALERT_SIGHT && los(s, u, h));
+  living(s, 'human').some(h => Math.hypot(h.x - u.x, h.y - u.y) <= (s.weather === 'night' ? 8 : ALERT_SIGHT) && los(s, u, h));
 
 /** Тревога: все непредупреждённые пришельцы в радиусе узнают о бойцах. Возвращает их id. */
 export function raiseAlert(s: GameState, x: number, y: number, radius: number): number[] {

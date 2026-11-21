@@ -33,7 +33,7 @@ export interface Soldier {
   weapon: WeaponId;
   armor: ArmorId;
   cls: ClassId;
-  att?: ('optic' | 'supp' | 'mag')[]; // обвес оружия
+  att?: ('optic' | 'supp' | 'mag' | 'nvg')[]; // обвес оружия
 }
 
 export type Team = 'human' | 'alien';
@@ -85,9 +85,12 @@ export interface Unit {
   retreatUntil?: number; // до какого хода держит оборону после отхода
   ugl?: number; // выстрелов подствольника
   cd?: number; // реальное время: секунд до следующего действия
+  stuck?: number; // сколько раз подряд путь был перекрыт (союзники в проходе)
+  nvg?: boolean; // ночное видение
   supp?: boolean; // глушитель: выстрелы почти не слышны
   fl?: number; // этаж здания (0 — земля)
-  dest?: { x: number; y: number; fl?: number }; // приказ «идти» (реальное время)
+  dest?: { x: number; y: number; fl?: number };
+  queue?: { x: number; y: number; fl?: number }[]; // следующие точки маршрута (Shift+клик) // приказ «идти» (реальное время)
   atk?: number; // приказ «атаковать» (id цели)
   busyRt?: boolean;
   route?: [number, number][]; // кэш маршрута к далёкой цели (огромные карты)

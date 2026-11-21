@@ -9,6 +9,7 @@ import { reinforce } from './game/mission';
 import { GameView, setTimeScale, WEATHER_NAME, weatherOf, type Weather } from './render/GameView';
 import { rtTick, orderAttack, orderMove, type RtHooks } from './game/rt';
 import { bldgAt, flOf, stairPos } from './game/floors';
+import { clearBuilding, focusFire, holdAll, regroup } from './game/orders';
 import { maxLevel } from './render/buildings';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
@@ -101,6 +102,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const [showLog, setShowLog] = useState(false);
   const [showMap, setShowMap] = useState(true);
   const [uiIdx, setUiIdx] = useState(loadUi);
+  const [ordersOpen, setOrdersOpen] = useState(false);
   const z = UI_SCALES[uiIdx];
   const vwE = (typeof window !== 'undefined' ? window.innerWidth : 1280) / z; // ширина интерфейса с учётом размера
   const vw = (n: number) => `calc(${n} * 1vw / ${z})`;
@@ -442,6 +444,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const rtOrEnd = s.rt ? (
     <div style={{ display: 'flex', gap: 6 }}>
       <button style={{ ...nb(s.rt.paused), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Пауза (Пробіл)" onClick={() => { s.rt!.paused = !s.rt!.paused; sfx('click'); rerender(); }}>{s.rt.paused ? '▶' : 'II'}</button>
+      <button style={{ ...nb(ordersOpen), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Накази загону: збір, атака, зачистка будівлі, стояти" onClick={() => { setOrdersOpen(o => !o); sfx('click'); }}>📣</button>
       {([0.5, 1] as const).map(v => <button key={v} style={{ ...nb(s.rt!.speed === v), minWidth: 0, padding: narrow ? '6px 7px' : '6px 10px' }} title={`Швидкість ×${v}`} onClick={() => { s.rt!.speed = v; sfx('click'); rerender(); }}>×{v}</button>)}
     </div>
   ) : <button style={{ ...nb(false, !canAct), color: AC, minWidth: narrow ? 84 : 120 }} disabled={!canAct} onClick={endTurn}>Кінець ходу</button>;
@@ -453,7 +456,22 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {s.rt?.paused && s.status === 'playing' && (
         <div style={{ position: 'absolute', left: '50%', top: narrow ? '34%' : '30%', transform: 'translate(-50%,-50%)', pointerEvents: 'none', textAlign: 'center', animation: 'apPulse 1.6s ease-in-out infinite' }}>
           <div style={{ ...nbBase, borderRadius: 999, padding: narrow ? '8px 18px' : '12px 30px', fontSize: narrow ? 20 : 30, fontWeight: 800, letterSpacing: '.18em' }}>II ПАУЗА</div>
-          <div style={{ marginTop: 6, fontSize: 12, textShadow: '0 1px 2px #000' }}>Пробіл або ▶ — продовжити. Накази можна віддавати на паузі.</div>
+          <div style={{ marginTop: 6, fontSize: 12, textShadow: '0 1px 2px #000' }}>Режим планування: віддавай накази (Shift+клік — додати точку маршруту), потім Пробіл або ▶.</div>
+        </div>
+      )}
+      {ordersOpen && s.rt && s.status === 'playing' && (
+        <div style={{ position: 'absolute', top: narrow ? 92 : 64, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', maxWidth: narrow ? vw(94) : 520, pointerEvents: 'auto' }}>
+          {(() => {
+            const ld = sel ?? s.units.find(u => u.team === 'human' && u.hp > 0 && !u.down);
+            const run = (f: (l: NonNullable<typeof ld>) => string | boolean | null | void) => { if (!ld) return; const r = f(ld); if (typeof r === 'string') s.log.push(r); sfx('click'); view.current?.syncUnits(); rerender(); };
+            const b = (label: string, title: string, f: () => void, off = false) => <button key={label} style={nb(false, off)} disabled={off} title={title} onClick={f}>{label}</button>;
+            return [
+              b('⚑ Збір', 'Усі йдуть до обраного бійця', () => run(l => { regroup(s, l); })),
+              b('🎯 Вогонь', 'Усі атакують найближчого ворога, якого видно', () => run(l => { if (!focusFire(s, l)) return 'Ворогів не видно.'; })),
+              b('🏚 Зачистка', 'Загін заходить у найближчу будівлю й розходиться по поверхах', () => run(l => clearBuilding(s, l)), !s.bldgs),
+              b('✋ Стояти', 'Скасувати всі накази руху й атаки', () => run(() => { holdAll(s); })),
+            ];
+          })()}
         </div>
       )}
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
