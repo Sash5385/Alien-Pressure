@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CLASS_IDS, CLASSES } from './game/classes';
 import { LOCATIONS } from './game/locations';
+import { ACH, emptyStats } from './game/achievements';
 import { ATT, toggleAtt, type AttId } from './game/campaign';
 import { chooseOption, sandboxMission, setMapSize, setLoc, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
@@ -27,6 +28,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
   const [msg, setMsg] = useState('');
   const [selId, setSelId] = useState<number>(() => c.roster[0]?.id ?? 0);
   const [worldMap, setWorldMap] = useState(false);
+  const [achOpen, setAchOpen] = useState(false);
   const [open, setOpen] = useState<'weapon' | 'armor' | 'cls' | 'att' | null>(null);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
   const ids = deploy.filter(id => c.roster.some(s => s.id === id));
@@ -70,7 +72,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             <b>Пісочниця · обери будь-яку місію</b>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <span style={{ opacity: 0.7, fontSize: 12, width: 64 }}>Завдання</span>
-              {(Object.keys(OBJECTIVE_NAME) as (keyof typeof OBJECTIVE_NAME)[]).map(o => chip(c.objective === o && !c.boss, OBJECTIVE_NAME[o], () => set({ objective: o, boss: false })))}
+              {(Object.keys(OBJECTIVE_NAME) as (keyof typeof OBJECTIVE_NAME)[]).filter(o => o !== 'rescue').map(o => chip(c.objective === o && !c.boss, OBJECTIVE_NAME[o], () => set({ objective: o, boss: false })))}
             </div>
             {c.objective === 'defend' && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -129,8 +131,28 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             {Array.from(new Set(LOCATIONS.map(l => l.arch))).map(a => <optgroup key={a} label={a}>{LOCATIONS.filter(l => l.arch === a).map(l => <option key={l.id} value={l.id}>{l.name}{l.weather ? ' · ' + ({ night: 'ніч', rain: 'дощ', fog: 'туман' } as Record<string, string>)[l.weather] : ''}</option>)}</optgroup>)}
           </select>
         )}
+        <button style={{ ...btn(achOpen), padding: '4px 10px', fontSize: 12 }} onClick={() => { setAchOpen(true); if (c.achNew?.length) act(x => { x.achNew = []; return null; }); }}>🏆 Досягнення ({(c.ach ?? []).length}/{ACH.length}){c.achNew?.length ? ` · нових ${c.achNew.length}` : ''}</button>
         {c.mapSize >= 640 && <button style={{ ...btn(worldMap), padding: '4px 10px', fontSize: 12 }} onClick={() => setWorldMap(true)}>🗺 Карта світу ({(c.cleared ?? []).length}/{LOCATIONS.length})</button>}
       </div>
+      {achOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(8,14,28,.9)', overflow: 'auto', padding: 14 }} onClick={() => setAchOpen(false)}>
+          <div style={{ maxWidth: 720, margin: '0 auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <b style={{ fontSize: 18 }}>🏆 Досягнення {(c.ach ?? []).length}/{ACH.length}</b>
+              <button style={{ ...btn(false), padding: '4px 12px' }} onClick={() => setAchOpen(false)}>✕</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))', gap: 8 }}>
+              {ACH.map(a => { const done = (c.ach ?? []).includes(a.id), [v, m] = a.prog(c.stats ?? emptyStats()); return (
+                <div key={a.id} style={{ ...btn(done), display: 'grid', gap: 3, padding: 10, opacity: done ? 1 : 0.7, cursor: 'default' }}>
+                  <span style={{ fontSize: 22 }}>{done ? a.icon : '🔒'}</span><b style={{ fontSize: 13 }}>{a.name}</b>
+                  <span style={{ fontSize: 11, opacity: 0.8 }}>{a.desc}</span>
+                  <span style={{ fontSize: 11 }}>{Math.min(v, m)}/{m}</span>
+                </div>); })}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>Убивств: {c.stats?.kills ?? 0} · перемог: {c.stats?.wins ?? 0} · поразок: {c.stats?.losses ?? 0}</div>
+          </div>
+        </div>
+      )}
       {worldMap && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(8,14,28,.9)', overflow: 'auto', padding: 14 }} onClick={() => setWorldMap(false)}>
           <div style={{ maxWidth: 980, margin: '0 auto' }} onClick={e => e.stopPropagation()}>

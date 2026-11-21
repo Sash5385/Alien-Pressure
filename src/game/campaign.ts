@@ -2,6 +2,7 @@ import { rand } from './combat';
 import { pickTraits, ROSTER, shuffle, XP_STEPS } from './traits';
 import { CLASS_IDS } from './classes';
 import { ARMORS, WEAPONS } from './weapons';
+import { emptyStats, recordMission, type Stats } from './achievements';
 import { DEFEND_KINDS } from './mission';
 import type { ArmorId, Biome, ClassId, Difficulty, GameState, Objective, PerkId, Soldier, Tech, WeaponId } from './types';
 
@@ -15,6 +16,7 @@ export interface Campaign {
   missionNo: number;
   objective: Objective;
   biome: Biome;
+  stats?: Stats; ach?: string[]; achNew?: string[]; // статистика, достижения и непросмотренные новые
   cleared?: number[]; // локації, які вже зачищено
   loc?: number; // локація великих карт (-1/пусто — за номером місії)
   mapSize: 44 | 64 | 640 | 1024; // размер карты миссий (640 и 1024 — огромный лес с засадами)
@@ -188,6 +190,7 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
   }
   c.roster.forEach(x => { x.hpLoss = Math.max(0, x.hpLoss - 3); }); // отдых между миссиями
   c.rng = (s.rng + Math.floor(rand(c) * 1e6)) >>> 0;
+  { const alive = deployed.filter(id => s.units.some(u => u.id === id && u.hp > 0)).length; const n = recordMission(c.stats ??= emptyStats(), c.ach ??= [], s, alive, deployed.length, (c.cleared ?? []).length + (s.status === 'won' && s.huge && s.locId !== undefined && !(c.cleared ?? []).includes(s.locId) ? 1 : 0)); c.achNew = [...(c.achNew ?? []), ...n]; }
   if (s.status === 'won' && s.huge && s.locId !== undefined && !(c.cleared ??= []).includes(s.locId)) { c.cleared.push(s.locId); c.scrap += 3; } // перше проходження локації: +3
   if (s.status === 'won') {
     c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : c.objective === 'assassinate' || c.objective === 'sabotage' ? 3 : 2) + (c.boss ? 4 : 0) + (c.risky ? 3 : 0);

@@ -285,6 +285,7 @@ function fortify(g: Grids, n: number, kind: typeof DEFEND_KINDS[number]['geo'], 
 }
 
 export function createMission(o: MissionOpts): GameState {
+  if (o.objective === 'rescue') o = { ...o, objective: 'clear' }; // «Порятунок» — лише локації великих карт
   if ((o.size ?? 0) >= 256) return createHugeForest(o);
   const rng = { rng: o.rng };
   const n = o.size ?? MAP_SIZE, cx = n >> 1;

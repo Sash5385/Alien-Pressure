@@ -110,6 +110,7 @@ export interface GameState {
   look: Look[][]; // вид укрытия (дерево, камень, дом…)
   houses: House[];
   captives?: { x: number; y: number; saved: boolean }[]; // полонённые (задание «Порятунок»)
+  upKills?: number; breaches?: number; // статистика для достижений
   locId?: number; // номер локации каталога
   roads?: { x: number; y: number; w: number; h: number }[]; // улицы населённых пунктов
   roadm?: Uint8Array; // карта асфальта (мини-карта)

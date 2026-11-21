@@ -480,7 +480,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       {/* ——— верх: статус по центру, отряд зеркально слева/справа ——— */}
       <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', maxWidth: narrow ? vw(94) : 560, pointerEvents: 'none', textAlign: 'center' }}>
         <div style={{ ...nbBase, borderRadius: 999, boxShadow: OUTS, padding: '6px 14px', fontSize: narrow ? 11 : 13, fontWeight: 700 }}>
-          Місія {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Хід {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твій хід' : 'хід прибульців…'} · видно: {aliens}{waveText}{campHint}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
+          Місія {s.missionNo} · {BIOME_NAME[s.biome]} · {goal} · Хід {s.turnNo} · {s.rt ? `${Math.floor(s.rt.clock / 60)}:${String(Math.floor(s.rt.clock % 60)).padStart(2, '0')}${s.rt.paused ? ' · ПАУЗА' : ` · ×${s.rt.speed}`}` : s.turn === 'human' ? 'твій хід' : 'хід прибульців…'} · видно: {aliens}{waveText}{campHint}{view.current?.perfNote ? ` · ⚙ ${view.current.perfNote}` : ''}{((s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)) !== 'clear' && view.current?.isWeatherOn() !== false ? ` · ${WEATHER_NAME[(s.weather as Weather | undefined) ?? weatherOf(s.missionNo, s.biome)]}` : ''}
         </div>
       </div>
       {[[humans.slice(0, half), 'left'], [humans.slice(half), 'right']].map(([list, side]) => (

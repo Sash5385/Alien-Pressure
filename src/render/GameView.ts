@@ -232,6 +232,7 @@ export class GameView {
       this.raf = requestAnimationFrame(loop);
       const rawDt = this.clock.getDelta();
       const dt = Math.min(0.05, rawDt);
+      this.perfGovernor(rawDt);
       this.stepRain(dt);
       tickWind(this.clock.elapsedTime);
       if (this.state.huge) { if (this.skyMesh) this.skyMesh.position.set(this.controls.target.x, 0, this.controls.target.z); this.hugeT += rawDt; if (this.hugeT > 0.15) { this.hugeT = 0; this.updateHuge(); } }
@@ -746,7 +747,7 @@ export class GameView {
   /** Подгрузка и выгрузка кусков вокруг камеры; перестройка кусков, где разрушили укрытия. */
   private updateHuge(first = false) {
     const CH = GameView.CH, n = this.state.size, B = GameView.RIM, t = this.controls.target;
-    const ccx = Math.floor(t.x / CH), ccz = Math.floor(t.z / CH), R = 4, RG = 2;
+    const ccx = Math.floor(t.x / CH), ccz = Math.floor(t.z / CH), R = this.hugeR, RG = 2;
     const need: [number, number, number][] = [];
     for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
       const cx = ccx + dx, cz = ccz + dz;
@@ -1607,6 +1608,23 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
   }
 
   /** Высокое: свечение (bloom), сглаживание, тени 2048. Обычное: прямой рендер, тени 1024. */
+  /** Автоподстройка под слабое устройство: если FPS < 24 — сначала низкое качество, затем меньший радиус подгрузки карты. */
+  private hugeR = 4; private perfT = 0; private perfN = 0; private perfWarm = 0; private perfStage = 0;
+  perfNote: string | null = null;
+  private perfGovernor(dt: number) {
+    if (dt <= 0 || dt > 0.5) return;
+    this.perfWarm += dt;
+    if (this.perfWarm < 6) return; // прогрев: загрузка кусков и шейдеров
+    this.perfT += dt; this.perfN++;
+    if (this.perfT < 4) return;
+    const fps = this.perfN / this.perfT; this.perfT = 0; this.perfN = 0;
+    if (fps >= 24 || this.perfStage >= 3) return;
+    this.perfStage++;
+    if (this.quality === 'high') { this.setQuality('low', false); this.perfNote = 'Низький FPS: увімкнено економну графіку'; }
+    else if (this.state.huge && this.hugeR > 2) { this.hugeR--; this.perfNote = 'Низький FPS: зменшено дальність промальовки'; }
+    this.perfWarm = 3;
+  }
+
   setQuality(q: 'high' | 'low', save = true) {
     this.quality = q;
     this.sun.shadow.mapSize.set(q === 'high' ? 2048 : 1024, q === 'high' ? 2048 : 1024);

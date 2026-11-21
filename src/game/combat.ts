@@ -264,7 +264,7 @@ export function melee(s: GameState, a: Unit, t: Unit): ShotResult {
   if (hit && t.cut > 0) dmg = Math.max(1, dmg - t.cut);
   t.hp = Math.max(0, t.hp - dmg);
   const killed = hit && t.hp <= 0;
-  if (a.team === 'human') { raiseAlert(s, a.x, a.y, 3); if (killed) { a.kills += 1; living(s, 'human').forEach(h => shift(h, 4)); } }
+  if (a.team === 'human') { raiseAlert(s, a.x, a.y, 3); if (killed) { a.kills += 1; if (flOf(a) > 0) s.upKills = (s.upKills ?? 0) + 1; living(s, 'human').forEach(h => shift(h, 4)); } }
   log(s, `${a.name} б’є в ближньому бою ${t.name}: ${hit ? `−${dmg} HP${killed ? ', вбито' : ''}` : 'повз'} (${chance}%)`);
   checkEnd(s);
   return { attackerId: a.id, targetId: t.id, hit, dmg, chance, killed, reaction: false, melee: true };
@@ -543,7 +543,7 @@ export function blast(s: GameState, owner: Unit | null, x: number, y: number, la
     if ((lk !== 'wall' && lk !== 'window') || d > Math.min(R, lk === 'window' ? 1.9 : 1.3)) continue;
     const bi = bldgAt(s, cx, cy); if (bi < 0) continue;
     const sp = s.bldgs[bi], k = wallKey(sp, cx - sp.x!, cy - sp.y!); if (!k) continue;
-    (sp.broken ??= []).push(`0${k.side}${k.idx}`); sp.rev = (sp.rev ?? 0) + 1;
+    s.breaches = (s.breaches ?? 0) + 1; (sp.broken ??= []).push(`0${k.side}${k.idx}`); sp.rev = (sp.rev ?? 0) + 1;
     s.cover[cy][cx] = 'none'; s.look[cy][cx] = ''; broken.push({ x: cx, y: cy });
   }
   // дома рядом со взрывом получают урон и обрушиваются; мосты рушатся
