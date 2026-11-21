@@ -74,7 +74,7 @@ function materials() {
   const pbr = (n: string, tint = 0xffffff, vc = true) => new THREE.MeshStandardMaterial({ map: tex(n), normalMap: tex(n + '_n'), roughness: 0.92, metalness: 0, color: tint, vertexColors: vc });
   mats = {
     brick: pbr('brick'), plaster: pbr('plaster', 0xe6dcc8), concrete: pbr('concrete', 0xd0d0cc),
-    wood: pbr('wood', 0xc9a37a), roof: pbr('roof', 0xd88060), steel: pbr('steel'),
+    wood: pbr('wood', 0xc9a37a), roof: pbr('roof', 0xffffff), steel: pbr('steel'),
     tar: new THREE.MeshStandardMaterial({ color: 0x4a4a48, roughness: 1, vertexColors: true }),
     lit: new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.3, emissive: 0xffc060, emissiveIntensity: 0, side: THREE.DoubleSide }),
     lampHead: new THREE.MeshStandardMaterial({ color: 0x333333, emissive: 0xffd89a, emissiveIntensity: 0 }),

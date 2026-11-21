@@ -57,6 +57,7 @@ export class GameView {
   private leaves: Leaves | null = null;
   private mistTex: THREE.CanvasTexture | null = null;
   private skyMesh: THREE.Mesh | null = null;
+  private skyU: { top: { value: THREE.Color }; mid: { value: THREE.Color }; hor: { value: THREE.Color }; sunDir: { value: THREE.Vector3 }; sunCol: { value: THREE.Color }; cloudCol: { value: THREE.Color }; cloud: { value: number }; stars: { value: number }; uTime: { value: number } } | null = null;
   private fogInit = false;
   private middle = false;
   /** Колесо зажато / отпущено: в реальном времени пока зажато — время стоит. */
@@ -236,6 +237,7 @@ export class GameView {
       const dt = Math.min(0.05, rawDt);
       this.perfGovernor(rawDt);
       this.stepRain(dt);
+      if (this.skyU) this.skyU.uTime.value = this.clock.elapsedTime;
       tickWind(this.clock.elapsedTime);
       if (this.state.huge) { if (this.skyMesh) this.skyMesh.position.set(this.controls.target.x, 0, this.controls.target.z); this.hugeT += rawDt; if (this.hugeT > 0.15) { this.hugeT = 0; this.updateHuge(); } }
       if (this.prints.length) { const now = this.clock.elapsedTime; this.prints = this.prints.filter(p => { const k = (now - p.t0) / 40; if (k >= 1) { this.scene.remove(p.m); (p.m.material as THREE.Material).dispose(); return false; } (p.m.material as THREE.MeshLambertMaterial).opacity = 0.38 * (1 - k); return true; }); }
@@ -909,13 +911,35 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     outer.position.set(n / 2, -0.75, n / 2);
     outer.receiveShadow = true;
     this.scene.add(outer);
+    const skyU = {
+      top: { value: new THREE.Color(pal.top) }, mid: { value: new THREE.Color(pal.top) }, hor: { value: new THREE.Color(pal.hor) },
+      sunDir: { value: new THREE.Vector3(0.4, 0.6, 0.3) }, sunCol: { value: new THREE.Color(0xfff0c0) }, cloudCol: { value: new THREE.Color(0xffffff) },
+      cloud: { value: 0.5 }, stars: { value: 0 }, uTime: { value: 0 },
+    };
+    this.skyU = skyU;
     const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(120, 24, 12),
+      new THREE.SphereGeometry(120, 32, 16),
       new THREE.ShaderMaterial({
-        side: THREE.BackSide, depthWrite: false,
-        uniforms: { top: { value: new THREE.Color(pal.top) }, hor: { value: new THREE.Color(pal.hor) } },
-        vertexShader: 'varying float h; void main(){ h = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-        fragmentShader: 'uniform vec3 top; uniform vec3 hor; varying float h; void main(){ gl_FragColor = vec4(mix(hor, top, smoothstep(0.0, 0.7, h)), 1.0); }',
+        side: THREE.BackSide, depthWrite: false, uniforms: skyU,
+        vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+        fragmentShader: `uniform vec3 top; uniform vec3 mid; uniform vec3 hor; uniform vec3 sunDir; uniform vec3 sunCol; uniform vec3 cloudCol; uniform float cloud; uniform float stars; uniform float uTime; varying vec3 vD;
+float hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float nz(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hsh(i), hsh(i + vec2(1,0)), f.x), mix(hsh(i + vec2(0,1)), hsh(i + vec2(1,1)), f.x), f.y); }
+float fbm(vec2 p){ float a = 0.5, r = 0.0; for (int i = 0; i < 4; i++) { r += a * nz(p); p *= 2.03; a *= 0.5; } return r; }
+void main(){
+  vec3 d = normalize(vD); float h = d.y;
+  vec3 col = mix(hor, mid, smoothstep(0.0, 0.22, h)); col = mix(col, top, smoothstep(0.18, 0.75, h));
+  float sd = max(dot(d, normalize(sunDir)), 0.0);
+  col += sunCol * (pow(sd, 220.0) * 1.4 + pow(sd, 18.0) * 0.28 + pow(sd, 4.0) * 0.12);
+  if (h > 0.0) {
+    vec2 uv = d.xz / (h + 0.3) * 1.7 + vec2(uTime * 0.012, uTime * 0.006);
+    float c = smoothstep(0.42, 0.8, fbm(uv * 1.4)) * cloud * smoothstep(0.0, 0.2, h);
+    vec3 cc = cloudCol * (0.78 + 0.35 * pow(sd, 3.0));
+    col = mix(col, cc, c * 0.9);
+    if (stars > 0.0) { vec2 su = d.xz / (h + 0.25) * 90.0; vec2 fu = fract(su) - 0.5; float st = step(0.985, hsh(floor(su))) * smoothstep(0.14, 0.0, length(fu)); col += vec3(st) * stars * (1.0 - c) * smoothstep(0.08, 0.35, h); }
+  }
+  gl_FragColor = vec4(col, 1.0);
+}`,
       }),
     );
     sky.position.set(n / 2, 0, n / 2);
@@ -1201,6 +1225,10 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       : { soldier: '', trooper: 'AK', sniper: 'Sniper_2', psi: '', heavy: 'ShortCannon', commander: 'Revolver' }[u.kind];
     const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor, u.team === 'human' ? { optic: u.optic, supp: u.supp, mag: u.extMag } : undefined);
     if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
+    if (u.team === 'alien') { // инопланетная биолюминесценция: лёгкое свечение материалов
+      const glow = { trooper: 0x39ff7a, sniper: 0x35e0c0, psi: 0xb36bff, heavy: 0xc8ff3a, commander: 0xff3a3a, soldier: 0x39ff7a }[u.kind] ?? 0x39ff7a;
+      sp.obj.traverse(o => { const mm = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (mm && 'emissive' in mm) { mm.emissive = new THREE.Color(glow); mm.emissiveIntensity = u.kind === 'commander' ? 0.32 : 0.16; } });
+    }
     this.rigs.set(u.id, sp);
     this.play(u.id, 'Idle');
     this.addBlob(sp.obj);
@@ -1473,6 +1501,19 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     if (!this.baseFog) this.baseFog = { color: fog.color.getHex(), near: fog.near, far: fog.far };
     const w = this.weatherOn ? this.getWeather() : 'clear';
     setWeatherVisuals(w === 'night' || w === 'dusk', w === 'rain');
+    if (this.skyU) { // небо по погоде: цвета, облака, звёзды, солнце или луна
+      const P: Record<string, { top: number; mid: number; hor: number; sun: number; cc: number; cloud: number; stars: number; dir: [number, number, number] }> = {
+        clear: { top: 0x2f6fc4, mid: 0x6fa8e0, hor: 0xbcd8ee, sun: 0xfff0c0, cc: 0xffffff, cloud: 0.55, stars: 0, dir: [0.5, 0.55, 0.3] },
+        dawn: { top: 0x3c5a98, mid: 0xd89a9a, hor: 0xffc08a, sun: 0xffa060, cc: 0xffd0b0, cloud: 0.5, stars: 0, dir: [0.9, 0.12, 0.1] },
+        dusk: { top: 0x24244e, mid: 0xa85c70, hor: 0xf08c50, sun: 0xff7040, cc: 0xe0a090, cloud: 0.5, stars: 0, dir: [-0.9, 0.1, 0.2] },
+        night: { top: 0x040818, mid: 0x0a1430, hor: 0x16223a, sun: 0x8aa6ff, cc: 0x1a2540, cloud: 0.25, stars: 1, dir: [-0.4, 0.55, -0.3] },
+        rain: { top: 0x545d69, mid: 0x76808a, hor: 0x939ca5, sun: 0x000000, cc: 0x6a727c, cloud: 1, stars: 0, dir: [0.5, 0.55, 0.3] },
+        fog: { top: 0xa0aaa7, mid: 0xa5afac, hor: 0xaab4b1, sun: 0x000000, cc: 0xb4bcb9, cloud: 0.1, stars: 0, dir: [0.5, 0.55, 0.3] },
+      };
+      const k = P[w] ?? P.clear, u = this.skyU;
+      u.top.value.set(k.top); u.mid.value.set(k.mid); u.hor.value.set(k.hor); u.sunCol.value.set(k.sun); u.cloudCol.value.set(k.cc);
+      u.cloud.value = k.cloud; u.stars.value = k.stars; u.sunDir.value.set(...k.dir);
+    }
     fog.color.set(this.baseFog.color); fog.near = this.baseFog.near; fog.far = this.baseFog.far;
     this.renderer.toneMappingExposure = 3.5; this.sun.color.set(0xfff0d0); this.sun.intensity = 2.0; this.hemi.intensity = 1.3;
     if (this.rain) { this.scene.remove(this.rain); this.rain.geometry.dispose(); this.rain = null; }
@@ -1487,6 +1528,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     }
     if (w === 'fog') { fog.color.lerp(new THREE.Color(0x9aa6a2), 0.7); fog.near = 6; fog.far = 46; }
     if (w === 'dusk') { this.renderer.toneMappingExposure = 2.7; this.sun.color.set(0xff9a60); this.sun.intensity = 1.5; this.hemi.intensity = 0.9; fog.color.lerp(new THREE.Color(0x4a3a50), 0.5); }
+    if (this.skyU && (w === 'dawn' || w === 'dusk' || w === 'clear')) fog.color.lerp(this.skyU.hor.value, 0.75); // дымка в цвет горизонта
     if (w === 'rain') {
       this.renderer.toneMappingExposure = 3.0; this.hemi.intensity = 1.0; this.sun.intensity = 1.3; fog.color.lerp(new THREE.Color(0x6a7480), 0.6); fog.near = 14; fog.far = 70;
       const n = 1600, pos = new Float32Array(n * 6);
