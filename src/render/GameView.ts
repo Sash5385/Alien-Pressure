@@ -12,7 +12,8 @@ import { applyTwoHands, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
 import { Leaves } from './leaves';
-import { buildBuilding, roadMaterial, showFloors, STOREY, type BuildingObj } from './buildings';
+import { buildBuilding, lampParts, roadMaterial, setWeatherVisuals, showFloors, STOREY, type BuildingObj } from './buildings';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { reachable, findPath } from '../game/pathfinding';
 import { CD_PER_AP, orderAttack, orderMove } from '../game/rt';
 import { bldgAt, coverAt, flOf } from '../game/floors';
@@ -723,7 +724,7 @@ export class GameView {
     this.groundGroup.remove(ch.terrain); ch.terrain.geometry.dispose();
     for (const o of ch.objs) { this.scene.remove(o); (o as THREE.InstancedMesh).dispose?.(); }
     if (ch.grass) { this.scene.remove(ch.grass); (ch.grass as THREE.InstancedMesh).dispose?.(); }
-    for (const m of ch.roads) { this.scene.remove(m); m.geometry.dispose(); }
+    for (const m of ch.roads) { this.scene.remove(m); if (!(m as THREE.InstancedMesh).isInstancedMesh) m.geometry.dispose(); }
     for (const { b } of ch.blds) { this.scene.remove(b); b.traverse(o => (o as THREE.Mesh).geometry?.dispose()); }
     this.chunks.delete(k);
   }
@@ -772,12 +773,19 @@ export class GameView {
           const b = buildBuilding(sp); b.position.set(sp.x!, this.hy(sp.x! + (sp.w >> 1), sp.y! + (sp.d >> 1)), sp.y!); this.scene.add(b);
           return { b, x: sp.x!, y: sp.y!, w: sp.w, d: sp.d, sp, rev: sp.rev ?? 0 };
         });
-        const roads = (this.roadByChunk.get(k) ?? []).map(r => {
+        const roads: THREE.Mesh[] = (this.roadByChunk.get(k) ?? []).map(r => {
           const g = new THREE.PlaneGeometry(r.w, r.h).rotateX(-Math.PI / 2), uv = g.attributes.uv as THREE.BufferAttribute;
           for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * r.w / 2.5, uv.getY(i) * r.h / 2.5);
           const m = new THREE.Mesh(g, roadMaterial()); m.position.set(r.x + r.w / 2, this.hs(r.x + r.w / 2, r.y + r.h / 2) + 0.035, r.y + r.h / 2); m.receiveShadow = true; this.scene.add(m);
           return m;
         });
+        const pieces = this.roadByChunk.get(k) ?? [], lamps: [number, number][] = [];
+        for (const r of pieces) for (let lx = r.x + 1 + ((r.x * 7 + r.y) % 4); lx < r.x + r.w - 1; lx += 8) lamps.push([lx + 0.5, r.y + (lx % 16 < 8 ? 0.12 : r.h - 0.12)]);
+        if (lamps.length) {
+          const lp = lampParts(), mp = new THREE.InstancedMesh(lp.pole, lp.poleMat, lamps.length), mh = new THREE.InstancedMesh(lp.head, lp.headMat, lamps.length), m4 = new THREE.Matrix4();
+          lamps.forEach(([lx, lz], i) => { m4.makeTranslation(lx, this.hs(lx, lz), lz); mp.setMatrixAt(i, m4); mh.setMatrixAt(i, m4); });
+          mp.castShadow = true; mp.frustumCulled = mh.frustumCulled = false; this.scene.add(mp, mh); roads.push(mp, mh);
+        }
         ch = { terrain: mesh, objs: ob?.objs ?? [], grass: null, sig: ob?.sig ?? 0, roads, blds };
         this.chunks.set(k, ch);
       }
@@ -1191,7 +1199,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     const gun = u.team === 'human'
       ? { rifle: 'AK', smg: 'SMG', shotgun: 'Shotgun', sniper: 'Sniper', launcher: 'RocketLauncher', mortar: 'MORTAR', ags: 'AGS' }[u.weapon]
       : { soldier: '', trooper: 'AK', sniper: 'Sniper_2', psi: '', heavy: 'ShortCannon', commander: 'Revolver' }[u.kind];
-    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor);
+    const sp = spawnModel(u.team === 'human' ? 'Soldier' : u.kind === 'psi' ? 'Hazmat' : 'Enemy', height, tint, gun, u.armor, u.team === 'human' ? { optic: u.optic, supp: u.supp, mag: u.extMag } : undefined);
     if (!sp) { const p = this.makePrimitive(u); this.addBlob(p); return p; }
     this.rigs.set(u.id, sp);
     this.play(u.id, 'Idle');
@@ -1464,6 +1472,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     const fog = this.scene.fog as THREE.Fog;
     if (!this.baseFog) this.baseFog = { color: fog.color.getHex(), near: fog.near, far: fog.far };
     const w = this.weatherOn ? this.getWeather() : 'clear';
+    setWeatherVisuals(w === 'night' || w === 'dusk', w === 'rain');
     fog.color.set(this.baseFog.color); fog.near = this.baseFog.near; fog.far = this.baseFog.far;
     this.renderer.toneMappingExposure = 3.5; this.sun.color.set(0xfff0d0); this.sun.intensity = 2.0; this.hemi.intensity = 1.3;
     if (this.rain) { this.scene.remove(this.rain); this.rain.geometry.dispose(); this.rain = null; }
@@ -1473,7 +1482,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     if (w === 'dawn') { this.renderer.toneMappingExposure = 3.0; this.sun.color.set(0xffb070); this.sun.intensity = 1.8; this.sun.position.set(this.state.size, 6, this.state.size * 0.1); this.hemi.intensity = 1.0; fog.color.lerp(new THREE.Color(0xd9a07a), 0.45); }
     if (w === 'night') {
       this.renderer.toneMappingExposure = 2.2; this.sun.color.set(0x8aa6ff); this.sun.intensity = 0.7; this.hemi.intensity = 0.55; fog.color.lerp(new THREE.Color(0x0c1424), 0.8); fog.near = 10; fog.far = 60;
-      this.torch = new THREE.SpotLight(0xfff0c8, 120, 22, 0.55, 0.5, 1.2);
+      this.torch = new THREE.SpotLight(0xffe2b0, 75, 22, 0.55, 0.6, 1.2);
       this.scene.add(this.torch, this.torch.target);
     }
     if (w === 'fog') { fog.color.lerp(new THREE.Color(0x9aa6a2), 0.7); fog.near = 6; fog.far = 46; }
@@ -1643,6 +1652,12 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
       c.setPixelRatio(this.dpr);
       c.setSize(w, h);
       c.addPass(new RenderPass(this.scene, this.camera));
+      try { // мягкие тени в углах и под карнизами
+        const ao = new GTAOPass(this.scene, this.camera, w, h);
+        ao.blendIntensity = 0.85;
+        ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.2, scale: 1.1, samples: 10, distanceFallOff: 1, screenSpaceRadius: false });
+        c.addPass(ao);
+      } catch { /* без AO */ }
       c.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.5, 1.0));
       c.addPass(new OutputPass());
       c.addPass(new ShaderPass({ // цветокоррекция: лёгкая S-кривая, насыщенность и виньетка
@@ -2006,7 +2021,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.96, 0.98, 1.0), foam * 0.75);`);
     this.scene.add(light, ball);
     this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0xffb050, 30, 5, 650);
     this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0x555555, 18, 3, 800);
-    for (const b of res.broken) { const bp = new THREE.Vector3(b.x + 0.5, 0.3 + this.hy(b.x, b.y), b.y + 0.5); this.burst(bp, 0x8a7a62, 10, 2.5, 600); this.debris(bp, 0x8a7a62, 8, 3); }
+    for (const b of res.broken) { const bp = new THREE.Vector3(b.x + 0.5, 0.3 + this.hy(b.x, b.y), b.y + 0.5); this.burst(bp, 0x8a7a62, 10, 2.5, 600); this.debris(bp, 0x8a7a62, 8, 3); this.burst(bp.clone().setY(bp.y + 0.4), 0xcfe8ff, 8, 3, 700); this.burst(bp, 0x666055, 14, 1.2, 1400); }
     this.debris(new THREE.Vector3(to.x, to.y + 0.3, to.z), 0x5a4a38, 14, 5);
     this.decal(to.x, to.z, 0x121210, 1.1, 0.55); this.decal(to.x, to.z, 0x2a2420, 1.5, 0.3);
     if (res.ignited.length) setTimeout(() => sfx('fire'), 250);

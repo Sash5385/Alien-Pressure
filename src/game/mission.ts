@@ -26,8 +26,8 @@ const human = (s: Soldier, x: number, y: number, tech: Tech): Unit => {
   if (s.cls === 'assault') u.move += 1;
   if (s.cls === 'sniper') u.aim += 5;
   if (s.cls === 'engineer') u.grenades += 1;
-  if (s.att?.includes('optic')) { u.aim += 8; u.range += 3; }
-  if (s.att?.includes('mag')) { u.maxAmmo = Math.ceil(u.maxAmmo * 1.5); u.ammo = u.maxAmmo; }
+  if (s.att?.includes('optic')) { u.aim += 8; u.range += 3; u.optic = true; }
+  if (s.att?.includes('mag')) { u.extMag = true; u.maxAmmo = Math.ceil(u.maxAmmo * 1.5); u.ammo = u.maxAmmo; }
   if (s.att?.includes('supp')) u.supp = true;
   if (s.att?.includes('nvg')) u.nvg = true;
   if (tech.armor) u.maxHp += 2;

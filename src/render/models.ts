@@ -178,7 +178,8 @@ function weaponFrame(node: THREE.Object3D, hand: THREE.Vector3) {
 }
 
 /** Детали оружия, которых нет в модели: прицелы, глушитель, цевьё. */
-function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<ReturnType<typeof weaponFrame>>) {
+export type Att = { optic?: boolean; supp?: boolean; mag?: boolean };
+function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<ReturnType<typeof weaponFrame>>, att?: Att) {
   const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.5, metalness: 0.4, flatShading: true });
   const glass = new THREE.MeshStandardMaterial({ color: 0x4aa8ff, roughness: 0.1, metalness: 0.6, emissive: 0x0b3a6b });
   const at = (t: number, up: number) => { // t: 0 — приклад, 1 — дуло; up — над верхней гранью
@@ -193,6 +194,13 @@ function addWeaponParts(node: THREE.Object3D, kind: string, f: NonNullable<Retur
     node.add(m); return m;
   };
   const L = f.len, up = f.size[f.ha];
+  if (att?.supp) place(new THREE.CylinderGeometry(L * 0.035, L * 0.035, L * 0.26, 10), dark, at(1.12, -up * 0.45)); // глушитель
+  if (att?.optic && kind !== 'Sniper') { // оптический прицел: труба и линзы
+    place(new THREE.CylinderGeometry(L * 0.03, L * 0.03, L * 0.2, 10), dark, at(0.5, L * 0.05));
+    place(new THREE.CylinderGeometry(L * 0.036, L * 0.036, L * 0.012, 10), glass, at(0.6, L * 0.05));
+    place(new THREE.CylinderGeometry(L * 0.036, L * 0.036, L * 0.012, 10), glass, at(0.4, L * 0.05));
+  }
+  if (att?.mag) place(new THREE.BoxGeometry(...(f.la === 'x' ? [L * 0.06, L * 0.12, L * 0.035] : f.la === 'z' ? [L * 0.035, L * 0.12, L * 0.06] : [L * 0.035, L * 0.06, L * 0.035]) as [number, number, number]), dark, at(0.52, -up * 1.35), false); // длинный магазин
   if (kind === 'sniper') {
     place(new THREE.CylinderGeometry(L * 0.035, L * 0.035, L * 0.3, 10), dark, at(0.46, L * 0.04));
     place(new THREE.CylinderGeometry(L * 0.04, L * 0.04, L * 0.012, 10), glass, at(0.62, L * 0.04));
@@ -278,7 +286,7 @@ export function applyTwoHands(sp: Spawned) {
   }
 }
 
-export function spawnModel(name: ModelName, height: number, tint?: number, weapon = 'AK', armor = 'none'): Spawned | null {
+export function spawnModel(name: ModelName, height: number, tint?: number, weapon = 'AK', armor = 'none', att?: Att): Spawned | null {
   const m = cache.get(name);
   if (!m) return null;
   const obj = new THREE.Group();
@@ -316,7 +324,7 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
       inner.updateMatrixWorld(true);
       const f = weaponFrame(node, rigR.wrist.getWorldPosition(new THREE.Vector3()));
       if (f) {
-        addWeaponParts(node, weapon, f);
+        addWeaponParts(node, weapon, f, att);
         const local = f.hl.clone(); local[f.la] = Math.max(f.bb.min[f.la], Math.min(f.bb.max[f.la], f.hl[f.la] + f.mz * f.len * 0.38)); // хват впереди, на цевье
         local[f.ha] = f.ctr[f.ha] - f.up * f.size[f.ha] * 0.1;
         grip = { node, local };

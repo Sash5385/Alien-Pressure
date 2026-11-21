@@ -1,5 +1,6 @@
 // Модульные здания с этажами: стены с оконными проёмами, перекрытия, лестницы, крыши, повреждения.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export type BuildingSpec = {
   w: number; d: number; floors: number;
@@ -16,10 +17,13 @@ export const STOREY = 1.5; // высота этажа в клетках
 const T = 0.4; // толщина наружной стены (половина клетки)
 const SLAB = 0.1;
 
-type MK = 'wall' | 'trim' | 'floor' | 'roof' | 'tar' | 'frame' | 'glass';
+type MK = 'wall' | 'trim' | 'floor' | 'roof' | 'tar' | 'frame' | 'glass' | 'lit';
 class Mesher {
-  pos: number[] = []; nor: number[] = []; uv: number[] = [];
+  pos: number[] = []; nor: number[] = []; uv: number[] = []; col: number[] = [];
+  tint = 1; // множитель цвета для следующих деталей
   constructor(public sc: number) {}
+  /** Грязь у земли и лёгкая пестрота: цвет вершины по высоте. */
+  private shade(y: number) { const g = 0.6 + 0.4 * Math.min(1, Math.max(0, y / 0.9)); return g * this.tint; }
   quad(a: number[], b: number[], c: number[], d: number[], n: number[]) {
     const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
     const cr = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
@@ -30,13 +34,13 @@ class Mesher {
       if (ax >= az) return [p[2] / this.sc, p[1] / this.sc];
       return [p[0] / this.sc, p[1] / this.sc];
     };
-    for (const i of [a, b, c, a, c, d]) { this.pos.push(i[0], i[1], i[2]); this.nor.push(n[0], n[1], n[2]); this.uv.push(...uvOf(i)); }
+    for (const i of [a, b, c, a, c, d]) { this.pos.push(i[0], i[1], i[2]); this.nor.push(n[0], n[1], n[2]); this.uv.push(...uvOf(i)); const k = this.shade(i[1]); this.col.push(k, k, k); }
   }
   tri(a: number[], b: number[], c: number[], n: number[]) {
     const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
     const cr = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
     if (cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2] < 0) [b, c] = [c, b];
-    for (const i of [a, b, c]) { this.pos.push(i[0], i[1], i[2]); this.nor.push(n[0], n[1], n[2]); this.uv.push(i[0] / this.sc + i[2] / this.sc, i[1] / this.sc); }
+    for (const i of [a, b, c]) { this.pos.push(i[0], i[1], i[2]); this.nor.push(n[0], n[1], n[2]); this.uv.push(i[0] / this.sc + i[2] / this.sc, i[1] / this.sc); const k = this.shade(i[1]); this.col.push(k, k, k); }
   }
   box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) {
     if (x1 - x0 < 1e-4 || y1 - y0 < 1e-4 || z1 - z0 < 1e-4) return;
@@ -52,6 +56,7 @@ class Mesher {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     return g;
   }
 }
@@ -66,12 +71,15 @@ function materials() {
     if (!n.endsWith('_n')) t.colorSpace = THREE.SRGBColorSpace;
     return t;
   };
-  const pbr = (n: string, tint = 0xffffff) => new THREE.MeshStandardMaterial({ map: tex(n), normalMap: tex(n + '_n'), roughness: 0.92, metalness: 0, color: tint });
+  const pbr = (n: string, tint = 0xffffff, vc = true) => new THREE.MeshStandardMaterial({ map: tex(n), normalMap: tex(n + '_n'), roughness: 0.92, metalness: 0, color: tint, vertexColors: vc });
   mats = {
     brick: pbr('brick'), plaster: pbr('plaster', 0xe6dcc8), concrete: pbr('concrete', 0xd0d0cc),
     wood: pbr('wood', 0xc9a37a), roof: pbr('roof', 0xd88060), steel: pbr('steel'),
-    tar: new THREE.MeshStandardMaterial({ color: 0x4a4a48, roughness: 1 }),
-    asphalt: pbr('asphalt', 0xb8b8b8),
+    tar: new THREE.MeshStandardMaterial({ color: 0x4a4a48, roughness: 1, vertexColors: true }),
+    lit: new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.3, emissive: 0xffc060, emissiveIntensity: 0, side: THREE.DoubleSide }),
+    lampHead: new THREE.MeshStandardMaterial({ color: 0x333333, emissive: 0xffd89a, emissiveIntensity: 0 }),
+    lampPole: new THREE.MeshStandardMaterial({ color: 0x2b2f35, roughness: 0.6, metalness: 0.5 }),
+    asphalt: pbr('asphalt', 0xb8b8b8, false),
     frame: new THREE.MeshStandardMaterial({ color: 0x3b2c20, roughness: 0.7 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x20324a, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
   };
@@ -142,13 +150,13 @@ export function buildBuilding(spec: BuildingSpec): BuildingObj {
   const flush = (parts: Record<string, Mesher>, into: THREE.Group) => {
     for (const [k, ms] of Object.entries(parts)) {
       if (!ms.pos.length) continue;
-      const mat = k === 'wall' ? m[style] : k === 'trim' ? m.concrete : k === 'floor' ? m.wood : k === 'roof' ? m.roof : k === 'tar' ? m.tar : k === 'frame' ? m.frame : m.glass;
+      const mat = k === 'wall' ? m[style] : k === 'trim' ? m.concrete : k === 'floor' ? m.wood : k === 'roof' ? m.roof : k === 'tar' ? m.tar : k === 'frame' ? m.frame : k === 'lit' ? m.lit : m.glass;
       const mesh = new THREE.Mesh(ms.geo(), mat);
-      mesh.castShadow = k !== 'glass'; mesh.receiveShadow = k !== 'glass';
+      mesh.castShadow = k !== 'glass' && k !== 'lit'; mesh.receiveShadow = k !== 'glass' && k !== 'lit';
       into.add(mesh);
     }
   };
-  const mk = () => ({ wall: new Mesher(1.6), trim: new Mesher(1.6), floor: new Mesher(1.2), roof: new Mesher(1.5), tar: new Mesher(2), frame: new Mesher(1), glass: new Mesher(1) } as Record<MK, Mesher>);
+  const mk = () => ({ wall: new Mesher(1.6), trim: new Mesher(1.6), floor: new Mesher(1.2), roof: new Mesher(1.5), tar: new Mesher(2), frame: new Mesher(1), glass: new Mesher(1), lit: new Mesher(1) } as Record<MK, Mesher>);
 
   // стена вдоль оси; cells: [номер клетки, от, до]; cc = центр клетки (для проёма)
   const wallRun = (P: Record<MK, Mesher>, f: number, side: Side, cells: [number, number, number][]) => {
@@ -166,13 +174,23 @@ export function buildBuilding(spec: BuildingSpec): BuildingObj {
       if (oy0 > y0) B(P.wall, ox0, y0, ox1, oy0);
       B(P.wall, ox0, oy1, ox1, y1);
       const fr = 0.05, mid = (t0 + t1) / 2;
+      if (side === 'F') {
+        if (isDoor) P.trim.box(cc - 0.46, y0 + H * 0.8 + 0.02, d, cc + 0.46, y0 + H * 0.8 + 0.07, d + 0.32); // козырёк над входом
+        else if (f >= 1 && (idx + f) % 3 === 1) { // балкон: плита и перила
+          P.trim.box(cc - 0.45, y0, d, cc + 0.45, y0 + 0.07, d + 0.4);
+          P.frame.box(cc - 0.45, y0 + 0.07, d + 0.37, cc + 0.45, y0 + 0.12, d + 0.4); P.frame.box(cc - 0.45, y0 + 0.36, d + 0.37, cc + 0.45, y0 + 0.4, d + 0.4);
+          for (const px of [cc - 0.45, cc, cc + 0.4]) P.frame.box(px, y0 + 0.07, d + 0.37, px + 0.05, y0 + 0.4, d + 0.4);
+          P.frame.box(cc - 0.45, y0 + 0.07, d, cc - 0.4, y0 + 0.4, d + 0.4); P.frame.box(cc + 0.4, y0 + 0.07, d, cc + 0.45, y0 + 0.4, d + 0.4);
+        }
+      }
       if (isDoor) { B(P.frame, ox0 - fr, oy0, ox0, oy1); B(P.frame, ox1, oy0, ox1 + fr, oy1); B(P.frame, ox0 - fr, oy1, ox1 + fr, oy1 + fr); }
       else {
         B(P.frame, ox0, oy0, ox1, oy0 + fr); B(P.frame, ox0, oy1 - fr, ox1, oy1); B(P.frame, ox0, oy0, ox0 + fr, oy1); B(P.frame, ox1 - fr, oy0, ox1, oy1);
         const cx = cc, cy = (oy0 + oy1) / 2;
         B(P.frame, cx - fr / 2, oy0, cx + fr / 2, oy1); B(P.frame, ox0, cy - fr / 2, ox1, cy + fr / 2);
         const q = (p: number, y: number) => axis === 'x' ? [p, y, mid] : [mid, y, p];
-        P.glass.quad(q(ox0, oy0), q(ox1, oy0), q(ox1, oy1), q(ox0, oy1), axis === 'x' ? [0, 0, 1] : [1, 0, 0]);
+        const litNow = hh(spec.seed ?? 7, idx + f * 7, side.charCodeAt(0) + 3) > 0.62; // часть окон светится ночью
+        (litNow ? P.lit : P.glass).quad(q(ox0, oy0), q(ox1, oy0), q(ox1, oy1), q(ox0, oy1), axis === 'x' ? [0, 0, 1] : [1, 0, 0]);
       }
     }
   };
@@ -227,6 +245,12 @@ export function buildBuilding(spec: BuildingSpec): BuildingObj {
       R.trim.box(-0.04, ry, -0.04, w + 0.04, ry + pr, 0.14); R.trim.box(-0.04, ry, d - 0.14, w + 0.04, ry + pr, d + 0.04);
       R.trim.box(-0.04, ry, 0.14, 0.14, ry + pr, d - 0.14); R.trim.box(w - 0.14, ry, 0.14, w + 0.04, ry + pr, d - 0.14);
       if (!roofAccess(spec)) R.trim.box(w - 1.1, ry, 0.5, w - 0.4, ry + 0.4, 1.8);
+      for (let i = 0; i < 3; i++) { // кондиционеры и антенна на крыше
+        const bx = 0.5 + hh(spec.seed ?? 7, i, 5) * Math.max(0.1, w - 3.2), bz = 0.5 + hh(spec.seed ?? 7, i, 6) * Math.max(0.1, d - 1.6);
+        if (bx > w - 2.3 && bz < 3) continue;
+        if (i < 2) { R.trim.box(bx, ry + 0.06, bz, bx + 0.5, ry + 0.38, bz + 0.38); R.frame.box(bx + 0.08, ry + 0.38, bz + 0.08, bx + 0.42, ry + 0.42, bz + 0.3); }
+        else { R.frame.box(bx, ry + 0.06, bz, bx + 0.03, ry + 1.3, bz + 0.03); R.frame.box(bx - 0.18, ry + 1.0, bz, bx + 0.21, ry + 1.03, bz + 0.03); R.frame.box(bx - 0.12, ry + 1.2, bz, bx + 0.15, ry + 1.23, bz + 0.03); }
+      }
     }
   }
   flush(R, rg);
@@ -251,4 +275,23 @@ export function wallKey(sp: BuildingSpec, dx: number, dy: number): { side: Side;
   if (dx === 0) return { side: 'L', idx: dy };
   if (dx === w - 1) return { side: 'R', idx: dy };
   return null;
+}
+
+
+/** Ночью окна и фонари светятся; в дождь асфальт и стены мокрые и блестят. */
+export function setWeatherVisuals(night: boolean, wet: boolean) {
+  const m = materials() as Record<string, THREE.MeshStandardMaterial>;
+  m.lit.emissiveIntensity = night ? 2.2 : 0.0; m.lampHead.emissiveIntensity = night ? 3.0 : 0.15;
+  m.asphalt.roughness = wet ? 0.3 : 0.92; m.asphalt.color.set(wet ? 0x8a8a90 : 0xb8b8b8);
+  for (const k of ['brick', 'plaster', 'concrete']) m[k].roughness = wet ? 0.62 : 0.92;
+}
+
+/** Уличный фонарь: столб и светящийся плафон (для InstancedMesh). */
+export function lampParts() {
+  const m = materials();
+  const pole = new THREE.CylinderGeometry(0.035, 0.05, 1.9, 6).translate(0, 0.95, 0);
+  const arm = new THREE.BoxGeometry(0.4, 0.04, 0.04).translate(0.18, 1.88, 0);
+  const poleG = mergeGeometries([pole, arm])!;
+  const head = new THREE.BoxGeometry(0.2, 0.06, 0.12).translate(0.36, 1.84, 0);
+  return { pole: poleG, head, poleMat: m.lampPole, headMat: m.lampHead };
 }

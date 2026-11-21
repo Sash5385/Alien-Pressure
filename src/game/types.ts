@@ -88,6 +88,7 @@ export interface Unit {
   march?: { x: number; y: number }; // колонна идёт к этой точке, пока не заметит бойцов
   static?: boolean; // турель: не ходит
   stuck?: number; // сколько раз подряд путь был перекрыт (союзники в проходе)
+  optic?: boolean; extMag?: boolean; // обвес для отрисовки
   nvg?: boolean; // ночное видение
   supp?: boolean; // глушитель: выстрелы почти не слышны
   fl?: number; // этаж здания (0 — земля)
