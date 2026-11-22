@@ -12,6 +12,7 @@ const cache = new Map<ModelName, Loaded>();
 export { weaponIcon, gunForWeapon, rawGun as gunModel } from './guns';
 import { buildGun, gunForWeapon, loadGunFile, type Att as GunAtt } from './guns';
 import { ARMORS } from '../game/weapons';
+import { catOf } from '../game/catalog';
 import { HELMETS } from '../game/gear';
 export type Att = GunAtt;
 const loadGuns = loadGunFile;
@@ -76,7 +77,7 @@ export function spawnCover(kind: 'tree' | 'crate' | 'container', variant: number
   return g;
 }
 
-export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction>; arms: THREE.Object3D[]; mod: THREE.Object3D[]; modBase?: THREE.Quaternion[]; neck?: THREE.Object3D; torso?: THREE.Object3D; look: number; body: number; rigL?: ArmRig; rigR?: ArmRig; grip?: { node: THREE.Object3D; local: THREE.Vector3 }; ags?: { hl: THREE.Object3D; hr: THREE.Object3D }; baseScale: number; armed: boolean }
+export interface Spawned { obj: THREE.Group; inner: THREE.Object3D; mixer: THREE.AnimationMixer; actions: Map<string, THREE.AnimationAction>; arms: THREE.Object3D[]; mod: THREE.Object3D[]; modBase?: THREE.Quaternion[]; neck?: THREE.Object3D; torso?: THREE.Object3D; look: number; body: number; rigL?: ArmRig; rigR?: ArmRig; grip?: { node: THREE.Object3D; local: THREE.Vector3 }; oneHand?: boolean; ags?: { hl: THREE.Object3D; hr: THREE.Object3D }; baseScale: number; armed: boolean }
 
 const LEGS = /^(Hips|Body|UpperLeg|LowerLeg|Foot|Root|PoleTarget)/;
 const DUCK_T = 0.4; // кадр клипа Duck с согнутыми ногами
@@ -176,7 +177,7 @@ function addGear(inner: THREE.Object3D, mixer: THREE.AnimationMixer, aim?: THREE
 }
 
 
-export interface Who { id: number; cls?: string; kind?: string; weapon?: string; helmet?: string; gear?: string[] }
+export interface Who { id: number; cls?: string; kind?: string; weapon?: string; helmet?: string; gear?: string[]; sec?: string; grenades?: number; mags?: number }
 const TONES = [0xffffff, 0xc89a78, 0x9a6a4a, 0xe2b48f];
 /** Детали внешности и экипировки: лицо, шлем, знаки класса; у пришельцев — светящиеся глаза, шипы, пластины. Позиции в системе модели, привязка к костям. */
 function dressCharacter(inner: THREE.Object3D, mixer: THREE.AnimationMixer, pose: THREE.AnimationAction | undefined, name: ModelName, who: Who) {
@@ -226,6 +227,13 @@ function dressCharacter(inner: THREE.Object3D, mixer: THREE.AnimationMixer, pose
     if (gset.includes('grenrig')) for (const x of [-0.22, -0.07, 0.08, 0.23]) { const g = put(sph(0.065), std(0x2f4a23, 0.6), x, hc.y - 0.8, 0.3, torso); g.scale.y = 1.25; }
     if (gset.includes('smokerig')) for (let i = 0; i < 3; i++) put(cyl(0.045, 0.2, 8), std([0xcfd3d6, 0xcfd3d6, 0xe03a3a][i], 0.6), -0.36 + i * 0.07, hc.y - 0.5, 0.26, torso);
     if (gset.includes('ifak')) put(box(0.16, 0.2, 0.1), std(0xc42a2a, 0.7), -0.37, 0.5, 0.0, hips);
+    // снаряжение на теле: запасное оружие (кобура на бедре или за спиной), магазины на поясе, гранаты на разгрузке
+    if (who.sec) {
+      if (catOf(who.sec) === 'pistol' || /pistol|revolver/i.test(who.sec)) { put(box(0.13, 0.3, 0.2), std(0x1b1d1a, 0.8), 0.37, 0.1, 0.0, hips); put(box(0.06, 0.12, 0.14), std(0x3a3d42, 0.5, 0.5), 0.37, 0.3, 0.0, hips); }
+      else { put(box(0.1, 0.12, 0.9), std(0x25282a, 0.6, 0.4), -0.14, hc.y - 0.7, -0.4, torso, [0.0, 0.0, 0.5]); put(box(0.07, 0.07, 0.3), std(0x15171a, 0.5), -0.14, hc.y - 0.7, -0.95, torso, [0, 0, 0.5]); }
+    }
+    for (let i = 0; i < Math.min(3, who.mags ?? 2); i++) put(box(0.11, 0.17, 0.08), std(0x23271c, 0.9), -0.2 + i * 0.13, 0.5, 0.3, hips);
+    for (let i = 0; i < Math.min(3, who.grenades ?? 0); i++) { const g2 = put(sph(0.065), std(0x2f4a23, 0.6), 0.1 + i * 0.12, hc.y - 0.78, 0.31, torso); g2.scale.y = 1.25; }
     if (gset.includes('flask')) put(cyl(0.06, 0.2, 10), std(0x5a6a3a, 0.7), 0.3, 0.42, -0.25, hips);
     if (gset.includes('sling')) put(box(0.06, 0.8, 0.04), std(0x1b1d1a, 0.8), 0.06, hc.y - 0.55, 0.28, torso, [0, 0, 0.7]);
     if (gset.includes('headset')) put(cyl(0.012, 0.35, 4), std(0x15171a), hc.x + 0.32, hc.y + 0.2, hc.z - 0.15, head);
@@ -403,6 +411,11 @@ export function applyTwoHands(sp: Spawned) {
     sp.obj.updateMatrixWorld(true);
     reachArm(sp.inner, sp.rigL, sp.ags.hl.getWorldPosition(new THREE.Vector3()));
     reachArm(sp.inner, sp.rigR, sp.ags.hr.getWorldPosition(new THREE.Vector3()));
+  } else if (sp.oneHand && sp.rigL) { // свободная рука опущена вдоль тела
+    sp.obj.updateMatrixWorld(true);
+    const S = sp.rigL.upper.getWorldPosition(new THREE.Vector3()), L = S.distanceTo(sp.rigL.lower.getWorldPosition(new THREE.Vector3())) * 2;
+    const q = sp.inner.getWorldQuaternion(new THREE.Quaternion());
+    reachArm(sp.inner, sp.rigL, S.clone().add(new THREE.Vector3(0.12 * L, -0.92 * L, 0.1 * L).applyQuaternion(q)));
   } else if (sp.grip && sp.rigL && sp.grip.node.visible) {
     reachArm(sp.inner, sp.rigL, sp.grip.node.localToWorld(sp.grip.local.clone()));
   }
@@ -439,6 +452,7 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   // оружие в руках: детали, хват второй рукой; АГС — отдельная станковая модель
   const rigL = findArm(inner, 'L') ?? undefined, rigR = findArm(inner, 'R') ?? undefined;
   let grip: Spawned['grip'], agsRig: Spawned['ags'];
+  const oneHand = name === 'Soldier' && (['Pistol', 'Revolver', 'Revolver_Small'].includes(weapon) || catOf(who?.weapon ?? '') === 'pistol'); // пистолет — одной рукой
   if (name === 'Soldier' && (weapon === 'AGS' || weapon === 'MORTAR')) {
     const a = weapon === 'AGS' ? makeAgs() : makeMortar(); a.g.scale.setScalar(height / 1.8); a.g.position.z = (weapon === 'AGS' ? 0.35 : 0.2) * height / 1.8; obj.add(a.g);
     agsRig = { hl: a.hl, hr: a.hr };
@@ -461,7 +475,7 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
         addWeaponParts(node, mounted ? 'mounted' : weapon, f, mounted ? { mag: att?.mag } : att);
         const local = f.hl.clone(); local[f.la] = Math.max(f.bb.min[f.la], Math.min(f.bb.max[f.la], f.hl[f.la] + f.mz * f.len * 0.38)); // хват впереди, на цевье
         local[f.ha] = f.ctr[f.ha] - f.up * f.size[f.ha] * 0.1;
-        grip = { node, local };
+        if (!oneHand) grip = { node, local };
       }
       if (act) act.stop();
     }
@@ -469,5 +483,5 @@ export function spawnModel(name: ModelName, height: number, tint?: number, weapo
   const arms: THREE.Object3D[] = [];
   inner.traverse(o => { if (/^UpperArm[._]?[LR]$/.test(o.name)) arms.push(o); });
   const neck = inner.getObjectByName('Neck') ?? undefined, torso = inner.getObjectByName('Torso') ?? undefined;
-  return { obj, inner, mixer, actions, arms, mod: [...arms, ...(rigL ? [rigL.lower] : []), ...(rigR && agsRig ? [rigR.lower] : []), ...(neck ? [neck] : []), ...(torso ? [torso] : [])], neck, torso, look: 0, body: 0, rigL, rigR, grip, ags: agsRig, baseScale: inner.scale.x, armed: !!weapon };
+  return { obj, inner, mixer, actions, arms, mod: [...arms, ...(rigL ? [rigL.lower] : []), ...(rigR && agsRig ? [rigR.lower] : []), ...(neck ? [neck] : []), ...(torso ? [torso] : [])], neck, torso, look: 0, body: 0, rigL, rigR, grip, oneHand, ags: agsRig, baseScale: inner.scale.x, armed: !!weapon };
 }

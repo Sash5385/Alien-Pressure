@@ -8,7 +8,7 @@ import type { ArmorId, WeaponId } from './game/types';
 
 
 /** Боец в 3D для экрана снаряжения: форма, разгрузка, броня и оружие видны на фигуре; вращается мышью или пальцем. */
-export function SoldierView({ weapon, armor, width, height, helmet, gear }: { weapon: WeaponId; armor: ArmorId; width: number; height: number; helmet?: string; gear?: string[] }) {
+export function SoldierView({ weapon, armor, width, height, helmet, gear, sec, grenades, mags }: { weapon: WeaponId; armor: ArmorId; width: number; height: number; helmet?: string; gear?: string[]; sec?: string; grenades?: number; mags?: number }) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = host.current;
@@ -37,7 +37,7 @@ export function SoldierView({ weapon, armor, width, height, helmet, gear }: { we
     let mixer: THREE.AnimationMixer | null = null;
     void loadModels(false).then(() => {
       if (dead) return;
-      const sp = spawnModel('Soldier', 1.8, undefined, nodeOf(weapon), armor, undefined, { id: 1, cls: 'rifleman', kind: 'Soldier', weapon, helmet, gear });
+      const sp = spawnModel('Soldier', 1.8, undefined, nodeOf(weapon), armor, undefined, { id: 1, cls: 'rifleman', kind: 'Soldier', weapon, helmet, gear, sec, grenades, mags });
       if (!sp) return;
       sp.actions.get('Idle')?.play();
       sp.mixer.update(0);
@@ -53,6 +53,6 @@ export function SoldierView({ weapon, armor, width, height, helmet, gear }: { we
       scene.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) { m.geometry?.dispose(); } });
       el.removeChild(renderer.domElement);
     };
-  }, [weapon, armor, width, height, helmet, (gear ?? []).join()]);
+  }, [weapon, armor, width, height, helmet, (gear ?? []).join(), sec, grenades, mags]);
   return <div ref={host} style={{ width, height, touchAction: 'pan-y', cursor: 'grab' }} title="Потягни, щоб повернути" />;
 }

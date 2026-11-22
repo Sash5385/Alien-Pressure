@@ -232,7 +232,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
               </svg>
               <div style={{ display: 'grid', gridTemplateRows: 'repeat(4,minmax(0,1fr))', gap: 8, position: 'relative' }}>{L.map(([k, lab, val, ic]) => node(k, lab, val, 'l', ic))}</div>
               <div style={{ display: 'grid', justifyItems: 'center', alignContent: 'center' }}>
-                <SoldierView weapon={s.weapon} armor={s.armor} helmet={s.helmet} gear={s.gear} width={narrow ? 130 : 210} height={narrow ? 250 : 400} />
+                <SoldierView weapon={s.weapon} armor={s.armor} helmet={s.helmet} gear={s.gear} sec={s.sec} grenades={grenades} mags={2} width={narrow ? 130 : 210} height={narrow ? 250 : 400} />
               </div>
               <div style={{ display: 'grid', gridTemplateRows: 'repeat(4,minmax(0,1fr))', gap: 8, position: 'relative' }}>{Rr.map(([k, lab, val, ic], i) => node(k, lab, val, 'r', i === 0 ? weaponIcon(s.weapon) ?? '⌖' : ic))}{node(null, 'Боєкомплект', ammoVal, 'r', '▮')}</div>
             </div>
