@@ -4,6 +4,7 @@ import { LOCATIONS } from './game/locations';
 import { ACH, emptyStats } from './game/achievements';
 import { weaponIcon } from './render/models';
 import { Arsenal } from './Arsenal';
+import { Equip, type EquipTab } from './Equip';
 import { ATT, setSec, setHelmet, toggleAtt, toggleGearItem, unlockGear, type AttId } from './game/campaign';
 import { chooseOption, sandboxMission, setMapSize, setLoc, setRt, buy, choosePerk, COST, DEPLOY, equip, heal, setClass, maxHpOf, MAX_ROSTER, OBJECTIVE_NAME, recruit, TECH_INFO, unlock, type Campaign } from './game/campaign';
 import { BIOME_NAME, DIFF } from './game/difficulty';
@@ -34,6 +35,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
   const [worldMap, setWorldMap] = useState(false);
   const [achOpen, setAchOpen] = useState(false);
   const [arsenal, setArsenal] = useState<'weapon' | 'sec' | null>(null);
+  const [equipTab, setEquipTab] = useState<EquipTab | null>(null);
   const [open, setOpen] = useState<'weapon' | 'armor' | 'helm' | 'gear' | 'cls' | 'att' | 'sec' | null>(null);
   const narrow = typeof window !== 'undefined' && window.innerWidth < 600;
   const ids = deploy.filter(id => c.roster.some(s => s.id === id));
@@ -144,6 +146,9 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         {c.mapSize >= 640 && <button style={{ ...btn(worldMap), padding: '8px 10px', fontSize: 13 }} onClick={() => setWorldMap(true)}>🗺 Карта світу ({(c.cleared ?? []).length}/{LOCATIONS.length})</button>}
         </div>
       </div>
+      {equipTab && (() => { const sd = c.roster.find(x => x.id === selId) ?? c.roster[0]; if (!sd) return null; return <Equip c={c} soldier={sd} tab={equipTab} onClose={() => setEquipTab(null)}
+        onEquip={(kind, id) => act(cc => kind === 'helm' ? setHelmet(cc, sd.id, id) : kind === 'armor' ? equip(cc, sd.id, 'armor', id) : toggleGearItem(cc, sd.id, id))}
+        onBuy={(kind, id) => act(cc => unlockGear(cc, kind === 'helm' ? 'helmet' : kind, id))} />; })()}
       {arsenal && (() => { const sd = c.roster.find(x => x.id === selId) ?? c.roster[0]; if (!sd) return null; return <Arsenal c={c} soldier={sd} mode={arsenal} onClose={() => setArsenal(null)} onPick={id => { act(cc => arsenal === 'weapon' ? equip(cc, sd.id, 'weapon', id!) : setSec(cc, sd.id, id)); if (id) setArsenal(null); }} onBuy={id => act(cc => unlock(cc, 'weapon', id))} />; })()}
       {achOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(8,14,28,.9)', overflow: 'auto', padding: 14 }} onClick={() => setAchOpen(false)}>
@@ -200,7 +205,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         const hp = Math.max(1, max - s.hpLoss), kgTot = Math.round((w.kg + ar.kg + (HELMETS[s.helmet ?? 'none']?.kg ?? 0) + (s.gear ?? []).reduce((a2, g) => a2 + (GEARS[g]?.kg ?? 0), 0)) * 10) / 10;
         // слот-вузол: скошені кути, світиться, коли відкритий
         const node = (k: K | null, lab: string, val: string, side: 'l' | 'r', icon?: string) => (
-          <button key={lab} disabled={!k} onClick={() => k && setOpen(open === k ? null : k)}
+          <button key={lab} disabled={!k} onClick={() => { if (k === 'helm' || k === 'armor' || k === 'gear') setEquipTab(k); else if (k) setOpen(open === k ? null : k); }}
             style={{ textAlign: side === 'l' ? 'left' : 'right', padding: narrow ? '5px 6px' : '6px 9px', border: `1px solid ${open === k && k ? HN.accent : HN.accent + '88'}`, background: open === k && k ? '#0a4a7acc' : '#06203acc', color: HN.fg, cursor: k ? 'pointer' : 'default', font: 'inherit', width: '100%', height: '100%', minWidth: 0, display: 'grid', alignContent: 'center',
               clipPath: side === 'l' ? 'polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))' : 'polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)', boxShadow: open === k && k ? `0 0 14px ${HN.accent}88` : 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: side === 'l' ? 'flex-start' : 'flex-end', fontSize: narrow ? 8 : 9, flexWrap: 'wrap', letterSpacing: narrow ? '.04em' : '.2em', textTransform: 'uppercase', color: HN.accent }}>
