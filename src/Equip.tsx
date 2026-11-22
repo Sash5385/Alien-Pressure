@@ -51,8 +51,23 @@ function Icon({ kind, id, size = 72 }: { kind: EquipTab; id: string; size?: numb
       </svg>
     );
   }
-  const d = GEARS[id];
-  return <div style={{ width: size, height: size, display: 'grid', placeItems: 'center', fontSize: size * 0.55 }} aria-hidden="true">{d?.icon}</div>;
+  const L = line, dark = '#2b3022', red = '#c42a2a';
+  const G: Record<string, React.ReactElement> = {
+    kneepads: <>{[22, 42].map(x => <g key={x}><rect x={x - 8} y="8" width="16" height="22" rx="4" fill="#3a3f45" stroke={L} /><ellipse cx={x} cy="40" rx="12" ry="10" fill="#23282a" stroke={L} strokeWidth="1.5" /><path d={`M${x - 8} 40 H${x + 8}`} stroke="#5a6068" /><rect x={x - 8} y="48" width="16" height="10" rx="3" fill="#3a3f45" stroke={L} /></g>)}</>,
+    pouches: <>{[10, 25, 40].map(x => <g key={x}><rect x={x} y="22" width="14" height="26" rx="2" fill={dark} stroke={L} /><rect x={x} y="22" width="14" height="8" rx="2" fill="#3a4630" stroke={L} /><rect x={x + 5} y="27" width="4" height="4" fill="#9aa4ae" /></g>)}</>,
+    backpack: <><rect x="14" y="10" width="36" height="46" rx="8" fill="#3a4a2c" stroke={L} strokeWidth="1.5" /><rect x="20" y="30" width="24" height="18" rx="3" fill="#2f3a24" stroke={L} /><path d="M20 10 V4 M44 10 V4" stroke={L} strokeWidth="3" /><path d="M32 30 V48" stroke={L} /></>,
+    grenrig: <>{[12, 26, 40].map(x => <g key={x}><ellipse cx={x + 6} cy="36" rx="7" ry="10" fill="#2f4a23" stroke={L} strokeWidth="1.5" /><rect x={x + 3} y="22" width="6" height="5" fill="#9aa4ae" stroke={L} /><path d={`M${x + 6} 24 q6 -6 8 -2`} stroke="#d8d8d8" fill="none" /></g>)}<path d="M6 52 H58" stroke={L} strokeWidth="3" /></>,
+    smokerig: <>{[0, 1, 2].map(i => <g key={i}><rect x={13 + i * 13} y="16" width="10" height="34" rx="3" fill="#cfd3d6" stroke={L} /><rect x={13 + i * 13} y="16" width="10" height="7" fill={i === 2 ? red : '#8a929a'} stroke={L} /></g>)}</>,
+    ifak: <><rect x="10" y="16" width="44" height="32" rx="5" fill="#2f3a24" stroke={L} strokeWidth="1.5" /><rect x="28" y="22" width="8" height="20" fill={red} /><rect x="22" y="28" width="20" height="8" fill={red} /></>,
+    tourniquet: <><rect x="22" y="6" width="20" height="52" rx="8" fill="#c98e6b" stroke={L} /><rect x="20" y="24" width="24" height="14" rx="3" fill={red} stroke={L} /><path d="M32 6 V24" stroke="none" /><rect x="29" y="14" width="6" height="26" fill="#111" opacity=".55" /></>,
+    gloves: <><path d="M14 56 V30 q0 -6 5 -6 q3 -14 6 -2 l2 -14 q4 -2 5 6 l1 -8 q4 -1 4 6 l1 -3 q4 0 4 6 V40 q0 16 -12 16 Z" fill="#1b1d1a" stroke="#5a6068" strokeWidth="1.5" /><path d="M20 44 H46" stroke="#5a6068" /></>,
+    goggles: <><path d="M6 24 H58 V40 H6 Z" fill="none" /><rect x="8" y="22" width="22" height="20" rx="8" fill="#4a9ad0" fillOpacity=".6" stroke={L} strokeWidth="2" /><rect x="34" y="22" width="22" height="20" rx="8" fill="#4a9ad0" fillOpacity=".6" stroke={L} strokeWidth="2" /><path d="M30 30 H34 M2 30 H8 M56 30 H62" stroke={L} strokeWidth="3" /></>,
+    laser: <><rect x="8" y="24" width="30" height="16" rx="3" fill="#2a2e32" stroke={L} strokeWidth="1.5" /><circle cx="40" cy="32" r="5" fill="#ff3b3b" stroke={L} /><path d="M45 32 H62" stroke="#ff3b3b" strokeWidth="2" /><rect x="14" y="28" width="8" height="4" fill="#5a6068" /></>,
+    headset: <><path d="M12 38 C12 10 52 10 52 38" fill="none" stroke="#2a2e32" strokeWidth="5" /><rect x="6" y="32" width="12" height="20" rx="5" fill="#33373d" stroke={L} strokeWidth="1.5" /><rect x="46" y="32" width="12" height="20" rx="5" fill="#33373d" stroke={L} strokeWidth="1.5" /><path d="M50 52 q-4 6 -14 6" stroke={L} strokeWidth="2" fill="none" /><circle cx="35" cy="58" r="2.5" fill="#9aa4ae" /></>,
+    flask: <><rect x="22" y="6" width="20" height="8" rx="2" fill="#2a2e32" stroke={L} /><path d="M20 16 H44 V54 q0 6 -6 6 H26 q-6 0 -6 -6 Z" fill="#5a6a3a" stroke={L} strokeWidth="1.5" /><rect x="20" y="26" width="24" height="16" fill="#3a4630" /></>,
+    sling: <><path d="M10 6 L54 58" stroke="#1b1d1a" strokeWidth="7" /><path d="M10 6 L54 58" stroke="#5a6068" strokeWidth="1" strokeDasharray="3 3" /><rect x="44" y="46" width="14" height="10" rx="2" fill="#9aa4ae" stroke={L} /></>,
+  };
+  return <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden="true">{G[id] ?? <text x="32" y="42" textAnchor="middle" fontSize="28">{GEARS[id]?.icon}</text>}</svg>;
 }
 
 const sign = (n: number) => (n > 0 ? '+' : '') + n;
