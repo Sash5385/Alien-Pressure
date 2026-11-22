@@ -115,7 +115,7 @@ export function weaponIcon(wid: string): string | null {
     const g = gunForWeapon(wid); if (!g) return null;
     const box = new THREE.Box3().setFromObject(g), sz = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
     const k = 3.1 / Math.max(sz.x, sz.y * 2.2); g.scale.setScalar(k); g.position.set(-ctr.x * k, -ctr.y * k, 0); g.rotation.y = -0.3;
-    g.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) (Array.isArray(m.material) ? m.material : [m.material]).forEach(mm => { const s = mm as THREE.MeshStandardMaterial; if (s.color) s.color.multiplyScalar(1.6); }); });
+    g.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) (Array.isArray(m.material) ? m.material : [m.material]).forEach(mm => { const s = mm as THREE.MeshStandardMaterial; if (s.color) s.color.multiplyScalar(1.6).lerp(new THREE.Color(0xc8d4e0), 0.62); if ('metalness' in s) s.metalness = Math.min(s.metalness, 0.15); }); });
     isc!.add(g); ir.render(isc!, icam!); const url = ir.domElement.toDataURL('image/png'); isc!.remove(g);
     icons.set(wid, url); return url;
   } catch { return null; }

@@ -209,7 +209,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
             style={{ textAlign: side === 'l' ? 'left' : 'right', padding: narrow ? '5px 6px' : '6px 9px', border: `1px solid ${open === k && k ? HN.accent : HN.accent + '88'}`, background: open === k && k ? '#0a4a7acc' : '#06203acc', color: HN.fg, cursor: k ? 'pointer' : 'default', font: 'inherit', width: '100%', height: '100%', minWidth: 0, display: 'grid', alignContent: 'center',
               clipPath: side === 'l' ? 'polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))' : 'polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)', boxShadow: open === k && k ? `0 0 14px ${HN.accent}88` : 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: side === 'l' ? 'flex-start' : 'flex-end', fontSize: narrow ? 8 : 9, flexWrap: 'wrap', letterSpacing: narrow ? '.04em' : '.2em', textTransform: 'uppercase', color: HN.accent }}>
-              {icon && (icon.startsWith('data:') ? <img src={icon} alt="" style={{ width: 28, height: 14, objectFit: 'contain', filter: 'brightness(2.2)' }} /> : <span style={{ fontSize: 12 }}>{icon}</span>)}{lab}
+              {icon && (icon.startsWith('data:') ? <img src={icon} alt="" style={{ width: 28, height: 14, objectFit: 'contain', filter: 'drop-shadow(0 0 2px rgba(25,211,255,.6))' }} /> : <span style={{ fontSize: 12 }}>{icon}</span>)}{lab}
             </div>
             <b style={{ fontSize: narrow ? 12 : 14, lineHeight: 1.1, display: 'block', overflowWrap: 'anywhere' }}>{val}</b>
           </button>

@@ -36,7 +36,7 @@ export function Arsenal({ c, soldier, mode, onPick, onBuy, onClose }: {
             const w = WEAPONS[id], have = owned(id), on = cur === id, ic = weaponIcon(id), sp = SPEC[id];
             return (
               <div key={id} style={{ ...panel, padding: 8, display: 'grid', gap: 3, justifyItems: 'center', textAlign: 'center', outline: on ? '2px solid #7ee0ff' : undefined, opacity: have ? 1 : 0.75 }} title={w.desc}>
-                {ic ? <img src={ic} alt="" style={{ width: 128, height: 64, objectFit: 'contain', filter: 'brightness(2) drop-shadow(0 0 2px rgba(255,255,255,.6))' }} /> : <div style={{ height: 64, fontSize: 30 }}>🔫</div>}
+                {ic ? <img src={ic} alt="" style={{ width: '100%', height: 84, objectFit: 'contain', filter: 'drop-shadow(0 0 3px rgba(25,211,255,.55))' }} /> : <div style={{ height: 64, fontSize: 30 }}>🔫</div>}
                 <b style={{ fontSize: 13 }}>{w.name}</b>
                 <span style={{ fontSize: 10, opacity: 0.7 }}>{sp ? `${sp.caliber} · ${sp.finish}${sp.scope ? ' · приціл' : ''}${sp.supp ? ' · глушник' : ''}${sp.bipod ? ' · сошки' : ''}` : 'базова'}</span>
                 <span style={{ fontSize: 11 }}>🎯{w.aim} · 💥{w.dmg[0]}–{w.dmg[1]} · ▮{w.ammo} · ↔{w.falloffFrom}/{w.range} · {w.kg} кг</span>
