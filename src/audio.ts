@@ -22,6 +22,7 @@ let amb: { src: AudioBufferSourceNode; gain: GainNode; base: number } | null = n
 
 /** Фоновый звук локации и погоды: дождь, ветер в лесу, вода у реки, гул руин. */
 export function setAmbient(kind: 'rain' | 'wind' | 'water' | 'drone' | null) {
+  if (kind === 'drone') kind = null; // постійний гул у руїнах прибрано
   if (amb) { try { amb.src.stop(); } catch { /* уже остановлен */ } amb.src.disconnect(); amb = null; }
   if (!kind) return;
   const c = ac();
@@ -203,9 +204,11 @@ export function setLife(night: number, on = true) {
 
 // ——— адаптивная музыка: тихий пад и пульс напряжения ———
 let mus: { pad: GainNode[]; pulse: GainNode; hiss: GainNode; stop: () => void } | null = null, tension = 0, tensionNow = 0;
+/** Фонова музика (падовий гул) вимкнена за побажанням гравця; true → false, щоб повернути. */
+const MUSIC_OFF = ['off'].length > 0;
 export function startMusic() {
-  musicWanted = true;
-  if (mus || muted) return;
+  musicWanted = false;
+  if (MUSIC_OFF || mus || muted) return; // фонову музику (гул) вимкнено
   const c = ac(); if (!c || !bus) return;
   const out = c.createGain(); out.gain.value = 0.0; out.gain.linearRampToValueAtTime(0.5, c.currentTime + 4); out.connect(bus);
   const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.connect(out);
