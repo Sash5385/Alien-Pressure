@@ -96,8 +96,8 @@ export function explosionFx(add: Particles, norm: Particles, x: number, y: numbe
 
 /** Безперервне горіння клітинки: язики полум'я, жар і дим (викликати щокадру з часткою dt). */
 export function fireEmit(add: Particles, norm: Particles, x: number, y: number, z: number, dt: number) {
-  const n = Math.random() < dt * 34 ? 1 + (Math.random() < 0.4 ? 1 : 0) : 0;
-  for (let i = 0; i < n; i++) add.spawn({ x: x + rnd(-0.32, 0.32), y: y + 0.05, z: z + rnd(-0.32, 0.32), vx: rnd(-0.1, 0.1), vy: rnd(1.2, 2.2), vz: rnd(-0.1, 0.1), size: rnd(0.2, 0.34), grow: -0.7, life: rnd(0.45, 0.8), c0: 0xffa030, c1: 0x8a1400, drag: 1.5, buoy: 0.6, wind: 1.2, a: 0.55 });
+  const n = Math.floor(dt * 60 + Math.random()); // ~60 язиків за секунду — суцільне полум'я
+  for (let i = 0; i < n; i++) add.spawn({ x: x + rnd(-0.3, 0.3), y: y + 0.05, z: z + rnd(-0.3, 0.3), vx: rnd(-0.1, 0.1), vy: rnd(1.2, 2.2), vz: rnd(-0.1, 0.1), size: rnd(0.24, 0.4), grow: -0.75, life: rnd(0.45, 0.8), c0: 0xffa030, c1: 0x8a1400, drag: 1.5, buoy: 0.6, wind: 1.2, a: 0.55 });
   if (Math.random() < dt * 5) add.spawn({ x: x + rnd(-0.3, 0.3), y: y + 0.3, z: z + rnd(-0.3, 0.3), vx: rnd(-0.4, 0.4), vy: rnd(2, 3.5), vz: rnd(-0.4, 0.4), size: 0.06, grow: -0.5, life: rnd(0.8, 1.4), c0: 0xffe080, c1: 0xff5010, drag: 0.8, wind: 1.5 }); // жарини
   if (Math.random() < dt * 4) norm.spawn({ x: x + rnd(-0.2, 0.2), y: y + 0.9, z: z + rnd(-0.2, 0.2), vx: 0, vy: rnd(0.6, 1.1), vz: 0, size: 0.4, grow: 2.2, life: rnd(2.2, 3.2), c0: 0x2e2a26, c1: 0x7a7672, drag: 0.6, wind: 1.2, a: 0.35 });
 }
