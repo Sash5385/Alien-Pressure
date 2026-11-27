@@ -18,6 +18,7 @@ import { SMOKE, SMOKE_IDS, smokeCount } from './game/smoke';
 import { isMusicOn, setMusicOn, setTension, startMusic, stopMusic } from './audio';
 import { Tutorial, resetTutorial } from './Tutorial';
 import { actOf } from './game/story';
+import { Help } from './Help';
 import { bagOf, bagUsed, canSwap, capOf, encumbrance, loadOf, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
@@ -89,6 +90,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const view = useRef<GameView | null>(null);
   const [, rerender] = useReducer(n => n + 1, 0);
   const [tutKey, setTutKey] = useState(0);
+  const [help, setHelp] = useState(false);
   const [brief, setBrief] = useState(() => initial.turnNo === 1 && initial.log.length <= 4 && !(initial.rt && initial.rt.clock > 1));
   useEffect(() => { if (brief && state.current.rt) state.current.rt.paused = true; }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -553,6 +555,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
+      {help && <Help onClose={() => setHelp(false)} />}
       {brief ? (() => { const a = actOf(s.missionNo); return (
         <div role="dialog" aria-label="Брифінг" style={{ position: 'fixed', inset: 0, zIndex: 40, display: 'grid', placeItems: 'center', background: 'rgba(22,33,58,.55)', padding: 16 }}>
           <div style={{ background: '#fff', color: '#16213a', border: '4px solid #16213a', borderRadius: 16, boxShadow: '0 6px 0 #16213a', padding: 16, maxWidth: 440, display: 'grid', gap: 10, fontFamily: "'Onest',system-ui,sans-serif" }}>
@@ -707,6 +710,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
               </div>
             </div>
             <button style={nb(edit, false)} onClick={() => { setEdit(true); setMore(false); setSelKey(null); }}>Налаштувати кнопки</button>
+            <button style={nb(false, false)} onClick={() => { setHelp(true); setMore(false); }}>📖 Довідка: як усе працює</button>
             <button style={nb(false, false)} onClick={() => { resetTutorial(); setTutKey(k => k + 1); setMore(false); }}>Повторити навчання</button>
             <button style={nb(false, false)} onClick={() => { try { localStorage.removeItem('ap_btnpos'); } catch { /* */ } setBtnEpoch(n => n + 1); }}>Скинути позиції кнопок</button>
             <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палець — рухати карту, 2 — обертати, щипок — масштаб, довге натискання — повернути бійця. Довге натискання на кнопці — перемістити її.' : 'ЛКМ із затисканням — рухати карту, ПКМ із затисканням — обертати, колесо — масштаб, затиснуте колесо — пауза (в реальному часі). Клік ПКМ — повернути бійця.'}</div>

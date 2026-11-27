@@ -1308,7 +1308,23 @@ void main(){
     this.rigs.set(u.id, sp);
     this.play(u.id, 'Idle');
     this.addBlob(sp.obj);
+    if (u.team === 'alien') this.addBadge(sp.obj, u.kind, height);
     return sp.obj;
+  }
+
+  /** Значок типу над пришельцем: видно з будь-якої камери, кого бити першим. */
+  private badgeTex = new Map<string, THREE.Texture>();
+  private addBadge(o: THREE.Object3D, kind: string, h: number) {
+    let t = this.badgeTex.get(kind);
+    if (!t) {
+      const [g, col] = ({ trooper: ['⚔', '#2f8f3a'], sniper: ['◎', '#0f7f74'], heavy: ['▣', '#6a6a10'], psi: ['✦', '#7a3fd0'], commander: ['★', '#c0392b'] } as Record<string, [string, string]>)[kind] ?? ['?', '#333'];
+      const cv = document.createElement('canvas'); cv.width = cv.height = 64; const c = cv.getContext('2d')!;
+      c.beginPath(); c.arc(32, 32, 27, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill(); c.lineWidth = 6; c.strokeStyle = '#16213a'; c.stroke();
+      c.fillStyle = col; c.font = 'bold 34px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(g, 32, 34);
+      t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; this.badgeTex.set(kind, t);
+    }
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
+    sp.scale.setScalar(0.34); sp.position.y = h + 0.32; sp.renderOrder = 5; o.add(sp);
   }
 
   /** Мягкая тень-пятно под юнитом — «привязывает» его к земле. */

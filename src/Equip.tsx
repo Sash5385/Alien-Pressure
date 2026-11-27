@@ -118,7 +118,7 @@ export function Equip({ c, soldier, tab: t0, onEquip, onBuy, onClose }: {
                 style={{ ...panel, padding: 8, textAlign: 'center', cursor: 'pointer', font: 'inherit', color: HN.fg, display: 'grid', gap: 3, justifyItems: 'center', alignContent: 'start', background: it.on ? HN.sel : '#fff', opacity: it.own ? 1 : 0.8 }}>
                 <Icon kind={tab} id={it.id} />
                 <b style={{ fontSize: 13, lineHeight: 1.1 }}>{it.d.name}</b>
-                <span style={{ fontSize: 10, color: HN.dim, lineHeight: 1.2 }}>{it.d.kg} кг{it.fx.length ? ' · ' + it.fx.join(' · ') : ''}</span>
+                <span style={{ fontSize: 11, color: HN.dim, lineHeight: 1.25 }}>{it.d.kg} кг{it.fx.length ? ' · ' + it.fx.join(' · ') : ''}</span>
                 <span style={{ fontSize: 11, fontWeight: 800, color: it.on ? HN.good : it.own ? HN.fg : HN.warn, letterSpacing: '.08em' }}>{it.on ? '✓ НАДЯГНУТО' : it.own ? 'НАДЯГТИ' : `КУПИТИ · ${it.d.cost} тр.`}</span>
               </button>
             ))}

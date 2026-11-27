@@ -237,7 +237,7 @@ export function Camp({ c, onChange, onStart, onMenu }: {
           <button key={lab} disabled={!k} onClick={() => { if (k === 'helm' || k === 'armor' || k === 'gear') setEquipTab(k); else if (k) setOpen(open === k ? null : k); }}
             style={{ textAlign: side === 'l' ? 'left' : 'right', padding: narrow ? '5px 6px' : '6px 9px', border: `3px solid ${HN.line}`, borderRadius: 12, background: open === k && k ? HN.sel : HN.solid, color: HN.fg, cursor: k ? 'pointer' : 'default', font: 'inherit', width: '100%', height: '100%', minWidth: 0, display: 'grid', alignContent: 'center',
               boxShadow: `0 3px 0 ${HN.line}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: side === 'l' ? 'flex-start' : 'flex-end', fontSize: narrow ? 8 : 9, flexWrap: 'wrap', letterSpacing: narrow ? '.04em' : '.2em', textTransform: 'uppercase', color: HN.dim }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: side === 'l' ? 'flex-start' : 'flex-end', fontSize: narrow ? 10 : 11, flexWrap: 'wrap', letterSpacing: narrow ? '.04em' : '.2em', textTransform: 'uppercase', color: HN.dim }}>
               {icon && (icon.startsWith('data:') ? <img src={icon} alt="" style={{ width: 28, height: 14, objectFit: 'contain', filter: 'none' }} /> : <span style={{ fontSize: 12 }}>{icon}</span>)}{lab}
             </div>
             <b style={{ fontSize: narrow ? 12 : 14, lineHeight: 1.1, display: 'block', overflowWrap: 'anywhere' }}>{val}</b>
