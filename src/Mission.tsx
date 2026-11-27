@@ -17,6 +17,7 @@ import { kickDoor, nearDoor, openQuiet } from './game/doors';
 import { SMOKE, SMOKE_IDS, smokeCount } from './game/smoke';
 import { isMusicOn, setMusicOn, setTension, startMusic, stopMusic } from './audio';
 import { Tutorial, resetTutorial } from './Tutorial';
+import { actOf } from './game/story';
 import { bagOf, bagUsed, canSwap, capOf, encumbrance, loadOf, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
@@ -88,6 +89,8 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const view = useRef<GameView | null>(null);
   const [, rerender] = useReducer(n => n + 1, 0);
   const [tutKey, setTutKey] = useState(0);
+  const [brief, setBrief] = useState(() => initial.turnNo === 1 && initial.log.length <= 4 && !(initial.rt && initial.rt.clock > 1));
+  useEffect(() => { if (brief && state.current.rt) state.current.rt.paused = true; }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let dead = false;
@@ -550,7 +553,16 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
-      <Tutorial key={tutKey} s={s} narrow={narrow} force={tutKey > 0} />
+      {brief ? (() => { const a = actOf(s.missionNo); return (
+        <div role="dialog" aria-label="Брифінг" style={{ position: 'fixed', inset: 0, zIndex: 40, display: 'grid', placeItems: 'center', background: 'rgba(22,33,58,.55)', padding: 16 }}>
+          <div style={{ background: '#fff', color: '#16213a', border: '4px solid #16213a', borderRadius: 16, boxShadow: '0 6px 0 #16213a', padding: 16, maxWidth: 440, display: 'grid', gap: 10, fontFamily: "'Onest',system-ui,sans-serif" }}>
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#4a5a7a' }}>Брифінг · місія {s.missionNo}</span>
+            <b style={{ fontSize: 18 }}>{a.title}</b>
+            <span style={{ fontSize: 14, lineHeight: 1.4 }}>{a.text}</span>
+            <span style={{ fontSize: 14, lineHeight: 1.4, fontWeight: 700 }}>{s.log[0]}</span>
+            <button style={{ border: '3px solid #16213a', borderRadius: 12, background: '#ffe14d', color: '#16213a', fontWeight: 900, padding: '10px', font: 'inherit', fontSize: 16, cursor: 'pointer', boxShadow: '0 4px 0 #16213a' }} onClick={() => { setBrief(false); if (s.rt) s.rt.paused = false; rerender(); }}>До бою</button>
+          </div>
+        </div>); })() : <Tutorial key={tutKey} s={s} narrow={narrow} force={tutKey > 0} />}
       {edit && (
         <div data-editbar="1" style={{ position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', padding: 8, borderRadius: 14, background: '#0b1220ee', border: '1px solid #7ee0ff', color: '#eaf2ff', fontSize: 12, maxWidth: '94vw' }}>
           <span>{selKey ? 'Тягни кнопку · розмір:' : 'Тягни будь-яку кнопку (крок 10). Тап — вибрати.'}</span>

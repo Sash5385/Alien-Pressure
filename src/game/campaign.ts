@@ -1,3 +1,4 @@
+import { FINAL_MISSION } from './story';
 import { rand } from './combat';
 import { pickTraits, ROSTER, shuffle, XP_STEPS } from './traits';
 import { CLASS_IDS } from './classes';
@@ -31,6 +32,8 @@ export interface Campaign {
   armors: ArmorId[]; // разблокированная броня
   helmets?: string[]; gears?: string[]; // разблокированные каски и обвес
   boss: boolean; // следующая миссия — с боссом
+  won?: boolean; // кампанію пройдено (фінальний бос переможений)
+  endless?: boolean; // гра триває після фіналу
   risky: boolean; // рискованная: +2 пехотинца, +3 трофея
   variant: number; // вариант обороны (DEFEND_KINDS)
   rt: boolean; // бой в реальном времени (с паузой)
@@ -171,7 +174,7 @@ const OBJS = ['clear', 'extract', 'hold', 'assassinate', 'sabotage', 'defend', '
 
 /** Карта операций: 3 разных задания; каждая 5-я миссия — босс (единственный вариант). */
 export function pickOptions(c: Campaign): MissionOption[] {
-  if (c.missionNo % 5 === 0) return [{ objective: 'assassinate', biome: pickBiome(c), boss: true, risky: false }];
+  if (c.missionNo % 5 === 0) return [{ objective: 'assassinate', biome: pickBiome(c), boss: true, risky: false }]; // боси на 5, 10 і фінал на 15
   const others = shuffle(OBJS.filter(o => o !== 'defend'), c);
   const vs = shuffle(Array.from({ length: DEFEND_KINDS.length }, (_, i) => i), c);
   // чаще всего предлагаем оборону в центре карты: два варианта из трёх
@@ -214,6 +217,7 @@ export function finishMission(c: Campaign, s: GameState, deployed: number[]) {
   if (s.status === 'won' && s.huge && s.locId !== undefined && !(c.cleared ??= []).includes(s.locId)) { c.cleared.push(s.locId); c.scrap += 3; } // перше проходження локації: +3
   if (s.status === 'won') {
     c.scrap += 3 + c.missionNo + (c.objective === 'clear' ? 0 : c.objective === 'assassinate' || c.objective === 'sabotage' ? 3 : 2) + (c.boss ? 4 : 0) + (c.risky ? 3 : 0);
+    if (c.boss && c.missionNo === FINAL_MISSION && !c.sandbox && !c.endless) c.won = true;
     c.missionNo += 1;
     c.options = pickOptions(c);
     chooseOption(c, 0);

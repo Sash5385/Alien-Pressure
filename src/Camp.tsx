@@ -15,6 +15,7 @@ import { GEARS, GEAR_SLOTS, HELMETS, type GearDef } from './game/gear';
 import { btn, cta, glass, HN, hudH, HudScreen } from './hud';
 import { SoldierView } from './SoldierView';
 import { DEFEND_KINDS } from './game/mission';
+import { actOf, FINAL_MISSION, VICTORY_TEXT } from './game/story';
 
 const HEX = 'polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)';
 const panel: React.CSSProperties = { ...glass, borderRadius: 18, padding: 14 };
@@ -49,6 +50,25 @@ export function Camp({ c, onChange, onStart, onMenu }: {
   const toggle = (id: number) =>
     setDeploy(ids.includes(id) ? ids.filter(x => x !== id) : ids.length < cap ? [...ids, id] : ids);
 
+  if (c.won && !c.endless) {
+    const kills = c.roster.reduce((a, s) => a + s.kills, 0);
+    return (
+      <HudScreen>
+        <h1 style={{ ...hudH, fontSize: 38, textAlign: 'center' }}>Перемога!</h1>
+        <div style={{ ...panel, display: 'grid', gap: 10, textAlign: 'center' }}>
+          <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4 }}>{VICTORY_TEXT}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+            {[['Місій', FINAL_MISSION], ['Вбито бійцями', kills], ['Полеглих', c.fallen.length]].map(([l, v]) => <div key={l as string} style={{ ...panel, padding: 8 }}><div style={{ fontSize: 12, color: HN.dim }}>{l}</div><b style={{ fontSize: 24 }}>{v}</b></div>)}
+          </div>
+          {c.fallen.length > 0 && <div style={{ fontSize: 13 }}>Пам’ятаємо: {c.fallen.map(f => f.name).join(', ')}</div>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <button style={cta()} onClick={() => act(x => { x.endless = true; return null; })}>Грати далі</button>
+          <button style={btn()} onClick={onMenu}>До меню</button>
+        </div>
+      </HudScreen>
+    );
+  }
   if (c.over) {
     return (
       <HudScreen>
@@ -67,6 +87,15 @@ export function Camp({ c, onChange, onStart, onMenu }: {
     <HudScreen>
       <div style={{ display: 'grid', gap: 10 }}>
         <h1 style={{ ...hudH, fontSize: 30, textAlign: 'center' }}>База</h1>
+        {!c.sandbox && (() => { const a = actOf(c.missionNo); return (
+          <div style={{ ...panel, display: 'grid', gap: 6 }}>
+            <b style={{ fontSize: 15 }}>{a.title}</b>
+            <span style={{ fontSize: 13, lineHeight: 1.35 }}>{a.text}</span>
+            {c.missionNo <= FINAL_MISSION && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${FINAL_MISSION}, minmax(0, 1fr))`, gap: 3 }} title={`Місія ${c.missionNo} з ${FINAL_MISSION}`}>
+              {Array.from({ length: FINAL_MISSION }, (_, i) => <i key={i} style={{ height: 10, borderRadius: 3, border: `2px solid ${HN.line}`, background: i + 1 < c.missionNo ? HN.good : i + 1 === c.missionNo ? HN.sel : (i + 1) % 5 === 0 ? '#ffb4a0' : '#fff' }} />)}
+            </div>}
+            {c.missionNo <= FINAL_MISSION && <span style={{ fontSize: 12, color: HN.dim }}>Місія {c.missionNo} з {FINAL_MISSION} · червоні — боси</span>}
+          </div>); })()}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, textAlign: 'center' }}>
         <span style={{ border: `4px solid ${HN.line}`, background: '#fff', boxShadow: `0 4px 0 ${HN.line}`, borderRadius: 12, padding: '3px 12px', fontWeight: 700 }}>Складність: {DIFF[c.difficulty].label}</span>
         <b style={{ border: `4px solid ${HN.line}`, background: HN.sel, borderRadius: 12, padding: '3px 12px', color: HN.fg, boxShadow: `0 4px 0 ${HN.line}` }}>{c.sandbox ? 'Пісочниця: усе відкрито' : `Трофеї: ${c.scrap}`}</b>

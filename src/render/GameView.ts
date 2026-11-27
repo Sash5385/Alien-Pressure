@@ -2504,7 +2504,7 @@ void main(){
       updateVision(s);
       const visAfter = s.units.filter(v => v.team === 'alien' && v.hp > 0 && isVisible(s, v)).length;
       // отмена доступна, пока боец не сделал ничего другого и ход не открыл новых пришельцев
-      s.undo = visAfter > visBefore || shotAt ? undefined : { ...before, fp: `${sel.x},${sel.y},${sel.ap},${sel.ammo},${sel.stance},${sel.overwatch},${s.log.length}`, vis: visAfter };
+      s.undo = s.difficulty !== 'easy' || visAfter > visBefore || shotAt ? undefined : { ...before, fp: `${sel.x},${sel.y},${sel.ap},${sel.ammo},${sel.stance},${sel.overwatch},${s.log.length}`, vis: visAfter };
       checkEnd(s);
     }
     this.syncUnits();
