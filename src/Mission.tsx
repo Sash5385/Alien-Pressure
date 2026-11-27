@@ -19,6 +19,7 @@ import { isMusicOn, setMusicOn, setTension, startMusic, stopMusic } from './audi
 import { Tutorial, resetTutorial } from './Tutorial';
 import { actOf } from './game/story';
 import { Help } from './Help';
+import { BagIcon, type BagKind } from './BagIcons';
 import { bagOf, bagUsed, canSwap, capOf, encumbrance, loadOf, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
@@ -592,22 +593,46 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       )}
       {invOpen && sel && (
         <div data-nodrag="1" style={{ position: 'absolute', top: narrow ? 92 : 64, left: narrow ? 8 : 'calc(50% - 560px)', width: narrow ? vw(94) : 280, ...nbBase, borderRadius: 16, boxShadow: OUT, padding: 10, display: 'grid', gap: 8, pointerEvents: 'auto', fontSize: 12, zIndex: 5 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b style={{ fontSize: 14 }}>🎒 {sel.name}</b><button style={{ ...nb(false), minWidth: 0, minHeight: 26, padding: '0 10px' }} onClick={() => setInvOpen(false)}>✕</button></div>
-          <div style={{ display: 'grid', gap: 4, padding: 6, borderRadius: 10, background: 'rgba(255,255,255,.07)' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{weaponIcon(sel.weapon) ? <img src={weaponIcon(sel.weapon)!} alt="" style={{ width: 76, height: 38, objectFit: 'contain', filter: 'brightness(2.2) drop-shadow(0 0 2px rgba(255,255,255,.7))' }} /> : '🔫'}<span><b>{WEAPONS[sel.weapon].name}</b><br />{sel.ammo}/{sel.maxAmmo}</span></span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b style={{ fontSize: 14 }}>🎒 {sel.name}</b><button style={{ ...nb(false), minWidth: 0, width: 36, minHeight: 30, padding: 0 }} onClick={() => setInvOpen(false)}>✕</button></div>
+          <div style={{ display: 'grid', gap: 4, padding: 6, borderRadius: 10, background: '#f1f4fa', border: '2px solid #16213a' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{weaponIcon(sel.weapon) ? <img src={weaponIcon(sel.weapon)!} alt="" style={{ width: 76, height: 38, objectFit: 'contain' }} /> : '🔫'}<span><b>{WEAPONS[sel.weapon].name}</b><br />{sel.ammo}/{sel.maxAmmo}</span></span>
             <small style={{ opacity: 0.8, fontSize: 11 }}>Ефективна дальність {sel.falloffFrom} · макс. {sel.range} · шум {sel.supp ? 5 : WEAPONS[sel.weapon].noise ?? 22} · віддача {WEAPONS[sel.weapon].recoil ?? 5}{(WEAPONS[sel.weapon].pen ?? 0) > 0 ? ` · пробиття +${WEAPONS[sel.weapon].pen}` : ''}{(sel.rec ?? 0) >= 1 ? ` · зараз −${Math.round(sel.rec!)}% влучності` : ''}</small>
             <span style={{ opacity: sel.sec ? 1 : 0.55, display: 'flex', alignItems: 'center', gap: 6 }}>{sel.sec && weaponIcon(sel.sec) ? <img src={weaponIcon(sel.sec)!} alt="" style={{ width: 76, height: 38, objectFit: 'contain', filter: 'brightness(2.2) drop-shadow(0 0 2px rgba(255,255,255,.7))' }} /> : '🎽'}{sel.sec ? <span><b>{WEAPONS[sel.sec].name}</b><br />{sel.secAmmo ?? WEAPONS[sel.sec].ammo}</span> : 'запасної зброї немає'}</span>
             {sel.sec && <button style={{ ...nb(false, !canSwap(sel)), minHeight: 30 }} disabled={!canSwap(sel)} onClick={() => act2(() => swapWeapons(s, sel))}>⇄ Змінити зброю (1 дія)</button>}
           </div>
-          <div>Рюкзак {bagUsed(sel)}/{bagOf(sel)} · аптечок {s.medkits} · матеріалів {s.mats ?? 0}</div>
           <div title="Перегруз сповільнює біг, швидше втомлює і псує влучність">Вага {loadOf(sel).toFixed(1)} / {capOf(sel)} кг{encumbrance(sel) > 0.05 ? ` · ${encumbrance(sel) > 0.6 ? 'ВАЖКО' : 'навантаження'}` : ''}
             <div style={{ height: 6, borderRadius: 4, background: '#dfe6f2', border: '1px solid #16213a', overflow: 'hidden', marginTop: 3 }}><div style={{ width: `${Math.min(100, loadOf(sel) / (capOf(sel) * 1.4) * 100)}%`, height: '100%', background: encumbrance(sel) > 0.6 ? '#ff5a4a' : encumbrance(sel) > 0.05 ? '#ffd34d' : '#6fe39a' }} /></div></div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
-            {Array.from({ length: bagOf(sel) }, (_, i) => { const kind = i < sel.mags ? 'mag' : i < sel.mags + sel.grenades ? 'gren' : null; const isSmoke = !kind && i < sel.mags + sel.grenades + smokeCount(sel); return (
-              <button key={i} disabled={!kind} title={kind ? 'Передати сусідньому бійцю або викласти на землю' : 'Порожньо'} style={{ ...nb(false, !kind), minHeight: 40, minWidth: 0, padding: 0, fontSize: 18, borderStyle: kind ? 'solid' : 'dashed' }} onClick={() => kind && act2(() => giveItem(s, sel, kind))}>{kind === 'mag' ? '▮' : kind === 'gren' ? '✹' : isSmoke ? '☁' : ''}</button>); })}
-          </div>
-          {smokeCount(sel) > 0 && <div style={{ fontSize: 11 }}>☁ Димові: {SMOKE_IDS.filter(k => (sel.smoke?.[k] ?? 0) > 0).map(k => `${SMOKE[k].name} ×${sel.smoke![k]}`).join(' · ')}</div>}
-          <div style={{ opacity: 0.7, fontSize: 11 }}>▮ магазин · ✹ граната. Натисни предмет — передати сусіду або викласти.</div>
+          {(() => { // предмети згруповано: малюнок, назва, кількість; порожні клітинки показують вільне місце
+            const groups: { key: string; kind: BagKind; name: string; n: number; color?: string; give?: 'mag' | 'gren'; tip: string }[] = [
+              ...(sel.mags > 0 ? [{ key: 'mag', kind: 'mag' as BagKind, name: 'Магазин', n: sel.mags, give: 'mag' as const, tip: `Запасні магазини: ${sel.mags}. Натисни — передати сусіду або викласти` }] : []),
+              ...(sel.grenades > 0 ? [{ key: 'gren', kind: 'gren' as BagKind, name: 'Граната', n: sel.grenades, give: 'gren' as const, tip: `Осколкові гранати: ${sel.grenades}. Натисни — передати сусіду або викласти` }] : []),
+              ...SMOKE_IDS.filter(k => (sel.smoke?.[k] ?? 0) > 0).map(k => ({ key: 'sm' + k, kind: 'smoke' as BagKind, name: SMOKE[k].name, n: sel.smoke![k], color: '#' + SMOKE[k].color.toString(16).padStart(6, '0'), tip: `Димова «${SMOKE[k].name}»: ${sel.smoke![k]}` })),
+            ];
+            const free = Math.max(0, bagOf(sel) - bagUsed(sel));
+            return (<>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+                {groups.map(g => (
+                  <button key={g.key} disabled={!g.give} title={g.tip} onClick={() => g.give && act2(() => giveItem(s, sel, g.give!))}
+                    style={{ ...nb(false, false), minHeight: 70, padding: '4px 2px', gap: 0, position: 'relative', cursor: g.give ? 'pointer' : 'default' }}>
+                    <BagIcon kind={g.kind} color={g.color} size={narrow ? 30 : 34} />
+                    <span style={{ fontSize: 10, lineHeight: 1.1, fontWeight: 800, overflowWrap: 'anywhere' }}>{g.name}</span>
+                    <b style={{ position: 'absolute', top: -6, right: -6, minWidth: 22, height: 22, borderRadius: 11, background: '#ffe14d', border: '2px solid #16213a', display: 'grid', placeItems: 'center', fontSize: 12 }}>×{g.n}</b>
+                  </button>
+                ))}
+                {Array.from({ length: Math.min(free, groups.length % 3 ? 3 - (groups.length % 3) : 0) }, (_, i) => <div key={'e' + i} style={{ display: 'grid', placeItems: 'center', minHeight: 70, borderRadius: 14, border: '2px dashed #9aa6bd' }}><BagIcon kind="empty" size={26} /></div>)}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                <span>Місце в рюкзаку</span>
+                <span style={{ flex: 1, display: 'grid', gridTemplateColumns: `repeat(${bagOf(sel)}, 1fr)`, gap: 2 }}>{Array.from({ length: bagOf(sel) }, (_, i) => <i key={i} style={{ height: 10, borderRadius: 2, border: '1px solid #16213a', background: i < bagUsed(sel) ? '#4cc3ea' : '#fff' }} />)}</span>
+                <b>{bagUsed(sel)}/{bagOf(sel)}</b>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 12 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><BagIcon kind="kit" size={24} />Аптечки загону: <b>{s.medkits}</b></span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><BagIcon kind="mat" size={24} />Матеріали: <b>{s.mats ?? 0}</b></span>
+              </div>
+              <div style={{ opacity: 0.75, fontSize: 11 }}>Натисни магазин чи гранату — передати бійцю поруч (або викласти на землю).</div>
+            </>);
+          })()}
           {(nearStash || wpnHere) && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {nearStash && <button style={nb(true, sel.ap <= 0)} disabled={sel.ap <= 0} onClick={() => act2(() => searchStash(s, sel))}>📦 Обшукати</button>}
             {wpnHere && <button style={nb(true, sel.ap <= 0)} disabled={sel.ap <= 0} onClick={() => act2(() => takeWeapon(s, sel))}>🔫 Взяти: {WEAPONS[wpnHere.w!].name}</button>}
@@ -731,12 +756,13 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         <div style={{ maxWidth: narrow ? vw(34) : 420, fontSize: narrow ? 9 : 12, textAlign: 'center', textShadow: '0 1px 2px #000', pointerEvents: 'none', maxHeight: narrow ? 42 : 64, overflow: 'hidden' }}>
           {s.log.slice(narrow ? -1 : -3).map((l, i) => <div key={s.log.length + ':' + i}>{l}</div>)}
         </div>
+        {!fan && narrow && s.rt && <div style={{ pointerEvents: 'auto' }}>{rtOrEnd}</div>}
         {fan ? <div style={{ pointerEvents: 'auto' }}>{rtOrEnd}</div> : (
           <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: narrow ? 'minmax(0,1fr) auto minmax(0,1fr)' : undefined, width: narrow ? '100%' : undefined, alignItems: 'flex-end', justifyContent: 'center', gap: narrow ? 6 : 14, pointerEvents: 'auto' }}>
             <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, alignItems: 'flex-end', minWidth: 0 }}>
               {[bigL, ...itemsL].map((b, i) => <div key={i} style={{ minWidth: 0 }}>{txt(b)}</div>)}
             </div>
-            <div style={{ display: 'grid', gap: 8, justifyItems: 'center' }}>{rtOrEnd}{fireBtn(narrow ? 84 : 104)}</div>
+            <div style={{ display: 'grid', gap: 8, justifyItems: 'center' }}>{!(narrow && s.rt) && rtOrEnd}{fireBtn(narrow ? 84 : 104)}</div>
             <div style={{ display: narrow ? 'grid' : 'flex', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, alignItems: 'flex-end', minWidth: 0 }}>
               {itemsR.map((b, i) => <div key={i} style={{ minWidth: 0 }}>{txt(b)}</div>)}
             </div>
