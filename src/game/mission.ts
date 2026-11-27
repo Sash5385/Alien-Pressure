@@ -76,6 +76,7 @@ export interface MissionOpts {
   risky?: boolean;
   soldiers: Soldier[];
   tech: Tech;
+  intro?: boolean; // перша місія кампанії: ясно, вдень, три пришельці неподалік
 }
 
 type Zone = { x: number; y: number; w: number; h: number };
@@ -412,7 +413,25 @@ export function createMission(o: MissionOpts): GameState {
   };
   st.mats = defend ? 8 : 4; st.loot = [];
   if (defend || hold) planWave(st); // волну видно заранее
+  if (o.intro) introSetup(st);
   return st;
+}
+
+/** Навчальна перша місія: ясна погода, троє рядових пришельців за 8–12 клітинок від загону, решту прибрано. */
+function introSetup(st: GameState) {
+  st.weather = 'clear'; st.todOn = false;
+  const hs = st.units.filter(u => u.team === 'human'), cx = hs.reduce((a, u) => a + u.x, 0) / hs.length, cy = hs.reduce((a, u) => a + u.y, 0) / hs.length;
+  const al = st.units.filter(u => u.team === 'alien').sort((a, b) => (+['sniper', 'heavy', 'psi', 'commander'].includes(a.kind) - +['sniper', 'heavy', 'psi', 'commander'].includes(b.kind)) || (Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy)));
+  const keep = al.slice(0, 3), mid = st.size / 2, base = Math.atan2(mid - cy, mid - cx);
+  st.units = st.units.filter(u => u.team === 'human' || keep.includes(u));
+  keep.forEach((a, i) => { // віялом у бік центру карти, на вільній землі
+    for (let r = 9; r <= 13; r++) {
+      const ang = base + (i - 1) * 0.45, x = Math.round(cx + Math.cos(ang) * r), y = Math.round(cy + Math.sin(ang) * r);
+      if (x < 1 || y < 1 || x >= st.size - 1 || y >= st.size - 1 || st.terrain[y][x] !== 'ground' || st.cover[y][x] !== 'none' || st.units.some(u => u !== a && u.x === x && u.y === y)) continue;
+      a.x = a.homeX = x; a.y = a.homeY = y; a.dormant = false; a.alert = false; break;
+    }
+  });
+  st.log.push('Навчання: троє прибульців патрулюють неподалік. Займи укриття й підстережи їх.');
 }
 
 /** Подкрепление: в «Удержании» — с юга; в «Обороне» — волна по краям карты (размер растёт с ходом). */

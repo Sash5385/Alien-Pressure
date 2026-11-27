@@ -26,6 +26,7 @@ export function App() {
     const st = createMission({
         rng: c0.rng, difficulty: c0.difficulty, missionNo: c0.missionNo, objective: c0.objective, biome: c0.biome, size: c0.mapSize, loc: c0.loc !== undefined && c0.loc >= 0 ? c0.loc : c0.missionNo - 1, boss: c0.boss, risky: c0.risky, variant: c0.variant, tech: c0.tech,
         soldiers: c0.roster.filter(s => deployed.includes(s.id)),
+        intro: !c0.sandbox && c0.missionNo === 1 && c0.objective === 'clear' && !c0.boss,
     });
     if (c0.rt || st.huge) rtInit(st); // квартали и огромные карты — только реальное время
     setMission({ deployed, before: structuredClone(c0), run: Date.now(), state: st });

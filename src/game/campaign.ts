@@ -108,7 +108,7 @@ export function newCampaign(difficulty: Difficulty, seed = Date.now() >>> 0, san
   };
   for (const r of shuffle(ROSTER, c).slice(0, DEPLOY)) c.roster.push(mkSoldier(c, r.name, r.bio));
   c.biome = pickBiome(c);
-  c.options = [{ objective: 'clear', biome: c.biome, boss: false, risky: false }, ...pickOptions(c).filter(o => o.objective === 'defend').slice(0, 2)];
+  c.options = [{ objective: 'clear', biome: c.biome, boss: false, risky: false }]; // перша місія — навчальна зачистка
   if (sandbox) fillSandbox(c);
   return c;
 }
