@@ -100,10 +100,10 @@ export function Equip({ c, soldier, tab: t0, onEquip, onBuy, onClose }: {
     : tab === 'armor' ? Object.entries(ARMORS).map(([id, d]) => ({ id, d, fx: fxList({ hp: d.hp, aim: d.aim, move: d.move, stealth: d.stealth }, d.cut ? [`−${d.cut} шкоди`] : []), own: d.cost === 0 || c.armors.includes(id), on: soldier.armor === id }))
     : Object.entries(GEARS).map(([id, d]: [string, GearDef]) => ({ id, d, fx: fxList(d.fx), own: d.cost === 0 || (c.gears ?? []).includes(id), on: !!soldier.gear?.includes(id) }));
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(3,8,18,.98)', overflow: 'auto', padding: 12, fontFamily: HUDF, color: HN.fg }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(22,33,58,.88)', overflow: 'auto', padding: 12, fontFamily: HUDF, color: HN.fg }} onClick={onClose}>
       <div style={{ maxWidth: 1000, margin: '0 auto', display: 'grid', gap: 10 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <b style={{ fontFamily: HUDH, letterSpacing: '.12em', fontSize: 15 }}>ЕКІПІРУВАННЯ · {soldier.name} · трофеїв: {c.scrap}</b>
+          <b style={{ fontFamily: HUDH, letterSpacing: '.06em', fontSize: 14, color: '#fff' }}>ЕКІПІРУВАННЯ · {soldier.name} · трофеїв: {c.scrap}</b>
           <button style={{ ...btn(false), padding: '4px 12px' }} onClick={onClose}>✕</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
@@ -111,15 +111,15 @@ export function Equip({ c, soldier, tab: t0, onEquip, onBuy, onClose }: {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'minmax(0,1fr)' : 'minmax(0, 1fr) 230px', gap: 10, alignItems: 'start' }}>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${narrow ? 2 : 3}, minmax(0, 1fr))`, gap: 8 }}>
-            {tab === 'gear' && <div style={{ gridColumn: '1 / -1', fontSize: 12, color: HN.dim }}>Слотів обвісу: {soldier.gear?.length ?? 0}/{GEAR_SLOTS}. Придбане лишається назавжди.</div>}
+            {tab === 'gear' && <div style={{ gridColumn: '1 / -1', fontSize: 12, color: '#fff' }}>Слотів обвісу: {soldier.gear?.length ?? 0}/{GEAR_SLOTS}. Придбане лишається назавжди.</div>}
             {items.map(it => (
               <button key={it.id} title={it.d.desc}
                 onClick={() => (it.own ? onEquip(tab, it.id) : onBuy(tab, it.id))}
-                style={{ ...panel, padding: 8, textAlign: 'center', cursor: 'pointer', font: 'inherit', color: HN.fg, display: 'grid', gap: 3, justifyItems: 'center', alignContent: 'start', border: `1px solid ${it.on ? HN.accent : HN.accent + '55'}`, background: it.on ? '#0a4a7acc' : '#06203acc', boxShadow: it.on ? `0 0 16px ${HN.accent}88` : 'none', opacity: it.own ? 1 : 0.8 }}>
+                style={{ ...panel, padding: 8, textAlign: 'center', cursor: 'pointer', font: 'inherit', color: HN.fg, display: 'grid', gap: 3, justifyItems: 'center', alignContent: 'start', background: it.on ? HN.sel : '#fff', opacity: it.own ? 1 : 0.8 }}>
                 <Icon kind={tab} id={it.id} />
                 <b style={{ fontSize: 13, lineHeight: 1.1 }}>{it.d.name}</b>
                 <span style={{ fontSize: 10, color: HN.dim, lineHeight: 1.2 }}>{it.d.kg} кг{it.fx.length ? ' · ' + it.fx.join(' · ') : ''}</span>
-                <span style={{ fontSize: 11, fontWeight: 800, color: it.on ? '#9dffb0' : it.own ? HN.accent : HN.warn, letterSpacing: '.08em' }}>{it.on ? '✓ НАДЯГНУТО' : it.own ? 'НАДЯГТИ' : `КУПИТИ · ${it.d.cost} тр.`}</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: it.on ? HN.good : it.own ? HN.fg : HN.warn, letterSpacing: '.08em' }}>{it.on ? '✓ НАДЯГНУТО' : it.own ? 'НАДЯГТИ' : `КУПИТИ · ${it.d.cost} тр.`}</span>
               </button>
             ))}
           </div>

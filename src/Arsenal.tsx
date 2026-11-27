@@ -19,7 +19,7 @@ export function Arsenal({ c, soldier, mode, onPick, onBuy, onClose }: {
   const owned = (id: WeaponId) => c.weapons.includes(id) || WEAPONS[id].cost === 0;
   const cur = mode === 'weapon' ? soldier.weapon : soldier.sec;
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(8,14,28,.92)', overflow: 'auto', padding: 12 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(22,33,58,.88)', overflow: 'auto', padding: 12, color: '#fff' }} onClick={onClose}>
       <div style={{ maxWidth: 1000, margin: '0 auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
           <b style={{ fontSize: 18 }}>🔫 {mode === 'weapon' ? 'Основна зброя' : 'Запасна зброя'} · {soldier.name} · трофеїв: {c.scrap}</b>
@@ -35,12 +35,12 @@ export function Arsenal({ c, soldier, mode, onPick, onBuy, onClose }: {
           {sorted.map(id => {
             const w = WEAPONS[id], have = owned(id), on = cur === id, ic = weaponIcon(id), sp = SPEC[id];
             return (
-              <div key={id} style={{ ...panel, padding: 8, display: 'grid', gap: 3, justifyItems: 'center', textAlign: 'center', outline: on ? '2px solid #7ee0ff' : undefined, opacity: have ? 1 : 0.75 }} title={w.desc}>
-                {ic ? <img src={ic} alt="" style={{ width: '100%', height: 84, objectFit: 'contain', filter: 'drop-shadow(0 0 3px rgba(25,211,255,.55))' }} /> : <div style={{ height: 64, fontSize: 30 }}>🔫</div>}
+              <div key={id} style={{ ...panel, padding: 8, display: 'grid', gap: 3, justifyItems: 'center', textAlign: 'center', background: on ? '#ffe14d' : '#fff', opacity: have ? 1 : 0.75 }} title={w.desc}>
+                {ic ? <img src={ic} alt="" style={{ width: '100%', height: 84, objectFit: 'contain', filter: 'none' }} /> : <div style={{ height: 64, fontSize: 30 }}>🔫</div>}
                 <b style={{ fontSize: 13 }}>{w.name}</b>
                 <span style={{ fontSize: 10, opacity: 0.7 }}>{sp ? `${sp.caliber} · ${sp.finish}${sp.scope ? ' · приціл' : ''}${sp.supp ? ' · глушник' : ''}${sp.bipod ? ' · сошки' : ''}` : 'базова'}</span>
                 <span style={{ fontSize: 11 }}>🎯{w.aim} · 💥{w.dmg[0]}–{w.dmg[1]} · ▮{w.ammo} · ↔{w.falloffFrom}/{w.range} · {w.kg} кг</span>
-                {traitOf(id) && <span style={{ fontSize: 11, fontWeight: 800, color: '#ffd34d' }} title={traitOf(id)!.desc}>★ {traitOf(id)!.name}: {traitOf(id)!.desc}</span>}
+                {traitOf(id) && <span style={{ fontSize: 11, fontWeight: 800, color: '#c2410c' }} title={traitOf(id)!.desc}>★ {traitOf(id)!.name}: {traitOf(id)!.desc}</span>}
                 <span style={{ fontSize: 10, opacity: 0.8 }}>{w.burst > 1 ? `⋯ черга ${w.burst} · ` : ''}↩ віддача {w.recoil ?? 5} · 🔊 шум {w.noise ?? 22}{(w.pen ?? 0) > 0 ? ` · 🛡 пробиття +${w.pen}` : ''}</span>
                 {have
                   ? <button style={{ ...btn(on), padding: '3px 10px', fontSize: 12 }} onClick={() => onPick(id)}>{on ? '✓ Обрано' : 'Обрати'}</button>

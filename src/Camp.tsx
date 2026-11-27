@@ -68,8 +68,8 @@ export function Camp({ c, onChange, onStart, onMenu }: {
       <div style={{ display: 'grid', gap: 10 }}>
         <h1 style={{ ...hudH, fontSize: 30, textAlign: 'center' }}>База</h1>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, textAlign: 'center' }}>
-        <span style={{ border: `1px solid ${HN.accent}88`, background: '#06203acc', borderRadius: 4, padding: '3px 12px', fontWeight: 700 }}>Складність: {DIFF[c.difficulty].label}</span>
-        <b style={{ border: `1px solid ${HN.accent}`, background: '#0a4a7acc', borderRadius: 4, padding: '3px 12px', color: HN.fg, boxShadow: `0 0 12px ${HN.accent}66` }}>{c.sandbox ? 'Пісочниця: усе відкрито' : `Трофеї: ${c.scrap}`}</b>
+        <span style={{ border: `4px solid ${HN.line}`, background: '#fff', boxShadow: `0 4px 0 ${HN.line}`, borderRadius: 12, padding: '3px 12px', fontWeight: 700 }}>Складність: {DIFF[c.difficulty].label}</span>
+        <b style={{ border: `4px solid ${HN.line}`, background: HN.sel, borderRadius: 12, padding: '3px 12px', color: HN.fg, boxShadow: `0 4px 0 ${HN.line}` }}>{c.sandbox ? 'Пісочниця: усе відкрито' : `Трофеї: ${c.scrap}`}</b>
         </div>
       </div>
       {c.sandbox && (() => {
@@ -206,10 +206,10 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         // слот-вузол: скошені кути, світиться, коли відкритий
         const node = (k: K | null, lab: string, val: string, side: 'l' | 'r', icon?: string) => (
           <button key={lab} disabled={!k} onClick={() => { if (k === 'helm' || k === 'armor' || k === 'gear') setEquipTab(k); else if (k) setOpen(open === k ? null : k); }}
-            style={{ textAlign: side === 'l' ? 'left' : 'right', padding: narrow ? '5px 6px' : '6px 9px', border: `1px solid ${open === k && k ? HN.accent : HN.accent + '88'}`, background: open === k && k ? '#0a4a7acc' : '#06203acc', color: HN.fg, cursor: k ? 'pointer' : 'default', font: 'inherit', width: '100%', height: '100%', minWidth: 0, display: 'grid', alignContent: 'center',
-              clipPath: side === 'l' ? 'polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))' : 'polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)', boxShadow: open === k && k ? `0 0 14px ${HN.accent}88` : 'none' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: side === 'l' ? 'flex-start' : 'flex-end', fontSize: narrow ? 8 : 9, flexWrap: 'wrap', letterSpacing: narrow ? '.04em' : '.2em', textTransform: 'uppercase', color: HN.accent }}>
-              {icon && (icon.startsWith('data:') ? <img src={icon} alt="" style={{ width: 28, height: 14, objectFit: 'contain', filter: 'drop-shadow(0 0 2px rgba(25,211,255,.6))' }} /> : <span style={{ fontSize: 12 }}>{icon}</span>)}{lab}
+            style={{ textAlign: side === 'l' ? 'left' : 'right', padding: narrow ? '5px 6px' : '6px 9px', border: `3px solid ${HN.line}`, borderRadius: 12, background: open === k && k ? HN.sel : HN.solid, color: HN.fg, cursor: k ? 'pointer' : 'default', font: 'inherit', width: '100%', height: '100%', minWidth: 0, display: 'grid', alignContent: 'center',
+              boxShadow: `0 3px 0 ${HN.line}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: side === 'l' ? 'flex-start' : 'flex-end', fontSize: narrow ? 8 : 9, flexWrap: 'wrap', letterSpacing: narrow ? '.04em' : '.2em', textTransform: 'uppercase', color: HN.dim }}>
+              {icon && (icon.startsWith('data:') ? <img src={icon} alt="" style={{ width: 28, height: 14, objectFit: 'contain', filter: 'none' }} /> : <span style={{ fontSize: 12 }}>{icon}</span>)}{lab}
             </div>
             <b style={{ fontSize: narrow ? 12 : 14, lineHeight: 1.1, display: 'block', overflowWrap: 'anywhere' }}>{val}</b>
           </button>
@@ -217,20 +217,20 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         const L: [K, string, string, string][] = [['helm', 'Шолом', HELMETS[s.helmet ?? 'none']?.name ?? 'немає', '⛑'], ['armor', 'Броня', ar.name, '▣'], ['gear', 'Спорядження', (s.gear?.length ?? 0) ? s.gear!.map(g => GEARS[g]?.name).join(', ') : 'немає', '✦'], ['cls', 'Клас', CLASSES[s.cls].name, '⚔']];
         const Rr: [K, string, string, string][] = [['weapon', 'Зброя', w.name, ''], ['sec', 'Запасна', s.sec ? WEAPONS[s.sec].name : 'немає', ''], ['att', 'Обвіс зброї', (s.att?.length ?? 0) ? s.att!.map(a2 => ATT[a2].name).join(', ') : 'немає', '🔧']];
         const ammoVal = `💣${grenades} ▮2 ✚${DIFF[c.difficulty].kits + (c.tech.kits ? 1 : 0)}`;
-        const bar = (lab: string, pct: number, col = HN.accent) => <div key={lab} style={{ fontSize: 10, letterSpacing: '.14em', color: HN.dim, textTransform: 'uppercase' }}>{lab}<i style={{ display: 'block', height: 5, background: '#0b3558', marginTop: 3, position: 'relative' }}><i style={{ position: 'absolute', inset: '0 auto 0 0', width: `${Math.max(2, Math.min(100, pct))}%`, background: col, boxShadow: `0 0 8px ${col}` }} /></i></div>;
+        const bar = (lab: string, pct: number, col = '#4cc3ea') => <div key={lab} style={{ fontSize: 10, letterSpacing: '.14em', color: HN.dim, textTransform: 'uppercase' }}>{lab}<i style={{ display: 'block', background: HN.track, border: `2px solid ${HN.line}`, borderRadius: 6, height: 10, overflow: 'hidden', marginTop: 3, position: 'relative' }}><i style={{ position: 'absolute', inset: '0 auto 0 0', width: `${Math.max(2, Math.min(100, pct))}%`, background: col }} /></i></div>;
         return (
           <div style={{ ...panel, display: 'grid', gap: 12 }}>
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${symCols(c.roster.length, narrow ? 3 : 6)}, minmax(0, 1fr))`, gap: 8 }}>
               {c.roster.map(x => <button key={x.id} style={{ ...btn(x.id === s.id), padding: narrow ? '8px 4px' : '8px 14px', fontSize: narrow ? 13 : 14 }} onClick={() => { setSelId(x.id); setOpen(null); }}>{x.name}{ids.includes(x.id) ? ' ✓' : ''}</button>)}
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: HN.accent }}>{RANKS[s.rank]}</div>
-              <div style={{ ...hudH, fontSize: 24 }}>{s.name}</div>
+              <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: HN.dim }}>{RANKS[s.rank]}</div>
+              <div style={{ ...hudH, fontSize: 24, WebkitTextStroke: `6px ${HN.line}` }}>{s.name}</div>
               <div style={{ fontSize: 12, opacity: 0.7 }}>HP {Math.max(1, max - s.hpLoss)}/{max}{s.fracture ? ' · перелом' : ''} · вбито {s.kills} · місій {s.missions} · досвід {s.xp}{s.rank < XP_STEPS.length ? `/${XP_STEPS[s.rank]}` : ' (макс.)'}</div>
             </div>
             <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', alignItems: 'stretch', gap: narrow ? 4 : 10 }}>
               <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-                <g stroke={`${HN.accent}99`} fill="none" strokeWidth="1" vectorEffect="non-scaling-stroke">
+                <g stroke={HN.line} fill="none" strokeWidth="2.5" vectorEffect="non-scaling-stroke">
                   {L.map((_, i) => <path key={'l' + i} vectorEffect="non-scaling-stroke" d={`M${narrow ? 30 : 33} ${(i + 0.5) / L.length * 100} H${narrow ? 38 : 40} L45 ${[24, 44, 58, 70][i]}`} />)}
                   {[...Rr, 0].map((_, i) => <path key={'r' + i} vectorEffect="non-scaling-stroke" d={`M${narrow ? 70 : 67} ${(i + 0.5) / 4 * 100} H${narrow ? 62 : 60} L55 ${[46, 62, 54, 76][i]}`} />)}
                 </g>
