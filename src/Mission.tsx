@@ -119,7 +119,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const [uiIdx, setUiIdx] = useState(loadUi);
   const [ordersOpen, setOrdersOpen] = useState(false);
   useEffect(() => { // адаптивная музыка: фон и напряжение от врагов в тревоге поблизости
-    startMusic();
+    startMusic({ boss: state.current.boss, n: state.current.missionNo });
     const iv = setInterval(() => {
       const st = state.current; if (!st) return;
       const hs = st.units.filter(u => u.team === 'human' && u.hp > 0);

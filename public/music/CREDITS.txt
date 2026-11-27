@@ -1,2 +1,5 @@
-battle.mp3 — "Battle Theme A" by cynicmusic, CC0 (public domain).
-https://opengameart.org/content/battle-theme-a
+Музика — cynicmusic (OpenGameArt), ліцензія CC0 (суспільне надбання):
+battle.mp3  — "Battle Theme A"            https://opengameart.org/content/battle-theme-a
+battle2.mp3 — "Battle Theme B for RPG"    https://opengameart.org/content/battle-theme-b-for-rpg
+boss.mp3    — "Sinister Boss Appears"     https://opengameart.org/content/sinister-boss-appears
+calm.mp3    — "Calm Ambient 2 (Synthwave 15k)", перші 2 хв  https://opengameart.org/content/calm-ambient-2-synthwave-15k

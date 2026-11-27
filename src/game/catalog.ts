@@ -94,7 +94,7 @@ function build(cat: Cat, i: number): GunSpec {
   st.kg = +st.kg.toFixed(1); st.ammo = Math.round(st.ammo); st.recoil = Math.max(1, Math.round(st.recoil)); st.noise = Math.round(st.noise); st.aim = Math.round(st.aim);
   st.move = st.kg <= 2.5 ? 1 : st.kg <= 4.5 ? 0 : st.kg <= 8 ? -1 : -2; if (tr.id === 'compact') st.move += 1;
   const avg = (st.dmg[0] + st.dmg[1]) / 2, base = { pistol: 2, auto: 2.5, rifle: 4, mg: 3 }[cat];
-  st.cost = Math.max(0, Math.min(14, Math.round(t * 2 + (avg - base) * 1.5 + st.pen + (cat === 'pistol' ? -1 : cat === 'mg' ? 3 : 1))));
+  st.cost = Math.max(0, Math.min({ pistol: 8, auto: 12, rifle: 14, mg: 14 }[cat], Math.round(t * 2 + (avg - base) * 1.5 + st.pen + (cat === 'pistol' ? -1 : cat === 'mg' ? 3 : 1))));
   return spec;
 }
 

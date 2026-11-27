@@ -43,7 +43,7 @@ export function setAmbient(kind: 'rain' | 'wind' | 'water' | 'drone' | null) {
 let musicWanted = false;
 export function setMuted(m: boolean) {
   muted = m;
-  if (m) { mus?.stop(); mus = null; } else if (musicWanted) startMusic();
+  if (m) { mus?.stop(); mus = null; } else if (musicWanted) startMusic(lastOpts);
   if (amb) amb.gain.gain.value = m ? 0 : amb.base;
   try { localStorage.setItem(KEY, m ? '1' : '0'); } catch { /* ignore */ }
 }
@@ -203,26 +203,29 @@ export function setLife(night: number, on = true) {
 }
 
 // ——— адаптивная музыка: тихий пад и пульс напряжения ———
-/** Фонова музика: CC0-трек «Battle Theme A» (cynicmusic), гучність підлаштовується під напругу бою. */
+/** Фонова музика: CC0-треки cynicmusic (OpenGameArt), див. public/music/CREDITS.txt. */
 let mus: { stop: () => void } | null = null, tension = 0, tensionNow = 0;
 const MKEY = 'ap_music';
 let musicOn = (() => { try { return localStorage.getItem(MKEY) !== '0'; } catch { return true; } })();
 export const isMusicOn = () => musicOn;
 export function setMusicOn(on: boolean) {
   musicOn = on; try { localStorage.setItem(MKEY, on ? '1' : '0'); } catch { /* */ }
-  if (!on) { mus?.stop(); mus = null; } else if (musicWanted) startMusic();
+  if (!on) { mus?.stop(); mus = null; } else if (musicWanted) startMusic(lastOpts);
 }
-export function startMusic() {
-  musicWanted = true;
+/** Два шари: спокійний трек розвідки й бойовий (на босах — тривожний); перехід між ними за напругою бою. */
+export function startMusic(o: { boss?: boolean; n?: number } = {}) {
+  musicWanted = true; lastOpts = o;
   if (mus || muted || !musicOn || typeof Audio === 'undefined') return;
-  const el = new Audio(`${import.meta.env.BASE_URL}music/battle.mp3`); el.loop = true; el.volume = 0;
-  void el.play().catch(() => { /* браузер не дав автозапуск — спробуємо при наступному старті */ });
-  const tick = setInterval(() => { // плавна поява й гучність за напругою: тиша розвідки → повний звук бою
-    tensionNow += (tension - tensionNow) * 0.12;
-    el.volume = Math.min(1, Math.max(0, el.volume + ((0.16 + 0.22 * tensionNow) - el.volume) * 0.15));
-  }, 250);
-  mus = { stop: () => { clearInterval(tick); const fade = setInterval(() => { el.volume = Math.max(0, el.volume - 0.03); if (el.volume <= 0) { clearInterval(fade); el.pause(); el.src = ''; } }, 60); } };
+  const mk = (f: string) => { const el = new Audio(`${import.meta.env.BASE_URL}music/${f}`); el.loop = true; el.volume = 0; void el.play().catch(() => { /* автозапуск заборонено — спробуємо пізніше */ }); return el; };
+  const calm = mk('calm.mp3'), fight = mk(o.boss ? 'boss.mp3' : (o.n ?? 1) % 2 ? 'battle.mp3' : 'battle2.mp3');
+  const tick = setInterval(() => {
+    tensionNow += (tension - tensionNow) * 0.08;
+    const k = Math.min(1, tensionNow * 1.6), ease = (cur: number, want: number) => Math.min(1, Math.max(0, cur + (want - cur) * 0.12));
+    calm.volume = ease(calm.volume, 0.22 * (1 - k)); fight.volume = ease(fight.volume, 0.34 * k + (o.boss ? 0.08 : 0));
+  }, 200);
+  mus = { stop: () => { clearInterval(tick); const fade = setInterval(() => { calm.volume = Math.max(0, calm.volume - 0.03); fight.volume = Math.max(0, fight.volume - 0.03); if (calm.volume <= 0 && fight.volume <= 0) { clearInterval(fade); calm.pause(); fight.pause(); calm.src = ''; fight.src = ''; } }, 60); } };
 }
+let lastOpts: { boss?: boolean; n?: number } = {};
 export function stopMusic() { musicWanted = false; mus?.stop(); mus = null; tensionNow = 0; }
 /** Напряжение боя 0..1 (враги видны и в тревоге, идёт стрельба). */
 export function setTension(t: number) { tension = Math.max(0, Math.min(1, t)); }

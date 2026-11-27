@@ -337,6 +337,17 @@ export function Camp({ c, onChange, onStart, onMenu }: {
         </button>
         <button style={btn()} onClick={onMenu}>До меню</button>
       </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <button style={{ ...btn(), fontSize: 13 }} title="Скопіювати код збереження: його можна вставити на іншому пристрої" onClick={() => {
+          const code = btoa(unescape(encodeURIComponent(JSON.stringify(c))));
+          navigator.clipboard?.writeText(code).then(() => setMsg('Код збереження скопійовано — збережи його в нотатках.'), () => { prompt('Скопіюй код збереження:', code); });
+        }}>💾 Копіювати збереження</button>
+        <button style={{ ...btn(), fontSize: 13 }} title="Вставити код збереження з іншого пристрою" onClick={() => {
+          const code = prompt('Встав код збереження:'); if (!code) return;
+          try { const c2 = JSON.parse(decodeURIComponent(escape(atob(code.trim())))) as Campaign; if (c2?.v !== 1 || !Array.isArray(c2.roster)) throw new Error('bad'); onChange(c2); setMsg('Збереження завантажено.'); }
+          catch { setMsg('Код не підходить: перевір, що скопійовано повністю.'); }
+        }}>📥 Вставити збереження</button>
+      </div>
     </HudScreen>
   );
 }
