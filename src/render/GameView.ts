@@ -8,6 +8,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { STEP, type GameState, type Unit } from '../game/types';
 import { launchDrone, buildBags, canBuildBags, alienReactions, barrelAt, BLAST, canLaunch, launch, LAUNCH, type GrenadeResult, canThrow, selfBlast, slowMul, checkEnd, coverSource, faceToward, hitChance, isFlanked, peekTile, isVisible, los, moveRange, throwGrenade, updateVision, type ShotResult } from '../game/combat';
 import { sfx, setAmbient, setLife, setReverb, type Sfx } from '../audio';
+import { Particles, explosionFx, fireEmit } from './fx';
 import { applyTwoHands, gunForWeapon, spawnCover, spawnModel, type Spawned } from './models';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sway, tickWind, WIND, windBlast, windVec } from './wind';
@@ -135,6 +136,7 @@ export class GameView {
   private crumbleAt = 0;
   private barrelMeshes = new Map<string, THREE.Object3D>();
   private fireMeshes = new Map<string, THREE.Group>();
+  private fxA = new Particles(2400, true); private fxN = new Particles(1600, false); // вогонь/іскри (світяться) і дим/пил
   private scorchMeshes = new Map<string, THREE.Object3D>();
   private waterTex: THREE.CanvasTexture | null = null;
   private raf = 0;
@@ -332,10 +334,13 @@ export class GameView {
         if (sp && u && !this.dying.has(id)) { sp.modBase = sp.mod.map(b => b.quaternion.clone()); const pk = Math.max(0, sp.inner.rotation.x - 0.1) / 1.35; this.proneArms(sp, pk); this.lookAtTarget(sp, m, u, id, dt, pk); applyTwoHands(sp); }
       }
       const tt = this.clock.elapsedTime;
-      for (const g of this.fireMeshes.values()) g.children.forEach((c, i) => { c.scale.y = 0.7 + 0.55 * Math.abs(Math.sin(tt * 9 + (g.userData.phase as number) + i)); });
+      for (const g of this.fireMeshes.values()) { // полум'я частинками (без окремих ламп: зміна кількості світла гальмує телефон)
+        fireEmit(this.fxA, this.fxN, g.position.x, g.position.y, g.position.z, dt);
+      }
+      if (!this.fxA.points.parent) this.scene.add(this.fxA.points, this.fxN.points);
+      { const h = this.renderer.domElement.height, sc = h * 0.5 / Math.tan((this.camera.fov * Math.PI) / 360), w = windVec(tt); this.fxA.update(dt, w, sc); this.fxN.update(dt, w, sc); }
       { // ветер: пламя наклоняется по ветру, дым сносит и «дышит»
         const w = windVec(tt);
-        for (const g of this.fireMeshes.values()) g.children.forEach(c => { c.rotation.z = -w.x * 0.45; c.rotation.x = w.z * 0.45; });
         for (const [k, o] of this.smokeMeshes) {
           const ph = k.length * 1.7, b = o.userData as { bx: number; bz: number };
           o.position.x = b.bx + w.x * 0.22 + Math.sin(tt * 0.7 + ph) * 0.1; o.position.z = b.bz + w.z * 0.22 + Math.cos(tt * 0.6 + ph) * 0.1;
@@ -1168,11 +1173,6 @@ void main(){
       const g = new THREE.Group();
       g.position.set(f.x + 0.5, this.hy(f.x, f.y), f.y + 0.5);
       g.userData.phase = Math.random() * 6;
-      for (let i = 0; i < 4; i++) {
-        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.7, 6), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffb030 : 0xff5a1a, transparent: true, opacity: 0.9 }));
-        flame.position.set((Math.random() - 0.5) * 0.5, 0.3, (Math.random() - 0.5) * 0.5);
-        g.add(flame);
-      }
       this.scene.add(g);
       this.fireMeshes.set(k, g);
     }
@@ -2219,13 +2219,14 @@ void main(){
     sfx('grenade');
     { const pw = Math.min(2, 0.7 + (res.r ?? 1.5) * 0.4); windBlast(to.x, to.z, pw); this.leaves?.burst(to.x, to.z, this.treeSpots.filter(t => this.coverMeshes.has(t.k)), pw); }
     if (s.terrain[res.y]?.[res.x] === 'water') this.ripples(to.x, to.z, (res.r ?? BLAST) + 1); // взрыв в воде: брызги и круги
-    const light = new THREE.PointLight(0xffa040, 40, 14);
-    light.position.set(to.x, to.y + 0.7, to.z);
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.85 }));
-    ball.position.set(to.x, to.y + 0.4, to.z);
-    this.scene.add(light, ball);
-    this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0xffb050, 30, 5, 650);
-    this.burst(new THREE.Vector3(to.x, to.y + 0.2, to.z), 0x555555, 18, 3, 800);
+    const light = new THREE.PointLight(0xffc070, 70, 16);
+    light.position.set(to.x, to.y + 0.9, to.z);
+    this.scene.add(light);
+    if (!this.fxA.points.parent) this.scene.add(this.fxA.points, this.fxN.points);
+    explosionFx(this.fxA, this.fxN, to.x, to.y, to.z, Math.max(0.8, (res.r ?? BLAST) / BLAST));
+    { const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48), new THREE.MeshBasicMaterial({ color: 0xfff1d0, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(to.x, to.y + 0.06, to.z); this.scene.add(ring); // ударна хвиля по землі
+      void this.tween(420, k => { ring.scale.setScalar(0.3 + k * (res.r ?? BLAST) * 1.6); (ring.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - k) * (1 - k); }).then(() => { this.scene.remove(ring); ring.geometry.dispose(); }); }
     for (const b of res.broken) { const bp = new THREE.Vector3(b.x + 0.5, 0.3 + this.hy(b.x, b.y), b.y + 0.5); this.burst(bp, 0x8a7a62, 10, 2.5, 600); this.debris(bp, 0x8a7a62, 8, 3); this.burst(bp.clone().setY(bp.y + 0.4), 0xcfe8ff, 8, 3, 700); this.burst(bp, 0x666055, 14, 1.2, 1400); }
     this.debris(new THREE.Vector3(to.x, to.y + 0.3, to.z), 0x5a4a38, 14, 5);
     this.decal(to.x, to.z, 0x121210, 1.1, 0.55); this.decal(to.x, to.z, 0x2a2420, 1.5, 0.3);
@@ -2238,13 +2239,11 @@ void main(){
       if (!h.killed) this.play(h.id, 'HitReact', true);
       else setTimeout(() => sfx('death'), 150);
     }
-    await this.tween(300, k => {
-      ball.scale.setScalar(0.2 + k * ((res.r ?? BLAST) - 0.2));
-      (ball.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - k);
-      light.intensity = 40 * (1 - k);
+    await this.tween(650, k => { // світло спалаху гасне плавно, теплішаючи
+      light.intensity = 70 * Math.pow(1 - k, 2.2) * (0.85 + Math.random() * 0.3);
+      light.color.setRGB(1, 0.75 - 0.35 * k, 0.45 - 0.35 * k);
     });
-    this.scene.remove(light, ball);
-    ball.geometry.dispose();
+    this.scene.remove(light);
     for (const c of res.chain) { await sleep(160); await this.explode(c); }
   }
 
