@@ -100,7 +100,7 @@ export function hitChance(s: GameState, a: Unit, t: Unit, reaction = false, bonu
   const dist = Math.hypot(a.x - t.x, a.y - t.y);
   if (dist > a.range || !los(s, a, t) || !canFire(a)) return null;
   const c = a.aim - coverBonus(s, a, t) - Math.max(0, dist - a.falloffFrom) * a.falloff - (reaction ? 10 : 0)
-    - (a.fracture ? 20 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - Math.round(encumbrance(a) * 8) + (a.stance === 'kneel' || a.stance === 'prone' ? a.kneelAim ?? 0 : 0) - (a.team === 'human' ? Math.round(a.rec ?? 0) : 0) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
+    - (a.fracture ? 20 : 0) - (a.team === 'alien' && hurtN(a, 'arm') === 1 ? 15 : 0) - (a.morale < 50 ? 10 : 0) + (t.team === 'alien' && !t.alert ? 15 : 0) + bonus - (a.suppressed ? 25 : 0) + heightBonus(s, a, t) - (a.team === 'human' && (a.sta ?? 100) < 30 ? Math.round((30 - (a.sta ?? 100)) / 2) : 0) - Math.round(encumbrance(a) * 8) + (a.stance === 'kneel' || a.stance === 'prone' ? a.kneelAim ?? 0 : 0) - (a.team === 'human' ? Math.round(a.rec ?? 0) : 0) - stanceDefense(a, t) + (a.stance === 'kneel' ? 5 : a.stance === 'prone' ? 10 : 0); // скрытая атака, умения, подавление, высота, стойка
   const cat = catOf(a.weapon), tweak = cat === 'mg' ? (a.stance === 'prone' ? 10 : a.stance === 'kneel' ? 4 : -6) : cat === 'pistol' ? (dist <= 3 ? 10 : dist > 7 ? -6 : 0) : 0; // пулемёт — с сошек, пистолет — вблизи
   return Math.round(Math.min(95, Math.max(5, c + tweak + (a.team === 'human' && isFlanked(s, a, t) ? 10 : 0))));
 }
@@ -119,10 +119,10 @@ export const PART_NAME: Record<BodyPart, string> = { head: 'голова', torso
 export const hurtN = (u: Unit, k: 'arm' | 'leg') => (u.hurt ?? []).filter(p => p.startsWith(k)).length;
 export const torsoHurt = (u: Unit) => (u.hurt ?? []).includes('torso');
 /** Раненая рука: двуручное нельзя (пистолет — можно); обе — стрелять нельзя совсем. */
-export const canFire = (u: Unit) => u.team !== 'human' || (hurtN(u, 'arm') === 0 || (hurtN(u, 'arm') === 1 && catOf(u.weapon) === 'pistol'));
-export const immobile = (u: Unit) => u.team === 'human' && hurtN(u, 'leg') >= 2;
+export const canFire = (u: Unit) => u.team !== 'human' ? hurtN(u, 'arm') < 2 : (hurtN(u, 'arm') === 0 || (hurtN(u, 'arm') === 1 && catOf(u.weapon) === 'pistol')); // пришелец с одной раненой рукой стреляет хуже, с двумя — не может
+export const immobile = (u: Unit) => hurtN(u, 'leg') >= 2;
 /** Множитель медлительности: торс ×1.4, одна нога ×2. */
-export const slowMul = (u: Unit) => !u || u.team !== 'human' ? 1 : (torsoHurt(u) ? 1.4 : 1) * (hurtN(u, 'leg') === 1 ? 2 : 1);
+export const slowMul = (u: Unit) => !u ? 1 : (torsoHurt(u) ? 1.4 : 1) * (hurtN(u, 'leg') === 1 ? 2 : 1);
 export function rollPart(s: GameState): BodyPart {
   const r = rand(s);
   return r < 0.06 ? 'head' : r < 0.5 ? 'torso' : r < 0.62 ? 'armL' : r < 0.74 ? 'armR' : r < 0.87 ? 'legL' : 'legR';
@@ -150,16 +150,20 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
   if (hit && t.team === 'human' && t.hcut && rand(s) * 100 < t.hcut && dmg > 1) dmg -= 1; // каска гасит часть удара
   if (a.team === 'human') a.rec = Math.min(24, (a.rec ?? 0) + (wd?.recoil ?? 5) * (a.stance === 'prone' ? 0.5 : a.stance === 'kneel' ? 0.75 : 1)); // отдача копится
   const flank = isFlanked(s, a, t);
+  const hp0 = t.hp;
   t.hp = Math.max(0, t.hp - dmg);
-  let downed = false;
+  let downed = false, headSave = false;
   if (hit && t.team === 'human' && t.hp <= 0 && !t.revived && rand(s) < 0.6) { // не гибнет сразу: падает, его можно поднять за 3 хода
     t.hp = 1; t.down = true; t.bleedOut = 3; t.revived = true; t.stance = 'prone'; t.overwatch = false; downed = true;
   }
   let part: BodyPart | undefined;
-  if (hit && t.team === 'human') {
+  if (hit) { // зоны поражения — у всех, и у бойцов, и у пришельцев
     part = rollPart(s);
-    if (part === 'head') { if (t.hcut && rand(s) * 100 < t.hcut) part = 'torso'; else { t.hp = 0; t.down = false; downed = false; } } // каска может увести пулю
-    else if (t.hp > 0) maimed(t, part);
+    if (part === 'head') {
+      if (t.team === 'human' && t.hcut && rand(s) * 100 < t.hcut) part = 'torso'; // каска уводит пулю
+      else if (hp0 >= t.maxHp && t.hp > 0) { headSave = true; t.hp = Math.max(1, t.hp - dmg); if (t.team === 'human') t.bleeding = true; } // с полного здоровья — тяжёлое ранение, не смерть
+      else { t.hp = 0; t.down = false; downed = false; }
+    } else if (t.hp > 0) maimed(t, part);
   }
   const killed = hit && t.hp <= 0;
   if (flank && t.team === 'human' && a.team === 'alien') shift(t, -3);
@@ -183,7 +187,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
     const cs = coverSource(s, a, t);
     if (cs && !cs.trench && s.look[cs.y][cs.x] !== 'rock' && s.look[cs.y][cs.x] !== 'house') { s.cover[cs.y][cs.x] = 'none'; broken = { x: cs.x, y: cs.y }; }
   }
-  const ptxt = part ? ` [${PART_NAME[part]}${part === 'head' && killed ? ' — смерть' : part !== 'head' && part !== 'torso' ? (part.startsWith('arm') ? ' — рука виведена' : ' — нога виведена') : part === 'torso' ? ' — уповільнення' : ''}]` : '';
+  const ptxt = part ? ` [${PART_NAME[part]}${part === 'head' && headSave ? ' — важке поранення' : part === 'head' && killed ? ' — смерть' : part !== 'head' && part !== 'torso' ? (part.startsWith('arm') ? ' — рука виведена' : ' — нога виведена') : part === 'torso' ? ' — уповільнення' : ''}]` : '';
   const wtxt = ptxt + (wound === 'bleed' ? ', кровотеча' : wound === 'fracture' ? ', перелом' : '');
   const btxt = broken ? ' Укриття зруйновано.' : '';
   log(s, `${reaction ? '[Засідка] ' : ''}${a.name} → ${t.name}: ${hit ? `−${dmg} HP${killed ? ', вбито' : ''}${downed ? ', важко поранений — упав' : ''}${wtxt}` : 'повз'} (${chance}%)${flank ? ' · фланг' : ''}${btxt}`);

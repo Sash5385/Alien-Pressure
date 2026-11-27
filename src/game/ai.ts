@@ -1,6 +1,6 @@
 import { bldgAt, flOf } from './floors';
 import { openDoorAt } from './doors';
-import { alienSees, blast, BLAST, los, canFire, hurtN, canPsi, faceToward, GRENADE_RANGE, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
+import { alienSees, blast, BLAST, los, moveRange, canFire, hurtN, canPsi, faceToward, GRENADE_RANGE, digIn, hitChance, isFlanked, log, peekShot, peekTile, suppress, trenchAt, triggerMine, living, psiAttack, raiseAlert, rand, reactions, reload, shoot, type ShotResult } from './combat';
 import { findPath, reachable } from './pathfinding';
 import type { GameState, Unit } from './types';
 import type { GrenadeResult } from './combat';
@@ -145,7 +145,7 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
   const mode = u.kind === 'commander' ? 'assault' : g?.mode ?? 'assault';
   const walk = async (spot: [number, number]) => {
     if ((u.fl ?? 0) > 0 || u.static) return; // на верхних этажах и турели пришельцы не ходят: держат позицию
-    for (const [x, y] of findPath(s, u.x, u.y, spot[0], spot[1], u.move)) {
+    for (const [x, y] of findPath(s, u.x, u.y, spot[0], spot[1], moveRange(u))) {
       u.x = x; u.y = y; openDoorAt(s, x, y);
       await h.moved(u);
       const mr = triggerMine(s, u);
@@ -237,7 +237,7 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
   const n = g?.members.length ?? 1, R = u.kind === 'sniper' ? 10 : 6;
   let px = 0, py = 0;
   if (foc && n >= 2) { const th = Math.atan2(cy - foc.y, cx - foc.x) + ((idx / (n - 1)) - 0.5) * Math.PI * 0.9; px = foc.x + Math.cos(th) * R; py = foc.y + Math.sin(th) * R; }
-  for (const k of reachable(s, u.x, u.y, u.move).keys()) {
+  for (const k of reachable(s, u.x, u.y, moveRange(u)).keys()) {
     const [x, y] = k.split(',').map(Number);
     if (x === u.x && y === u.y) continue;
     const ghost = { ...u, x, y };
@@ -293,7 +293,7 @@ function retreatSpot(s: GameState, u: Unit, humans: Unit[]): [number, number] | 
   if (!humans.length) return null;
   const here = Math.min(...humans.map(t => Math.hypot(t.x - u.x, t.y - u.y)));
   let best: [number, number] | null = null, bs = -Infinity;
-  for (const k of reachable(s, u.x, u.y, u.move).keys()) {
+  for (const k of reachable(s, u.x, u.y, moveRange(u)).keys()) {
     const [x, y] = k.split(',').map(Number);
     const d = Math.min(...humans.map(t => Math.hypot(t.x - x, t.y - y)));
     if (d < here + 1.5) continue;
