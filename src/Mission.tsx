@@ -411,14 +411,14 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
 
   const humans = s.units.filter(u => u.team === 'human');
   const half = Math.ceil(humans.length / 2);
-  const AC = '#7ee0ff', ONAC = '#04222c'; // стекло: полупрозрачные панели с размытием
-  const nbBase: React.CSSProperties = { background: 'rgba(255,255,255,.11)', color: '#f2f6ff', border: '1px solid rgba(255,255,255,.25)', font: 'inherit', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' };
-  const OUT = '0 8px 24px rgba(0,0,0,.35)', OUTS = '0 4px 12px rgba(0,0,0,.3)';
+  const AC = '#ffe14d', ONAC = '#16213a'; // комікс: білі картки з товстим контуром, жовте виділення
+  const nbBase: React.CSSProperties = { background: '#fff', color: '#16213a', border: '3px solid #16213a', font: 'inherit' };
+  const OUT = '0 5px 0 #16213a', OUTS = '0 3px 0 #16213a';
   const nb = (on = false, off = false): React.CSSProperties => ({
-    ...nbBase, background: on ? AC : nbBase.background, color: on ? ONAC : '#f2f6ff', borderRadius: 14, boxShadow: OUTS, opacity: off ? 0.4 : 1, fontWeight: 700, fontSize: narrow ? 10 : 13,
+    ...nbBase, background: on ? AC : nbBase.background, color: ONAC, borderRadius: 14, boxShadow: OUTS, opacity: off ? 0.45 : 1, fontWeight: 800, fontSize: narrow ? 11 : 13,
     padding: narrow ? '4px 2px' : '6px 8px', minWidth: narrow ? 0 : 76, width: narrow ? '100%' : undefined, minHeight: 46, cursor: off ? 'default' : 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
   });
-  const round = (on = false): React.CSSProperties => ({ ...nbBase, background: on ? AC : nbBase.background, width: 46, height: 46, borderRadius: '50%', boxShadow: OUTS, color: on ? ONAC : '#f2f6ff', fontSize: 18, cursor: 'pointer' });
+  const round = (on = false): React.CSSProperties => ({ ...nbBase, background: on ? AC : nbBase.background, width: 46, height: 46, borderRadius: '50%', boxShadow: OUTS, color: ONAC, fontSize: 18, cursor: 'pointer' });
   type Item = { icon: string; label: string; sub: string; on: boolean; off: boolean; click: () => void; title?: string };
   const it = (icon: string, label: string, sub: string, on: boolean, off: boolean, click: () => void, title?: string): Item => ({ icon, label, sub, on, off, click, title });
   const bi = sel && s.bldgs ? bldgAt(s, sel.x, sel.y) : -1, sf = sel ? flOf(sel) : 0, nfl = bi >= 0 ? maxLevel(s.bldgs![bi]) + 1 : 1;
@@ -452,9 +452,13 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     ...(bi >= 0 && sf > 0 ? [it('⬇', 'Вниз', `${sf + 1}/${nfl}`, false, !!sel?.down, () => goFloor(-1), 'Спуститися на поверх нижче')] : []),
     it('👁', 'Огляд', '', !!s.lookMode, !sel, toggleLook, 'Огляд: підсвітити зону огляду й дальність обраного бійця (без витрат AP)'),
   ];
+  // показуємо лише доречні зараз дії; базові (засідка, граната, огляд) — завжди
+  const CORE = ['Граната', 'Огляд', 'Заряд'];
+  const ctx = (a: Item[]) => a.filter(i => !i.off || CORE.includes(i.label));
+  itemsL.splice(0, itemsL.length, ...ctx(itemsL)); itemsR.splice(0, itemsR.length, ...ctx(itemsR));
   const fan = !narrow && vwE >= 900;
   const cornerBottom = fan ? 262 : lift ? (narrow ? 215 : 150) : 8;
-  const txt = (i: Item) => <button key={i.label} style={nb(i.on, i.off)} disabled={i.off} title={i.title} onClick={i.click}>{i.label}{i.sub && <small style={{ fontWeight: 500, opacity: 0.7, fontSize: 10 }}>{i.sub}</small>}</button>;
+  const txt = (i: Item) => <button key={i.label} style={nb(i.on, i.off)} disabled={i.off} title={i.title} onClick={i.click}><span style={{ fontSize: 15, lineHeight: 1 }}>{i.icon}</span>{i.label}{i.sub && <small style={{ fontWeight: 700, opacity: 0.75, fontSize: 11 }}>{i.sub}</small>}</button>;
   const FR = 150, FC = 70;
   const fanBtn = (i: Item, k: number, n: number, side: 'left' | 'right', size: number) => {
     const a = (n === 1 ? 45 : 90 * k / (n - 1)) * Math.PI / 180;
@@ -469,7 +473,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
     );
   };
   const fireBtn = (size: number, extra: React.CSSProperties = {}) => (
-    <button data-dk="fire" disabled={!canFire} onClick={fire} style={{ width: size, height: size, borderRadius: '50%', border: 0, background: 'linear-gradient(145deg,#a8ecff,#4cc3ea)', color: ONAC, fontWeight: 800, fontSize: size < 100 ? 14 : 16, font: 'inherit', cursor: canFire ? 'pointer' : 'default', opacity: canFire ? 1 : 0.45, boxShadow: OUT, display: 'grid', placeItems: 'center', alignContent: 'center', pointerEvents: 'auto', ...extra }}>
+    <button data-dk="fire" disabled={!canFire} onClick={fire} style={{ width: size, height: size, borderRadius: '50%', border: '4px solid #16213a', background: 'linear-gradient(180deg,#ff7a4a,#e8410c)', color: '#fff', textShadow: '0 2px 0 #16213a', fontWeight: 800, fontSize: size < 100 ? 14 : 16, font: 'inherit', cursor: canFire ? 'pointer' : 'default', opacity: canFire ? 1 : 0.45, boxShadow: OUT, display: 'grid', placeItems: 'center', alignContent: 'center', pointerEvents: 'auto', ...extra }}>
       <span style={{ fontWeight: 800 }}>{peek ? 'ВИГЛЯНУТИ' : wl && !tgt ? 'ЦІЛЬ' : 'ВОГОНЬ'}</span>
       <small style={{ fontWeight: 600, opacity: 0.75 }}>{wl ? LAUNCH[wl].name : chance !== null ? `${chance}%` : tb ? 'бочка' : ''}</small>
     </button>
@@ -481,7 +485,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
       <button style={{ ...nb(ordersOpen), minWidth: 0, padding: narrow ? '6px 9px' : '6px 12px' }} title="Накази загону: збір, атака, зачистка будівлі, стояти" onClick={() => { setOrdersOpen(o => !o); sfx('click'); }}>📣</button>
       {([0.5, 1] as const).map(v => <button key={v} style={{ ...nb(s.rt!.speed === v), minWidth: 0, padding: narrow ? '6px 7px' : '6px 10px' }} title={`Швидкість ×${v}`} onClick={() => { s.rt!.speed = v; sfx('click'); rerender(); }}>×{v}</button>)}
     </div>
-  ) : <button data-dk="end" style={{ ...nb(false, !canAct), color: AC, minWidth: narrow ? 84 : 120 }} disabled={!canAct} onClick={endTurn}>Кінець ходу</button>;
+  ) : <button data-dk="end" style={{ ...nb(false, !canAct), background: AC, minWidth: narrow ? 84 : 120 }} disabled={!canAct} onClick={endTurn}>Кінець ходу</button>;
   // Перетягування кнопок: довге натискання → рух; позиції зберігаються (CSS translate не конфліктує з transform)
   const hudRef = useRef<HTMLDivElement>(null);
   const [btnEpoch, setBtnEpoch] = useState(0);
@@ -582,7 +586,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
           </div>
           <div>Рюкзак {bagUsed(sel)}/{bagOf(sel)} · аптечок {s.medkits} · матеріалів {s.mats ?? 0}</div>
           <div title="Перегруз сповільнює біг, швидше втомлює і псує влучність">Вага {loadOf(sel).toFixed(1)} / {capOf(sel)} кг{encumbrance(sel) > 0.05 ? ` · ${encumbrance(sel) > 0.6 ? 'ВАЖКО' : 'навантаження'}` : ''}
-            <div style={{ height: 6, borderRadius: 4, background: 'rgba(255,255,255,.15)', overflow: 'hidden', marginTop: 3 }}><div style={{ width: `${Math.min(100, loadOf(sel) / (capOf(sel) * 1.4) * 100)}%`, height: '100%', background: encumbrance(sel) > 0.6 ? '#ff5a4a' : encumbrance(sel) > 0.05 ? '#ffd34d' : '#6fe39a' }} /></div></div>
+            <div style={{ height: 6, borderRadius: 4, background: '#dfe6f2', border: '1px solid #16213a', overflow: 'hidden', marginTop: 3 }}><div style={{ width: `${Math.min(100, loadOf(sel) / (capOf(sel) * 1.4) * 100)}%`, height: '100%', background: encumbrance(sel) > 0.6 ? '#ff5a4a' : encumbrance(sel) > 0.05 ? '#ffd34d' : '#6fe39a' }} /></div></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
             {Array.from({ length: bagOf(sel) }, (_, i) => { const kind = i < sel.mags ? 'mag' : i < sel.mags + sel.grenades ? 'gren' : null; const isSmoke = !kind && i < sel.mags + sel.grenades + smokeCount(sel); return (
               <button key={i} disabled={!kind} title={kind ? 'Передати сусідньому бійцю або викласти на землю' : 'Порожньо'} style={{ ...nb(false, !kind), minHeight: 40, minWidth: 0, padding: 0, fontSize: 18, borderStyle: kind ? 'solid' : 'dashed' }} onClick={() => kind && act2(() => giveItem(s, sel, kind))}>{kind === 'mag' ? '▮' : kind === 'gren' ? '✹' : isSmoke ? '☁' : ''}</button>); })}
@@ -620,7 +624,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
         <div key={side as string} style={{ position: 'absolute', top: narrow ? 68 : 8, [side as string]: 8, display: 'flex', flexDirection: 'column', gap: 6, alignItems: side === 'left' ? 'flex-start' : 'flex-end', width: narrow ? vw(46) : undefined }}>
           {(list as Unit[]).map(u => (
             <button key={u.id} disabled={u.hp <= 0 || !canAct} onClick={() => pick(u.id)} title={u.traits.map(t => TRAITS[t].name).join(', ')}
-              style={{ ...nbBase, borderRadius: 14, boxShadow: u.id === s.selectedId ? `${OUTS}, 0 0 0 2px ${AC}` : OUTS, color: '#f2f6ff', padding: '6px 10px', fontSize: narrow ? 11 : 12, fontWeight: 700, minWidth: narrow ? 0 : 160, width: narrow ? '100%' : undefined, opacity: u.hp <= 0 ? 0.4 : 1, textDecoration: u.hp <= 0 ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between', cursor: 'pointer', minHeight: touch ? 40 : undefined }}>
+              style={{ ...nbBase, borderRadius: 14, boxShadow: OUTS, background: u.id === s.selectedId ? AC : '#fff', color: ONAC, padding: '6px 10px', fontSize: narrow ? 11 : 12, fontWeight: 700, minWidth: narrow ? 0 : 160, width: narrow ? '100%' : undefined, opacity: u.hp <= 0 ? 0.4 : 1, textDecoration: u.hp <= 0 ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between', cursor: 'pointer', minHeight: touch ? 40 : undefined }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}{u.bleeding ? ' 🩸' : ''}{u.panic ? ' ⚠' : ''}{u.down ? ' ⬇' : ''}</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
                 <span style={{ width: 36, height: 6, borderRadius: 3, background: 'rgba(0,0,0,.35)', position: 'relative' }}><b style={{ position: 'absolute', inset: '0 auto 0 0', width: `${Math.max(0, u.hp) / u.maxHp * 100}%`, borderRadius: 3, background: u.hp / u.maxHp < 0.5 ? '#ff7a7a' : '#6fe39a' }} /></span>
