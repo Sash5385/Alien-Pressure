@@ -16,6 +16,7 @@ import { weaponIcon } from './render/models';
 import { kickDoor, nearDoor, openQuiet } from './game/doors';
 import { SMOKE, SMOKE_IDS, smokeCount } from './game/smoke';
 import { setTension, startMusic, stopMusic } from './audio';
+import { Tutorial, resetTutorial } from './Tutorial';
 import { bagOf, bagUsed, canSwap, capOf, encumbrance, loadOf, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
 import { isMuted, setMuted, sfx } from './audio';
@@ -86,6 +87,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   const state = useRef(initial);
   const view = useRef<GameView | null>(null);
   const [, rerender] = useReducer(n => n + 1, 0);
+  const [tutKey, setTutKey] = useState(0);
 
   useEffect(() => {
     let dead = false;
@@ -544,6 +546,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
   return (
     <div style={{ position: 'fixed', inset: 0, color: '#d8dccf', fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
       <div ref={host} style={{ position: 'absolute', inset: 0 }} />
+      <Tutorial key={tutKey} s={s} narrow={narrow} force={tutKey > 0} />
       {edit && (
         <div data-editbar="1" style={{ position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', padding: 8, borderRadius: 14, background: '#0b1220ee', border: '1px solid #7ee0ff', color: '#eaf2ff', fontSize: 12, maxWidth: '94vw' }}>
           <span>{selKey ? 'Тягни кнопку · розмір:' : 'Тягни будь-яку кнопку (крок 10). Тап — вибрати.'}</span>
@@ -687,6 +690,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
               </div>
             </div>
             <button style={nb(edit, false)} onClick={() => { setEdit(true); setMore(false); setSelKey(null); }}>Налаштувати кнопки</button>
+            <button style={nb(false, false)} onClick={() => { resetTutorial(); setTutKey(k => k + 1); setMore(false); }}>Повторити навчання</button>
             <button style={nb(false, false)} onClick={() => { try { localStorage.removeItem('ap_btnpos'); } catch { /* */ } setBtnEpoch(n => n + 1); }}>Скинути позиції кнопок</button>
             <div style={{ opacity: 0.6, maxWidth: 200, lineHeight: 1.35 }}>{touch ? '1 палець — рухати карту, 2 — обертати, щипок — масштаб, довге натискання — повернути бійця. Довге натискання на кнопці — перемістити її.' : 'ЛКМ із затисканням — рухати карту, ПКМ із затисканням — обертати, колесо — масштаб, затиснуте колесо — пауза (в реальному часі). Клік ПКМ — повернути бійця.'}</div>
             <div style={{ opacity: 0.45, textAlign: 'center' }}>{VERSION}</div>
