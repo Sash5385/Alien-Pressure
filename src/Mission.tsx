@@ -15,7 +15,7 @@ import { todLabel } from './game/tod';
 import { weaponIcon } from './render/models';
 import { kickDoor, nearDoor, openQuiet } from './game/doors';
 import { SMOKE, SMOKE_IDS, smokeCount } from './game/smoke';
-import { setTension, startMusic, stopMusic } from './audio';
+import { isMusicOn, setMusicOn, setTension, startMusic, stopMusic } from './audio';
 import { Tutorial, resetTutorial } from './Tutorial';
 import { bagOf, bagUsed, canSwap, capOf, encumbrance, loadOf, giveItem, searchStash, stashNear, swapWeapons, takeWeapon, weaponHere } from './game/inventory';
 import { loadModels } from './render/models';
@@ -682,6 +682,7 @@ export function Mission({ initial, onExit, onSave }: { initial: GameState; onExi
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setAutoCam(!v.getAutoCam()); rerender(); }}>Камера: {view.current?.getAutoCam() === false ? 'ручна' : 'авто'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setViewSq(!v.isViewSq()); rerender(); }}>Квадрати огляду: {view.current?.isViewSq() ? 'ввімк' : 'вимк'}</button>
             <button style={nb(false, false)} onClick={() => { const v = view.current; if (v) v.setWeatherOn(!v.isWeatherOn()); rerender(); }}>Погода: {view.current?.isWeatherOn() === false ? 'вимк' : 'ввімк'}</button>
+            <button style={nb(false, false)} onClick={() => { setMusicOn(!isMusicOn()); rerender(); }}>Музика: {isMusicOn() ? 'ввімк' : 'вимк'}</button>
             <button style={nb(false, false)} onClick={() => { setMuted(!isMuted()); sfx('click'); rerender(); }}>{isMuted() ? 'Звук: вимк' : 'Звук: ввімк'}</button>
             <div style={{ display: 'grid', gap: 4 }}>
               <span style={{ opacity: 0.7, fontSize: 11 }}>Розмір інтерфейсу</span>

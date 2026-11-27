@@ -203,30 +203,25 @@ export function setLife(night: number, on = true) {
 }
 
 // ——— адаптивная музыка: тихий пад и пульс напряжения ———
-let mus: { pad: GainNode[]; pulse: GainNode; hiss: GainNode; stop: () => void } | null = null, tension = 0, tensionNow = 0;
-/** Фонова музика (падовий гул) вимкнена за побажанням гравця; true → false, щоб повернути. */
-const MUSIC_OFF = ['off'].length > 0;
+/** Фонова музика: CC0-трек «Battle Theme A» (cynicmusic), гучність підлаштовується під напругу бою. */
+let mus: { stop: () => void } | null = null, tension = 0, tensionNow = 0;
+const MKEY = 'ap_music';
+let musicOn = (() => { try { return localStorage.getItem(MKEY) !== '0'; } catch { return true; } })();
+export const isMusicOn = () => musicOn;
+export function setMusicOn(on: boolean) {
+  musicOn = on; try { localStorage.setItem(MKEY, on ? '1' : '0'); } catch { /* */ }
+  if (!on) { mus?.stop(); mus = null; } else if (musicWanted) startMusic();
+}
 export function startMusic() {
-  musicWanted = false;
-  if (MUSIC_OFF || mus || muted) return; // фонову музику (гул) вимкнено
-  const c = ac(); if (!c || !bus) return;
-  const out = c.createGain(); out.gain.value = 0.0; out.gain.linearRampToValueAtTime(0.5, c.currentTime + 4); out.connect(bus);
-  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.connect(out);
-  const oscs: OscillatorNode[] = [], pad: GainNode[] = [];
-  [[110, 0], [164.8, 4], [220, -3], [261.6, 6]].forEach(([f, det], i) => { // Am(add9): ля, ми, ля, до
-    const o = c.createOscillator(); o.type = i % 2 ? 'sine' : 'triangle'; o.frequency.value = f; o.detune.value = det;
-    const g = c.createGain(); g.gain.value = 0.05; const lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = 0.05 + i * 0.03; lg.gain.value = 0.025; lfo.connect(lg).connect(g.gain);
-    o.connect(g).connect(lp); o.start(); lfo.start(); oscs.push(o, lfo); pad.push(g);
-  });
-  const pulse = c.createGain(); pulse.gain.value = 0; const po = c.createOscillator(); po.type = 'sine'; po.frequency.value = 55; const lfo2 = c.createOscillator(), l2g = c.createGain(); lfo2.frequency.value = 1.6; l2g.gain.value = 0.5; const am = c.createGain(); am.gain.value = 0.5; lfo2.connect(l2g).connect(am.gain); po.connect(am).connect(pulse).connect(out); po.start(); lfo2.start(); oscs.push(po, lfo2);
-  const hiss = c.createGain(); hiss.gain.value = 0; const len = c.sampleRate * 2, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-  const ns = c.createBufferSource(); ns.buffer = buf; ns.loop = true; const hf = c.createBiquadFilter(); hf.type = 'highpass'; hf.frequency.value = 5000; ns.connect(hf).connect(hiss).connect(out); ns.start();
-  const tick = setInterval(() => { // сглаживаем напряжение и двигаем слои
-    tensionNow += (tension - tensionNow) * 0.12; const ct = c.currentTime;
-    pulse.gain.setTargetAtTime(0.5 * tensionNow, ct, 0.3); hiss.gain.setTargetAtTime(0.018 * tensionNow, ct, 0.3); lp.frequency.setTargetAtTime(600 + 1800 * tensionNow, ct, 0.5);
-    po.frequency.setTargetAtTime(48 + 10 * tensionNow, ct, 0.5); lfo2.frequency.setTargetAtTime(1.2 + 1.8 * tensionNow, ct, 0.5);
+  musicWanted = true;
+  if (mus || muted || !musicOn || typeof Audio === 'undefined') return;
+  const el = new Audio(`${import.meta.env.BASE_URL}music/battle.mp3`); el.loop = true; el.volume = 0;
+  void el.play().catch(() => { /* браузер не дав автозапуск — спробуємо при наступному старті */ });
+  const tick = setInterval(() => { // плавна поява й гучність за напругою: тиша розвідки → повний звук бою
+    tensionNow += (tension - tensionNow) * 0.12;
+    el.volume = Math.min(1, Math.max(0, el.volume + ((0.16 + 0.22 * tensionNow) - el.volume) * 0.15));
   }, 250);
-  mus = { pad, pulse, hiss, stop: () => { clearInterval(tick); out.gain.cancelScheduledValues(c.currentTime); out.gain.setTargetAtTime(0, c.currentTime, 0.5); setTimeout(() => { oscs.forEach(o => { try { o.stop(); } catch { /* */ } }); try { ns.stop(); } catch { /* */ } out.disconnect(); }, 1800); } };
+  mus = { stop: () => { clearInterval(tick); const fade = setInterval(() => { el.volume = Math.max(0, el.volume - 0.03); if (el.volume <= 0) { clearInterval(fade); el.pause(); el.src = ''; } }, 60); } };
 }
 export function stopMusic() { musicWanted = false; mus?.stop(); mus = null; tensionNow = 0; }
 /** Напряжение боя 0..1 (враги видны и в тревоге, идёт стрельба). */
