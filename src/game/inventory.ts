@@ -38,7 +38,7 @@ export function swapWeapons(s: GameState, u: Unit): boolean {
   const oldW = u.weapon, oldAmmo = u.ammo, newW = u.sec!, newAmmo = u.secAmmo ?? WEAPONS[newW].ammo;
   setPrimary(u, newW, newAmmo); u.sec = oldW; u.secAmmo = oldAmmo;
   u.ap -= 1; u.overwatch = false;
-  log(s, `${u.name} меняет оружие: ${WEAPONS[newW].name}.`);
+  log(s, `${u.name} змінює зброю: ${WEAPONS[newW].name}.`);
   return true;
 }
 
@@ -49,14 +49,14 @@ export function autoPickup(s: GameState, u: Unit) {
   const here = lootAt(s, u.x, u.y);
   for (const l of here) {
     if (l.kind === 'wpn') continue;
-    if (l.kind === 'mat') { s.mats = (s.mats ?? 0) + 2 * l.n; log(s, `${u.name} находит материалы (+${2 * l.n}).`); remove(s, l); continue; }
+    if (l.kind === 'mat') { s.mats = (s.mats ?? 0) + 2 * l.n; log(s, `${u.name} знаходить матеріали (+${2 * l.n}).`); remove(s, l); continue; }
     if (l.kind === 'gear') { const [gk, gid] = (l.sm ?? ':').split(':'); const d = (gk === 'helmet' ? HELMETS : gk === 'armor' ? ARMORS : GEARS)[gid]; (s.foundGear ??= []).includes(l.sm!) || s.foundGear.push(l.sm!); log(s, `${u.name} знаходить: ${d?.name ?? 'спорядження'} (відкриється в таборі).`); remove(s, l); continue; }
-    if (l.kind === 'kit') { s.medkits += l.n; log(s, `${u.name} находит аптечку.`); remove(s, l); continue; }
-    if (l.kind === 'smoke') { const t = Math.min(l.n, bagFree(u)); if (t <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: рюкзак полон.`); } continue; } (u.smoke ??= {})[l.sm ?? 'white'] = ((u.smoke ??= {})[l.sm ?? 'white'] ?? 0) + t; log(s, `${u.name} бере: ${SMOKE[(l.sm ?? 'white') as SmokeId]?.name ?? 'димова'}.`); l.n -= t; if (l.n <= 0) remove(s, l); continue; }
+    if (l.kind === 'kit') { s.medkits += l.n; log(s, `${u.name} знаходить аптечку.`); remove(s, l); continue; }
+    if (l.kind === 'smoke') { const t = Math.min(l.n, bagFree(u)); if (t <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: рюкзак повний.`); } continue; } (u.smoke ??= {})[l.sm ?? 'white'] = ((u.smoke ??= {})[l.sm ?? 'white'] ?? 0) + t; log(s, `${u.name} бере: ${SMOKE[(l.sm ?? 'white') as SmokeId]?.name ?? 'димова'}.`); l.n -= t; if (l.n <= 0) remove(s, l); continue; }
     const take = Math.min(l.n, bagFree(u), Math.floor(Math.max(0, capOf(u) * 1.4 - loadOf(u)) / (l.kind === 'mag' ? 0.7 : 0.5)));
-    if (take <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: не унести — ${bagFree(u) <= 0 ? `рюкзак полон (${bagOf(u)}/${bagOf(u)})` : 'слишком тяжело'}.`); } continue; }
+    if (take <= 0) { if (!l.warn) { l.warn = true; log(s, `${u.name}: не забрати — ${bagFree(u) <= 0 ? `рюкзак повний (${bagOf(u)}/${bagOf(u)})` : 'занадто важко'}.`); } continue; }
     if (l.kind === 'mag') u.mags += take; else u.grenades += take;
-    log(s, `${u.name} берёт: ${LOOT_NAME[l.kind]}${take > 1 ? ` ×${take}` : ''}.`);
+    log(s, `${u.name} бере: ${LOOT_NAME[l.kind]}${take > 1 ? ` ×${take}` : ''}.`);
     l.n -= take; if (l.n <= 0) remove(s, l);
   }
 }
@@ -72,7 +72,7 @@ export function takeWeapon(s: GameState, u: Unit): boolean {
   u.sec = l.w; u.secAmmo = l.ammo ?? WEAPONS[l.w].ammo;
   (s.found ??= []).includes(l.w) || s.found.push(l.w);
   remove(s, l); u.ap -= 1; u.overwatch = false;
-  log(s, `${u.name} берёт оружие: ${WEAPONS[l.w].name}.`);
+  log(s, `${u.name} бере зброю: ${WEAPONS[l.w].name}.`);
   return true;
 }
 
@@ -81,7 +81,7 @@ export function dropItem(s: GameState, u: Unit, kind: 'mag' | 'gren'): boolean {
   if (kind === 'mag' ? u.mags <= 0 : u.grenades <= 0) return false;
   if (kind === 'mag') u.mags--; else u.grenades--;
   (s.loot ??= []).push({ x: u.x, y: u.y, kind, n: 1, warn: true });
-  log(s, `${u.name} выкладывает: ${LOOT_NAME[kind]}.`);
+  log(s, `${u.name} викладає: ${LOOT_NAME[kind]}.`);
   return true;
 }
 /** Передать предмет соседнему бойцу (или выложить, если рядом никого). */
@@ -90,7 +90,7 @@ export function giveItem(s: GameState, u: Unit, kind: 'mag' | 'gren'): boolean {
   if (!ally) return dropItem(s, u, kind);
   if (kind === 'mag' ? u.mags <= 0 : u.grenades <= 0) return false;
   if (kind === 'mag') { u.mags--; ally.mags++; } else { u.grenades--; ally.grenades++; }
-  log(s, `${u.name} передаёт ${LOOT_NAME[kind]} → ${ally.name}.`);
+  log(s, `${u.name} передає ${LOOT_NAME[kind]} → ${ally.name}.`);
   return true;
 }
 
@@ -103,11 +103,11 @@ export function searchStash(s: GameState, u: Unit): boolean {
   const t = stashNear(s, u);
   if (!t || u.ap <= 0 || u.down) return false;
   t.opened = true; u.ap -= 1; u.overwatch = false;
-  if (!t.items.length) { log(s, `${u.name} обыскивает ящик: пусто.`); return true; }
+  if (!t.items.length) { log(s, `${u.name} обшукує ящик: порожньо.`); return true; }
   for (const it of t.items) {
     (s.loot ??= []).push({ x: u.x, y: u.y, kind: it.kind, n: it.n, w: it.w, ammo: it.ammo, sm: it.sm });
   }
-  log(s, `${u.name} открывает ${t.big ? 'контейнер' : 'ящик'}: ${t.items.map(i => i.kind === 'wpn' ? WEAPONS[i.w!].name : `${LOOT_NAME[i.kind]}${i.n > 1 ? ' ×' + i.n : ''}`).join(', ')}.`);
+  log(s, `${u.name} відкриває ${t.big ? 'контейнер' : 'ящик'}: ${t.items.map(i => i.kind === 'wpn' ? WEAPONS[i.w!].name : `${LOOT_NAME[i.kind]}${i.n > 1 ? ' ×' + i.n : ''}`).join(', ')}.`);
   autoPickup(s, u);
   return true;
 }

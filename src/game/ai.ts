@@ -123,7 +123,7 @@ export async function alienIter(s: GameState, u: Unit, h: AiHooks, g: Grp | unde
   if (u.kind === 'commander' && u.alert && !u.horn && u.hp > 0) { // командир трубит: просыпаются и встают на тревогу все в радиусе 22
     u.horn = true;
     for (const a of living(s, 'alien')) if (a !== u && Math.hypot(a.x - u.x, a.y - u.y) <= 22) { a.dormant = false; a.alert = true; }
-    log(s, `${u.name} поднимает тревогу — гарнизон просыпается!`); h.alerted?.(living(s, 'alien').filter(a => Math.hypot(a.x - u.x, a.y - u.y) <= 22).map(a => a.id));
+    log(s, `${u.name} здіймає тривогу — гарнізон прокидається!`); h.alerted?.(living(s, 'alien').filter(a => Math.hypot(a.x - u.x, a.y - u.y) <= 22).map(a => a.id));
   }
   if (!u.alert && u.march) { // колонна идёт по улице к выходу
     const m = u.march;

@@ -22,7 +22,7 @@ export function nearDoor(s: GameState, u: Unit): { x: number; y: number } | unde
 }
 export function openQuiet(s: GameState, u: Unit): boolean {
   const d = nearDoor(s, u); if (!d || u.ap <= 0 || u.down) return false;
-  u.ap -= 1; u.overwatch = false; openDoorAt(s, d.x, d.y); log(s, `${u.name} тихо открывает дверь.`); return true;
+  u.ap -= 1; u.overwatch = false; openDoorAt(s, d.x, d.y); log(s, `${u.name} тихо відчиняє двері.`); return true;
 }
 /** Выбить дверь: шумно (слышно в 12 клетках), с шансом 70%; неудача тоже шумит. */
 export function kickDoor(s: GameState, u: Unit): boolean {
@@ -30,6 +30,6 @@ export function kickDoor(s: GameState, u: Unit): boolean {
   u.ap -= 1; u.overwatch = false;
   const ok = ((s.rng = (Math.imul(s.rng ^ (s.rng >>> 15), 2246822507) + 0x9e3779b9) >>> 0) >>> 8) / 16777216 < 0.7;
   (s.noise ??= []).push({ x: d.x, y: d.y, r: ok ? 12 : 8 });
-  if (ok) { openDoorAt(s, d.x, d.y, true); log(s, `${u.name} выбивает дверь!`); } else log(s, `${u.name} бьёт по двери — не поддаётся.`);
+  if (ok) { openDoorAt(s, d.x, d.y, true); log(s, `${u.name} вибиває двері!`); } else log(s, `${u.name} б'є у двері — не піддаються.`);
   return true;
 }
