@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CAT_NAME, CATALOG, SPEC, type Cat } from './game/catalog';
+import { CAT_NAME, CATALOG, SPEC, traitOf, type Cat } from './game/catalog';
 import { WEAPONS } from './game/weapons';
 import type { Campaign } from './game/campaign';
 import type { Soldier, WeaponId } from './game/types';
@@ -40,7 +40,8 @@ export function Arsenal({ c, soldier, mode, onPick, onBuy, onClose }: {
                 <b style={{ fontSize: 13 }}>{w.name}</b>
                 <span style={{ fontSize: 10, opacity: 0.7 }}>{sp ? `${sp.caliber} · ${sp.finish}${sp.scope ? ' · приціл' : ''}${sp.supp ? ' · глушник' : ''}${sp.bipod ? ' · сошки' : ''}` : 'базова'}</span>
                 <span style={{ fontSize: 11 }}>🎯{w.aim} · 💥{w.dmg[0]}–{w.dmg[1]} · ▮{w.ammo} · ↔{w.falloffFrom}/{w.range} · {w.kg} кг</span>
-                <span style={{ fontSize: 10, opacity: 0.8 }}>↩ віддача {w.recoil ?? 5} · 🔊 шум {w.noise ?? 22}{(w.pen ?? 0) > 0 ? ` · 🛡 пробиття +${w.pen}` : ''}</span>
+                {traitOf(id) && <span style={{ fontSize: 11, fontWeight: 800, color: '#ffd34d' }} title={traitOf(id)!.desc}>★ {traitOf(id)!.name}: {traitOf(id)!.desc}</span>}
+                <span style={{ fontSize: 10, opacity: 0.8 }}>{w.burst > 1 ? `⋯ черга ${w.burst} · ` : ''}↩ віддача {w.recoil ?? 5} · 🔊 шум {w.noise ?? 22}{(w.pen ?? 0) > 0 ? ` · 🛡 пробиття +${w.pen}` : ''}</span>
                 {have
                   ? <button style={{ ...btn(on), padding: '3px 10px', fontSize: 12 }} onClick={() => onPick(id)}>{on ? '✓ Обрано' : 'Обрати'}</button>
                   : <button style={{ ...btn(false), padding: '3px 10px', fontSize: 12, opacity: c.scrap >= w.cost ? 1 : 0.5 }} onClick={() => onBuy(id)}>🔓 Відкрити ({w.cost})</button>}

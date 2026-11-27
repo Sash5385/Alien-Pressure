@@ -146,6 +146,7 @@ export function shoot(s: GameState, a: Unit, t: Unit, reaction = false, bonus = 
   const hit = rand(s) * 100 < chance;
   let dmg = hit ? a.dmg[0] + Math.floor(rand(s) * (a.dmg[1] - a.dmg[0] + 1)) : 0;
   const wd = WEAPONS[a.weapon], pen = a.team === 'human' ? wd?.pen ?? 0 : 0;
+  if (hit && a.team === 'human' && (a.burst ?? 1) >= 4 && Math.hypot(a.x - t.x, a.y - t.y) <= a.falloffFrom) dmg += 1; // плотная очередь вблизи
   if (hit && t.cut > 0) dmg = Math.max(1, dmg - Math.max(0, t.cut - pen)); // пробитие брони
   if (hit && t.team === 'human' && t.hcut && rand(s) * 100 < t.hcut && dmg > 1) dmg -= 1; // каска гасит часть удара
   if (a.team === 'human') a.rec = Math.min(24, (a.rec ?? 0) + (wd?.recoil ?? 5) * (a.stance === 'prone' ? 0.5 : a.stance === 'kneel' ? 0.75 : 1)); // отдача копится
